@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Packaging -->
+    <PackageId>StreamShell</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Venando</Authors>
+    <Description>Console host framework built on Spectre.Console with command parsing and markup rendering.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/Venando/StreamShell</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Venando/StreamShell.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>spectre;console;terminal;cli;tui;host</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.55.2" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,24 @@
+name: Publish to NuGet
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - run: dotnet build StreamShell/StreamShell.csproj -c Release
+
+      - run: dotnet pack StreamShell/StreamShell.csproj -c Release --no-build
+
+      - run: dotnet nuget push StreamShell/bin/Release/*.nupkg
+             -k ${{ secrets.NUGET_API_KEY }}
+             -s https://api.nuget.org/v3/index.json
+             --skip-duplicate
