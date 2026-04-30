@@ -7,7 +7,7 @@
 
     <!-- Packaging -->
     <PackageId>StreamShell</PackageId>
-    <Version>0.1.0</Version>
+    <Version>1.0.1</Version>
     <Authors>Venando</Authors>
     <Description>Console host framework built on Spectre.Console with command parsing and markup rendering.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
