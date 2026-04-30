@@ -53,4 +53,4 @@ _ = Task.Run(async () =>
     }
 });
 
-host.Run();
+await host.Run();

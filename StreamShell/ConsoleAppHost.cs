@@ -10,7 +10,7 @@ public class ConsoleAppHost : IDisposable
     private readonly UserInputHandler _inputHandler = new();
     private readonly ConsoleRenderer _renderer = new();
     private readonly CommandPalette _commandPalette;
-    private CancellationTokenSource? _cts;
+    private readonly CancellationTokenSource _cts = new();
 
     public event Action<string>? UserInputSubmitted;
 
@@ -29,17 +29,16 @@ public class ConsoleAppHost : IDisposable
         _commands.Add(command);
     }
 
-    public void Run()
+    public async Task Run(CancellationToken cancellationToken = default)
     {
-        _cts = new CancellationTokenSource();
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
 
-        AnsiConsole.MarkupLine("[yellow]System Online. Type below while logs appear...[/]");
         Console.CursorVisible = false;
 
         string? lastRenderedInput = null;
         int previousInputLineCount = 0;
 
-        while (!_cts.Token.IsCancellationRequested)
+        while (!linkedCts.Token.IsCancellationRequested)
         {
             var hints = _commandPalette.GetHints(_inputHandler.CurrentInput);
             int blockOffset = _renderer.GetBlockOffset(_inputHandler.CurrentInput);
@@ -85,7 +84,6 @@ public class ConsoleAppHost : IDisposable
                 }
                 else
                 {
-                    //_renderer.RenderSubmittedInput(submittedInput);
                     UserInputSubmitted?.Invoke(submittedInput);
                 }
 
@@ -93,16 +91,16 @@ public class ConsoleAppHost : IDisposable
                 previousInputLineCount = 0;
             }
 
-            Thread.Sleep(10);
+            await Task.Delay(10, linkedCts.Token);
         }
     }
 
-    public void Stop() => _cts?.Cancel();
+    public void Stop() => _cts.Cancel();
 
     public void Dispose()
     {
-        Stop();
-        _cts?.Dispose();
+        _cts.Cancel();
+        _cts.Dispose();
         Console.CursorVisible = true;
     }
 
