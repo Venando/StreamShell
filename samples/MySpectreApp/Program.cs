@@ -1,6 +1,10 @@
+using Spectre.Console;
 using StreamShell;
 
 using var host = new ConsoleAppHost();
+
+// Lower threshold for testing large paste detection
+host.Settings.LargePasteThreshold = 200;
 
 host.AddCommand(new Command("context", "Shows context info", (args, named) =>
 {
@@ -38,9 +42,14 @@ host.AddCommand(new Command("cost", "Shows cost info", (args, named) =>
     return Task.CompletedTask;
 }));
 
-host.UserInputSubmitted += input =>
+host.UserInputSubmitted += (input, inputType, attachments) =>
 {
-    host.AddMessage($"[green]USER:[/] {input}");
+    host.AddMessage("[green]USER:[/] [cyan]" + inputType + "[/]");
+    host.AddMessage("  [grey]\"" + Markup.Escape(input) + "\"[/]");
+    foreach (var att in attachments)
+    {
+        host.AddMessage("  [grey][[attachment: " + att.Type + ", " + att.LineCount + " lines, " + att.Content.Length + " chars]][/]");
+    }
 };
 
 _ = Task.Run(async () =>
@@ -49,8 +58,11 @@ _ = Task.Run(async () =>
     while (true)
     {
         await Task.Delay(2500);
-        host.AddMessage($"[grey][[{DateTime.Now:HH:mm:ss}]][/] Background Event #{++i}");
+        host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
     }
 });
+
+host.AddMessage("[yellow]StreamShell demo started. Type text or commands like /context[/]");
+host.AddMessage("[yellow]Large paste (>200 chars) will be attached as file[/]");
 
 await host.Run();

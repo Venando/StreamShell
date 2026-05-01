@@ -10,10 +10,6 @@ internal class ConsoleRenderer
 
     public void RenderMessage(string markup) => AnsiConsole.MarkupLine(markup);
 
-    public void RenderSubmittedInput(string input) => AnsiConsole.MarkupLine($"[green]USER:[/] {input}");
-
-    public void RenderSubmittedCommand(string input) => AnsiConsole.MarkupLine($"[blue]CMD:[/] {input}");
-
     public void ClearInputLine()
     {
         Console.CursorLeft = 0;
@@ -89,21 +85,24 @@ internal class ConsoleRenderer
         for (int i = 0; i < lines.Count; i++)
         {
             Console.CursorLeft = 0;
+            
+            var escapedLine = Markup.Escape(lines[i]);
+
             if (lines.Count == 1)
             {
-                AnsiConsole.Markup($"[blue]> [/] {lines[i]}[white]|[/]");
+                AnsiConsole.Markup($"[blue]> [/] {escapedLine}[white]|[/]");
             }
             else if (i == 0)
             {
-                AnsiConsole.Markup($"[blue]> [/] {lines[i]}");
+                AnsiConsole.Markup($"[blue]> [/] {escapedLine}");
             }
             else if (i == lines.Count - 1)
             {
-                AnsiConsole.Markup($"{lines[i]}[white]|[/]");
+                AnsiConsole.Markup($"{escapedLine}[white]|[/]");
             }
             else
             {
-                Console.Write(lines[i]);
+                Console.Write(escapedLine);
             }
 
             if (i < lines.Count - 1)

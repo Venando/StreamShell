@@ -1,7 +1,14 @@
 namespace StreamShell;
 
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using Spectre.Console;
+
+public enum InputType
+{
+    PlainText,
+    Command
+}
 
 public class ConsoleAppHost : IDisposable
 {
@@ -12,11 +19,15 @@ public class ConsoleAppHost : IDisposable
     private readonly CommandPalette _commandPalette;
     private readonly CancellationTokenSource _cts = new();
 
-    public event Action<string>? UserInputSubmitted;
+    public StreamShellSettings Settings { get; } = new();
+
+    public event Action<string, InputType, IReadOnlyList<Attachment>>? UserInputSubmitted;
 
     public ConsoleAppHost()
     {
         _commandPalette = new CommandPalette(_commands);
+        _inputHandler.LargePasteThreshold = Settings.LargePasteThreshold;
+        _inputHandler.LargePasteLineThreshold = Settings.LargePasteLineThreshold;
     }
 
     public void AddMessage(string markup)
@@ -31,6 +42,10 @@ public class ConsoleAppHost : IDisposable
 
     public async Task Run(CancellationToken cancellationToken = default)
     {
+        // Send the ANSI escape sequence to turn on Bracketed Paste Mode
+        // \u001b[?2004h = Enable
+        Console.Write("\u001b[?2004h");
+        
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
 
         Console.CursorVisible = false;
@@ -77,16 +92,18 @@ public class ConsoleAppHost : IDisposable
             {
                 _renderer.ClearInputBlock(lastRenderedInput);
 
-                if (CommandPalette.IsActive(submittedInput))
+                bool isCommand = IsValidCommand(submittedInput);
+                var inputType = isCommand ? InputType.Command : InputType.PlainText;
+                List<Attachment> attachments = _inputHandler.Attachments;
+
+                UserInputSubmitted?.Invoke(submittedInput, inputType, attachments);
+
+                if (isCommand)
                 {
-                    _renderer.RenderSubmittedCommand(submittedInput);
                     ExecuteCommand(submittedInput);
                 }
-                else
-                {
-                    UserInputSubmitted?.Invoke(submittedInput);
-                }
 
+                _inputHandler.Reset();
                 lastRenderedInput = null;
                 previousInputLineCount = 0;
             }
@@ -137,5 +154,22 @@ public class ConsoleAppHost : IDisposable
                 AddMessage($"[red]Command error: {ex.Message}[/]");
             }
         });
+    }
+
+    private bool IsValidCommand(string input)
+    {
+        if (_inputHandler.Attachments.Count > 0)
+            return false;
+
+        if (!input.StartsWith('/'))
+            return false;
+
+        string query = input.Length > 1 ? input[1..] : string.Empty;
+        var parts = CommandParser.Split(query);
+        if (parts.Count == 0)
+            return false;
+
+        string commandName = parts[0];
+        return _commands.Any(c => c.Name.Equals(commandName, StringComparison.OrdinalIgnoreCase));
     }
 }

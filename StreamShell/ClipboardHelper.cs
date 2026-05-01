@@ -2,6 +2,7 @@ namespace StreamShell;
 
 using System.Runtime.InteropServices;
 
+[Obsolete]
 internal static class ClipboardHelper
 {
     private const uint CF_UNICODETEXT = 13;

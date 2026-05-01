@@ -35,6 +35,7 @@ bld/
 
 # CLAUDE
 .claude/
+CLAUDE.md
 
 # NuGet
 *.nupkg

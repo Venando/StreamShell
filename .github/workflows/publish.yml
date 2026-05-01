@@ -14,9 +14,12 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - run: dotnet build StreamShell/StreamShell.csproj -c Release
+      - name: Get version
+        run: echo "DATE_VERSION=$(date +%Y.%m.%d)" >> $GITHUB_ENV
 
-      - run: dotnet pack StreamShell/StreamShell.csproj -c Release --no-build
+      - run: dotnet build StreamShell/StreamShell.csproj -c Release /p:Version=${{ env.DATE_VERSION }}
+
+      - run: dotnet pack StreamShell/StreamShell.csproj -c Release --no-build /p:Version=${{ env.DATE_VERSION }}
 
       - run: dotnet nuget push StreamShell/bin/Release/*.nupkg
              -k ${{ secrets.NUGET_API_KEY }}
