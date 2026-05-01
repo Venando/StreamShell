@@ -1,15 +1,16 @@
-namespace StreamShell;
 
 using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
-using Spectre.Console;
 
+namespace StreamShell;
 public enum InputType
 {
     PlainText,
     Command
 }
 
+// TODO: Fix issues with hints able to take only 1 line
+// TODO: Add ability to stream message
+// TODO: Add advanced user space text rendering
 public class ConsoleAppHost : IDisposable
 {
     private readonly ConcurrentQueue<string> _messages = new();
@@ -55,7 +56,7 @@ public class ConsoleAppHost : IDisposable
 
         while (!linkedCts.Token.IsCancellationRequested)
         {
-            var hints = _commandPalette.GetHints(_inputHandler.CurrentInput);
+            IReadOnlyList<string> hints = _commandPalette.GetHints(_inputHandler.CurrentInput);
             int blockOffset = _renderer.GetBlockOffset(_inputHandler.CurrentInput);
             int currentInputLineCount = _renderer.GetInputLineCount(_inputHandler.CurrentInput);
 
@@ -66,8 +67,8 @@ public class ConsoleAppHost : IDisposable
                 else
                     _renderer.ClearInputLine();
 
-                _renderer.RenderMessage(message);
-                _renderer.RenderInputBlock(_inputHandler.CurrentInput, hints);
+                ConsoleRenderer.RenderMessage(message);
+                ConsoleRenderer.RenderInputBlock(_inputHandler.CurrentInput, hints);
                 lastRenderedInput = _inputHandler.CurrentInput;
                 previousInputLineCount = currentInputLineCount;
             }
@@ -75,13 +76,13 @@ public class ConsoleAppHost : IDisposable
             {
                 if (previousInputLineCount == 1 && currentInputLineCount == 1)
                 {
-                    _renderer.OverwriteInputBlock(_inputHandler.CurrentInput, hints, blockOffset);
+                    ConsoleRenderer.OverwriteInputBlock(_inputHandler.CurrentInput, hints, blockOffset);
                 }
                 else
                 {
                     if (lastRenderedInput is not null)
                         _renderer.ClearInputBlock(lastRenderedInput);
-                    _renderer.RenderInputBlock(_inputHandler.CurrentInput, hints);
+                    ConsoleRenderer.RenderInputBlock(_inputHandler.CurrentInput, hints);
                 }
 
                 lastRenderedInput = _inputHandler.CurrentInput;

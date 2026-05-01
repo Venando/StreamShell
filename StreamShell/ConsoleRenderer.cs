@@ -8,7 +8,17 @@ internal class ConsoleRenderer
 
     public int GetInputLineCount(string input) => GetInputLines(input).Count;
 
-    public void RenderMessage(string markup) => AnsiConsole.MarkupLine(markup);
+    public static void RenderMessage(string markup)
+    {
+        try
+        {
+            AnsiConsole.MarkupLine(markup);
+        }
+        catch (InvalidOperationException)
+        {
+            AnsiConsole.MarkupLine(Markup.Escape(markup));
+        }
+    }
 
     public void ClearInputLine()
     {
@@ -26,31 +36,16 @@ internal class ConsoleRenderer
         ClearBlock(blockOffset);
     }
 
-    public void RenderInputBlock(string input, List<string> hints)
+    public static void RenderInputBlock(string input, IReadOnlyList<string> hints)
     {
         RenderSeparatorLine();
         RenderInputLine(input);
         Console.WriteLine();
 
-        if (HasHints(hints))
-            RenderSeparatorLine();
-        else
-            Console.WriteLine();
-
-        for (int i = 0; i < CommandPalette.MaxHeight; i++)
-        {
-            Console.CursorLeft = 0;
-            ClearLine();
-            if (!string.IsNullOrEmpty(hints[i]))
-            {
-                AnsiConsole.Markup(hints[i]);
-            }
-            if (i < CommandPalette.MaxHeight - 1)
-                Console.WriteLine();
-        }
+        RenderHintsBlock(hints);
     }
 
-    public void OverwriteInputBlock(string input, List<string> hints, int blockOffset)
+    public static void OverwriteInputBlock(string input, IReadOnlyList<string> hints, int blockOffset)
     {
         Console.CursorTop -= blockOffset - 1;
 
@@ -58,25 +53,68 @@ internal class ConsoleRenderer
         Console.Write("\x1b[K");
         Console.WriteLine();
 
+        RenderHintsBlock(hints);
+    }
+
+    private static void RenderHintsBlock(IReadOnlyList<string> hints)
+    {
         if (HasHints(hints))
             RenderSeparatorLine();
         else
             Console.WriteLine();
 
+        int maxWidth = Console.WindowWidth - 1;
         for (int i = 0; i < CommandPalette.MaxHeight; i++)
         {
             Console.CursorLeft = 0;
             ClearLine();
-            if (!string.IsNullOrEmpty(hints[i]))
+            string hint = hints[i];
+            if (!string.IsNullOrEmpty(hint))
             {
-                AnsiConsole.Markup(hints[i]);
+                string safeHint = TruncateToVisualWidth(hint, maxWidth);
+
+                try
+                {
+                    AnsiConsole.Markup(safeHint);
+                }
+                catch (InvalidOperationException)
+                {
+                    AnsiConsole.Markup(Markup.Escape(safeHint));
+                }
             }
             if (i < CommandPalette.MaxHeight - 1)
                 Console.WriteLine();
         }
     }
 
-    private static bool HasHints(List<string> hints) => hints.Any(h => !string.IsNullOrEmpty(h));
+    private static string TruncateToVisualWidth(string text, int maxWidth)
+    {
+        int visualWidth = 0;
+        int i = 0;
+
+        while (i < text.Length)
+        {
+            if (text[i] == '[')
+            {
+                int close = text.IndexOf(']', i);
+                if (close > i)
+                {
+                    i = close + 1;
+                    continue;
+                }
+            }
+
+            visualWidth++;
+            if (visualWidth > maxWidth)
+                return text[..i];
+
+            i++;
+        }
+
+        return text;
+    }
+
+    private static bool HasHints(IReadOnlyList<string> hints) => hints.Any(h => !string.IsNullOrEmpty(h));
 
     private static void RenderInputLine(string input)
     {

@@ -6,27 +6,44 @@ internal class CommandPalette(List<Command> commands)
 
     public static bool IsActive(string currentInput) => currentInput.StartsWith('/');
 
-    public List<string> GetHints(string currentInput)
+    private static readonly string[] _emptyHints = new string[MaxHeight];
+    private static readonly IReadOnlyList<string> _cachedEmptyHints = _emptyHints;
+
+    private string? _lastInput;
+    private IReadOnlyList<string>? _lastHints;
+
+    public IReadOnlyList<string> GetHints(string currentInput)
     {
-        List<string> hints;
+        if (_lastInput == currentInput)
+            return _lastHints!;
 
         if (IsActive(currentInput))
         {
             string query = currentInput.Length > 1 ? currentInput[1..] : string.Empty;
+            int spaceIndex = query.IndexOf(' ');
+            string prefix = spaceIndex > 0 ? query[..spaceIndex] : query;
 
-            hints = commands
-                .Where(c => c.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
-                .Select(c => $"  [grey]{c.Name,-10}[/] {c.Description}")
-                .ToList();
+            List<string> hints = new(MaxHeight);
+            foreach (var cmd in commands)
+            {
+                if (cmd.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    hints.Add($"  [grey]{cmd.Name,-10}[/] {cmd.Description}");
+                }
+            }
+
+            int emptyHintsToAdd = MaxHeight - hints.Count;
+            
+            if (emptyHintsToAdd > 0)
+                hints.AddRange(_emptyHints.AsSpan(0, emptyHintsToAdd));
+
+            _lastInput = currentInput;
+            _lastHints = hints;
+            return hints;
         }
-        else
-        {
-            hints = [];
-        }
 
-        while (hints.Count < MaxHeight)
-            hints.Add(string.Empty);
-
-        return hints;
+        _lastInput = currentInput;
+        _lastHints = _cachedEmptyHints;
+        return _cachedEmptyHints;
     }
 }

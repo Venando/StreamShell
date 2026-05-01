@@ -24,6 +24,12 @@ host.AddCommand(new Command("exit", "Exits the application", (args, named) =>
     return Task.CompletedTask;
 }));
 
+host.AddCommand(new Command("longtest", "Long hind description test I'm wring right here to test how would it behave. Long hind description test I'm wring right here to test how would it behave.", (args, named) =>
+{
+    host.Stop();
+    return Task.CompletedTask;
+}));
+
 host.AddCommand(new Command("subagents", "Lists active subagents", (args, named) =>
 {
     host.AddMessage("[yellow]No active subagents[/]");
@@ -63,6 +69,7 @@ _ = Task.Run(async () =>
 });
 
 host.AddMessage("[yellow]StreamShell demo started. Type text or commands like /context[/]");
+host.AddMessage("[yellow]Large paste (>200 chars) will be attached as file[/]");
 host.AddMessage("[yellow]Large paste (>200 chars) will be attached as file[/]");
 
 await host.Run();
