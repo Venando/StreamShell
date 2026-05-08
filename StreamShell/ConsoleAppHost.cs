@@ -28,6 +28,9 @@ public class ConsoleAppHost : IDisposable
     /// <summary>Current settings that control paste thresholds and other behavior.</summary>
     public StreamShellSettings Settings { get; } = new();
 
+    /// <summary>Exposes the input handler for save/load/reset operations.</summary>
+    public IInputHandler InputHandler => _inputHandler;
+
     /// <summary>
     /// Raised when the user submits input (Enter without modifiers).
     /// Provides the raw text, whether it is a command or plain text,
