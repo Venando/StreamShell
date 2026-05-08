@@ -27,7 +27,7 @@ internal class UserInputHandler : IInputHandler
         _cursorMovement = new CursorMovementHandler(
             _buffer, _selection, () => RightMargin);
 
-        LargePasteThreshold = 100;
+        LargePasteThreshold = 300;
         LargePasteLineThreshold = 4;
         RightMargin = Console.WindowWidth;
     }
