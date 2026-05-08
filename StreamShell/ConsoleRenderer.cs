@@ -11,16 +11,17 @@ internal class ConsoleRenderer : IRenderer
 {
     public int RightMargin { get; set; } = Console.WindowWidth;
 
+    private const int BlockOffsetBase = 7; // Known off-by-2 for some cases — see PROJECT-INDEX
+
     /// <summary>Total vertical space taken by the input block.</summary>
     public int GetBlockOffset(string input)
     {
-        // Fixed parts = BlockSeparator + BlankAfterInput + HintsSeparator + HintsLines = 9
-        // Known offset: 7 + inputLineCount (off by 2 — investigation documented in PROJECT-INDEX)
-        return 7 + GetInputLineCount(input);
+        // BlockSeparator + BlankAfterInput + HintsSeparator + HintsLines = 9 estimated
+        return BlockOffsetBase + GetInputLineCount(input);
     }
 
     /// <summary>Number of visual lines the input occupies.</summary>
-    public int GetInputLineCount(string input) => GetInputLines(input, RightMargin).Count;
+    public int GetInputLineCount(string input) => LineWrappingService.GetInputLines(input, RightMargin).Count;
 
     // ── Message Display ──────────────────────────────────────────────
     public void RenderMessage(string markup)
@@ -127,7 +128,7 @@ internal class ConsoleRenderer : IRenderer
         for (int segIdx = 0; segIdx < segments.Length; segIdx++)
         {
             string segment = segments[segIdx];
-            var wrappedLines = WrapSegment(segment, width, segIdx == 0,
+            var wrappedLines = LineWrappingService.WrapSegment(segment, width, segIdx == 0,
                 segIdx == segments.Length - 1, isFirstOverallLine);
 
             for (int lineIdx = 0; lineIdx < wrappedLines.Count; lineIdx++)
@@ -296,54 +297,9 @@ internal class ConsoleRenderer : IRenderer
         }
     }
 
-    // ── Line Wrapping ─────────────────────────────────────────────────
+    /// <summary>Gets the wrapped visual lines for the input at the given margin.</summary>
     internal static List<string> GetInputLines(string input, int margin)
-    {
-        var (lines, _) = GetVisualLineData(input, margin);
-        return lines;
-    }
-
-    /// <summary>
-    /// Wraps a single segment (no newline characters) into visual lines
-    /// at the given terminal <paramref name="width"/>.
-    /// </summary>
-    internal static List<string> WrapSegment(
-        string segment,
-        int width,
-        bool isFirstSegment,
-        bool isLastSegment,
-        bool isFirstVisualLine)
-    {
-        var lines = new List<string>();
-
-        // Short single segment that fits on one line
-        if (isFirstSegment && isLastSegment && segment.Length + 4 < width)
-        {
-            lines.Add(segment);
-            return lines;
-        }
-
-        int remaining = segment.Length;
-        int pos = 0;
-
-        while (remaining > 0)
-        {
-            // First visual line has "> " prefix (2 chars), continuation gets "  " (2 chars)
-            // Both use cap = width - 4 for consistent right margin
-            int cap = Math.Max(isFirstSegment && isFirstVisualLine && lines.Count == 0 ? 0 : 1, width - 4);
-            int take = Math.Min(remaining, cap);
-            lines.Add(segment.Substring(pos, take));
-            pos += take;
-            remaining -= take;
-        }
-
-        // Empty segment produces an empty visual line so the cursor
-        // after a newline has somewhere to render (e.g. Shift+Enter).
-        if (segment.Length == 0)
-            lines.Add("");
-
-        return lines;
-    }
+        => LineWrappingService.GetInputLines(input, margin);
 
     /// <summary>
     /// Converts a character position in the raw input string to
@@ -351,23 +307,7 @@ internal class ConsoleRenderer : IRenderer
     /// </summary>
     public static (int line, int column) GetCursorVisualPosition(
         string input, int cursorPosition, int margin)
-    {
-        var visualLines = GetInputLines(input, margin);
-        int accumulated = 0;
-
-        for (int i = 0; i < visualLines.Count; i++)
-        {
-            int lineLen = visualLines[i].Length;
-            if (accumulated + lineLen > cursorPosition)
-                return (i, cursorPosition - accumulated);
-            accumulated += lineLen;
-        }
-
-        if (visualLines.Count == 0)
-            return (0, 0);
-
-        return (visualLines.Count - 1, visualLines[^1].Length);
-    }
+        => LineWrappingService.GetCursorVisualPosition(input, cursorPosition, margin);
 
     /// <summary>
     /// Gets both visual line text and the character offset of each line
@@ -375,51 +315,7 @@ internal class ConsoleRenderer : IRenderer
     /// Needed for up/down cursor navigation.
     /// </summary>
     public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin)
-    {
-        int width = Math.Max(1, Math.Min(margin, Console.WindowWidth));
-        var lines = new List<string>();
-        var offsets = new List<int>();
-
-        if (string.IsNullOrEmpty(input))
-        {
-            lines.Add("");
-            offsets.Add(0);
-            return (lines, offsets);
-        }
-
-        var segments = input.Split('\n');
-        bool anyLinesProduced = false;
-        int charOffset = 0;
-
-        for (int segIdx = 0; segIdx < segments.Length; segIdx++)
-        {
-            string segment = segments[segIdx];
-            bool isFirstSegment = segIdx == 0;
-            bool isLastSegment = segIdx == segments.Length - 1;
-
-            var wrapped = WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced);
-
-            for (int lineIdx = 0; lineIdx < wrapped.Count; lineIdx++)
-            {
-                offsets.Add(charOffset);
-                lines.Add(wrapped[lineIdx]);
-                charOffset += wrapped[lineIdx].Length;
-            }
-
-            if (wrapped.Count > 0)
-                anyLinesProduced = true;
-
-            charOffset++; // Account for \n between segments
-        }
-
-        if (lines.Count == 0)
-        {
-            lines.Add("");
-            offsets.Add(0);
-        }
-
-        return (lines, offsets);
-    }
+        => LineWrappingService.GetVisualLineData(input, margin);
 
     // ── Helpers ───────────────────────────────────────────────────────
     private static string TruncateToVisualWidth(string text, int maxWidth)

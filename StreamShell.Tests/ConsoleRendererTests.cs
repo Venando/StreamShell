@@ -22,7 +22,7 @@ public class ConsoleRendererTests
         bool isFirst, bool isLast, bool isFirstLine,
         string[] expected)
     {
-        var result = ConsoleRenderer.WrapSegment(segment, width, isFirst, isLast, isFirstLine);
+        var result = LineWrappingService.WrapSegment(segment, width, isFirst, isLast, isFirstLine);
         Assert.Equal(expected, result);
     }
 
@@ -30,7 +30,7 @@ public class ConsoleRendererTests
     public void WrapSegment_NotShortCircuit_WhenBoundaryExact()
     {
         // segment.Length + 4 == width → NOT < → falls through to wrapping
-        var result = ConsoleRenderer.WrapSegment("abcdef", 10, true, true, true);
+        var result = LineWrappingService.WrapSegment("abcdef", 10, true, true, true);
         // cap = 10-4 = 6 → takes all 6 in first line
         Assert.Equal(new[] { "abcdef" }, result);
     }
@@ -39,7 +39,7 @@ public class ConsoleRendererTests
     public void WrapSegment_WrapsAtFixedWidthBoundary()
     {
         // width=20, cap=16. 37-char text → 3 lines of 16,16,5
-        var result = ConsoleRenderer.WrapSegment("this is a very long string that wraps", 20,
+        var result = LineWrappingService.WrapSegment("this is a very long string that wraps", 20,
             true, true, true);
         Assert.Equal(3, result.Count);
         Assert.Equal("this is a very l", result[0]);
@@ -51,7 +51,7 @@ public class ConsoleRendererTests
     public void WrapSegment_ContinuationLine_SameCap()
     {
         // isFirstVisualLine=false → cap = Math.Max(1, width-4)
-        var result = ConsoleRenderer.WrapSegment("abcdefghijklmnopqrstuvwxyz", 20,
+        var result = LineWrappingService.WrapSegment("abcdefghijklmnopqrstuvwxyz", 20,
             isFirstSegment: true, isLastSegment: true, isFirstVisualLine: false);
         Assert.Equal(2, result.Count);
         Assert.Equal("abcdefghijklmnop", result[0]);
@@ -62,7 +62,7 @@ public class ConsoleRendererTests
     public void WrapSegment_NonFirstSegment_ContinuationCap()
     {
         // isFirst=false → else branch → cap = width-4
-        var result = ConsoleRenderer.WrapSegment("abcdefghijklmnopqrstuvwxyz", 20,
+        var result = LineWrappingService.WrapSegment("abcdefghijklmnopqrstuvwxyz", 20,
             isFirstSegment: false, isLastSegment: true, isFirstVisualLine: true);
         Assert.Equal(2, result.Count);
         Assert.Equal("abcdefghijklmnop", result[0]);
@@ -72,7 +72,7 @@ public class ConsoleRendererTests
     [Fact]
     public void WrapSegment_ExactlyAtCap_ProducesSingleLine()
     {
-        var result = ConsoleRenderer.WrapSegment("abcdefghijklmnop", 20, true, true, true);
+        var result = LineWrappingService.WrapSegment("abcdefghijklmnop", 20, true, true, true);
         Assert.Equal(new[] { "abcdefghijklmnop" }, result);
     }
 
@@ -81,7 +81,7 @@ public class ConsoleRendererTests
     {
         // width=3 → first cap = Math.Max(0, -1) = 0 → empty string
         // then cap = Math.Max(1, -1) = 1 → one char per line
-        var result = ConsoleRenderer.WrapSegment("hello", 3, true, true, true);
+        var result = LineWrappingService.WrapSegment("hello", 3, true, true, true);
         Assert.Equal(6, result.Count);
         Assert.Equal("", result[0]);   // cap=0 → empty
         Assert.Equal("h", result[1]);
@@ -95,7 +95,7 @@ public class ConsoleRendererTests
     public void WrapSegment_ContinuationCap_NeverBelowOne()
     {
         // continuation cap = Math.Max(1, width-4)
-        var result = ConsoleRenderer.WrapSegment("abcde", 4,
+        var result = LineWrappingService.WrapSegment("abcde", 4,
             isFirstSegment: true, isLastSegment: true, isFirstVisualLine: false);
         Assert.Equal(5, result.Count);
     }
@@ -103,14 +103,14 @@ public class ConsoleRendererTests
     [Fact]
     public void WrapSegment_EmptySegment_ReturnsEmptyLine()
     {
-        var result = ConsoleRenderer.WrapSegment("", 20, true, true, true);
+        var result = LineWrappingService.WrapSegment("", 20, true, true, true);
         Assert.Equal(new[] { "" }, result);
     }
 
     [Fact]
     public void WrapSegment_SingleChar_Preserved()
     {
-        var result = ConsoleRenderer.WrapSegment("x", 20, true, true, true);
+        var result = LineWrappingService.WrapSegment("x", 20, true, true, true);
         Assert.Equal(new[] { "x" }, result);
     }
 
@@ -118,7 +118,7 @@ public class ConsoleRendererTests
     public void WrapSegment_MultiSegment_NotLast_GoesThroughLoop()
     {
         // isLast=false prevents short-circuit even for short text
-        var result = ConsoleRenderer.WrapSegment("hello", 20,
+        var result = LineWrappingService.WrapSegment("hello", 20,
             isFirstSegment: true, isLastSegment: false, isFirstVisualLine: true);
         Assert.Equal(new[] { "hello" }, result);
     }
@@ -128,7 +128,7 @@ public class ConsoleRendererTests
     {
         // Not first, not last → cap = Math.Max(1, width-4)
         // "hello world!!!!!!!" = 18 chars, cap=16
-        var result = ConsoleRenderer.WrapSegment("hello world!!!!!!!", 20,
+        var result = LineWrappingService.WrapSegment("hello world!!!!!!!", 20,
             isFirstSegment: false, isLastSegment: false, isFirstVisualLine: false);
         Assert.Equal(2, result.Count);
         Assert.Equal("hello world!!!!!", result[0]);

@@ -123,23 +123,23 @@ public class ConsoleAppHost : IDisposable
         }
     }
 
-    /// <summary>Combines dequeue-based rendering and update-based rendering into one check.</summary>
+    /// <summary>Priority render check: messages first, then input changes. Returns true when the screen was updated.</summary>
     private bool TryRender(
         RenderSnapshot state,
         string input, int cursor, bool hasSelection, int selStart, int selLength,
         int margin, int windowWidth)
     {
         // Priority 1: queued messages need a full re-render
-        if (TryDequeueAndRender(state, input, cursor, hasSelection, selStart, selLength, margin))
+        if (RenderQueuedMessages(state, input, cursor, hasSelection, selStart, selLength, margin))
             return true;
 
         // Priority 2: input/cursor/resize changes need an update
-        return TryUpdateRender(state, input, cursor, hasSelection, selStart, selLength,
+        return RenderInputChanges(state, input, cursor, hasSelection, selStart, selLength,
             margin, windowWidth);
     }
 
-    /// <summary>Renders queued messages and re-renders the input block. Returns true if anything was rendered.</summary>
-    private bool TryDequeueAndRender(
+    /// <summary>Renders a queued message then re-renders the input block. Returns true if a message was rendered.</summary>
+    private bool RenderQueuedMessages(
         RenderSnapshot state,
         string input, int cursor, bool hasSelection, int selStart, int selLength,
         int margin)
@@ -153,17 +153,17 @@ public class ConsoleAppHost : IDisposable
             _renderer.ClearInputLine();
 
         _renderer.RenderMessage(message);
-        RenderFullBlock(input, cursor, hasSelection, selStart, selLength, margin);
+        RenderFullInputBlock(input, cursor, hasSelection, selStart, selLength, margin);
         return true;
     }
 
-    /// <summary>Renders input/cursor changes or handles terminal resize. Returns true if anything changed.</summary>
-    private bool TryUpdateRender(
+    /// <summary>Applies input/cursor/resize changes to the display. Returns true when the screen was updated.</summary>
+    private bool RenderInputChanges(
         RenderSnapshot state,
         string input, int cursor, bool hasSelection, int selStart, int selLength,
         int margin, int windowWidth)
     {
-        if (!HasRenderChanges(state, input, cursor, hasSelection, windowWidth))
+        if (!StateDiffersFromRender(state, input, cursor, hasSelection, windowWidth))
             return false;
 
         // Single-line → single-line: use faster overwrite (not on resize)
@@ -181,14 +181,14 @@ public class ConsoleAppHost : IDisposable
         {
             if (state.LastInput is not null)
                 _renderer.ClearInputBlockForReRender(state.LastInput, input);
-            RenderFullBlock(input, cursor, hasSelection, selStart, selLength, margin);
+            RenderFullInputBlock(input, cursor, hasSelection, selStart, selLength, margin);
         }
 
         return true;
     }
 
-    /// <summary>Returns true when the render snapshot has any meaningful difference from the current state.</summary>
-    private static bool HasRenderChanges(
+    /// <summary>Returns true when any tracked state has changed from the last render.</summary>
+    private static bool StateDiffersFromRender(
         RenderSnapshot state,
         string input, int cursor, bool hasSelection, int windowWidth)
     {
@@ -215,7 +215,7 @@ public class ConsoleAppHost : IDisposable
         _inputHandler.Reset();
     }
 
-    private void RenderFullBlock(
+    private void RenderFullInputBlock(
         string input, int cursor, bool hasSelection,
         int selStart, int selLength, int margin)
     {

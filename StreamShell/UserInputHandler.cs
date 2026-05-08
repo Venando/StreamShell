@@ -258,40 +258,39 @@ internal class UserInputHandler : IInputHandler
     }
 
     // ── Clipboard Operations ────────────────────────────────────────
+    /// <summary>Returns the selected text, or the full buffer if no selection is active.</summary>
+    private string GetClipboardText()
+    {
+        int cursor = _buffer.CursorPosition;
+        return _selection.IsActiveAt(cursor)
+            ? _selection.SelectedText(cursor, _buffer.CurrentInput)
+            : _buffer.CurrentInput;
+    }
+
     private void CopyToClipboard()
+    {
+        TryClipboardCopy(GetClipboardText());
+    }
+
+    private void CutToClipboard()
+    {
+        TryClipboardCopy(GetClipboardText());
+
+        if (!RemoveSelectedText())
+            _buffer.Clear();
+    }
+
+    /// <summary>Attempts clipboard copy. Silently ignores platform errors (e.g. WSL).</summary>
+    private static void TryClipboardCopy(string text)
     {
         try
         {
-            string text = _selection.IsActiveAt(_buffer.CursorPosition)
-                ? _selection.SelectedText(_buffer.CursorPosition, _buffer.CurrentInput)
-                : _buffer.CurrentInput;
-
             ClipboardService.Copy(text);
         }
         catch
         {
             // Clipboard not available on this platform (e.g. WSL)
         }
-    }
-
-    private void CutToClipboard()
-    {
-        try
-        {
-            int cursor = _buffer.CursorPosition;
-            string text = _selection.IsActiveAt(cursor)
-                ? _selection.SelectedText(cursor, _buffer.CurrentInput)
-                : _buffer.CurrentInput;
-
-            ClipboardService.Copy(text);
-        }
-        catch
-        {
-            // Clipboard unavailable; perform just the removal below
-        }
-
-        if (!RemoveSelectedText())
-            _buffer.Clear();
     }
 
     private void PasteFromClipboard()
@@ -488,7 +487,7 @@ internal class UserInputHandler : IInputHandler
 
         string input = _buffer.CurrentInput;
         int width = GetEffectiveWidth();
-        var (visualLines, offsets) = ConsoleRenderer.GetVisualLineData(input, width);
+        var (visualLines, offsets) = LineWrappingService.GetVisualLineData(input, width);
         var (visLine, visCol) = GetVisualPosition(input, visualLines, offsets);
 
         if (visLine == 0)
@@ -519,7 +518,7 @@ internal class UserInputHandler : IInputHandler
 
         string input = _buffer.CurrentInput;
         int width = GetEffectiveWidth();
-        var (visualLines, offsets) = ConsoleRenderer.GetVisualLineData(input, width);
+        var (visualLines, offsets) = LineWrappingService.GetVisualLineData(input, width);
         var (visLine, visCol) = GetVisualPosition(input, visualLines, offsets);
 
         if (visLine >= visualLines.Count - 1)
