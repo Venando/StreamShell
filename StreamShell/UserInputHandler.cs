@@ -19,7 +19,7 @@ internal class UserInputHandler
     private int? _selectionAnchor;
 
     public int CursorPosition => _cursorPosition;
-    public bool HasSelection => _selectionAnchor.HasValue;
+    public bool HasSelection => _selectionAnchor.HasValue && _selectionAnchor.Value != _cursorPosition;
     private int SelectionStart => Math.Min(_cursorPosition, _selectionAnchor ?? _cursorPosition);
     private int SelectionEnd => Math.Max(_cursorPosition, _selectionAnchor ?? _cursorPosition);
     private int SelectionLength => SelectionEnd - SelectionStart;
