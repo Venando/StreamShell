@@ -42,6 +42,7 @@ public class ConsoleAppHost : IDisposable
         _inputHandler = new UserInputHandler();
         _commandPalette = new CommandPalette(_commands.Values);
         ApplySettings();
+        WireUpAutoComplete();
     }
 
     /// <summary>Creates a host with explicit renderer and input handler (for testing).</summary>
@@ -51,6 +52,15 @@ public class ConsoleAppHost : IDisposable
         _inputHandler = inputHandler;
         _commandPalette = new CommandPalette(_commands.Values);
         ApplySettings();
+        WireUpAutoComplete();
+    }
+
+    private void WireUpAutoComplete()
+    {
+        if (_inputHandler is UserInputHandler uih)
+        {
+            uih.AutoCompleteProvider = input => _commandPalette.GetTopSuggestion(input);
+        }
     }
 
     /// <summary>Applies the current Settings values to the renderer and input handler.</summary>
@@ -65,6 +75,19 @@ public class ConsoleAppHost : IDisposable
 
     /// <summary>Register a command that can be triggered with /command-name.</summary>
     public void AddCommand(Command command) => _commands[command.Name] = command;
+
+    /// <summary>
+    /// Register a command with argument suggestions for autocomplete.
+    /// After typing the command name, the hint palette shows argument completions
+    /// from <paramref name="argumentSuggestions"/> and Tab fills the top suggestion.
+    /// Each entry is a full multi-word argument string (e.g. "linux ubuntu").
+    /// </summary>
+    public void AddCommand(string name, string description,
+        Func<string[], Dictionary<string, string>, Task> handler,
+        string[]? argumentSuggestions)
+    {
+        _commands[name] = new Command(name, description, handler, argumentSuggestions);
+    }
 
     /// <summary>Run the main input/render loop until cancelled or Ctrl+D is pressed.</summary>
     public async Task Run(CancellationToken cancellationToken = default)

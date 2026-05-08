@@ -55,6 +55,10 @@ internal class UserInputHandler : IInputHandler
 
     public int RightMargin { get; set; }
 
+    /// <summary>Optional callback for Tab autocomplete. Takes the current input
+    /// and returns the completed input, or null/empty if no completion is possible.</summary>
+    public Func<string, string?>? AutoCompleteProvider { get; set; }
+
     // ══════════════════════════════════════════════════════════════════
     //  Main Processing Loop
     // ══════════════════════════════════════════════════════════════════
@@ -230,6 +234,10 @@ internal class UserInputHandler : IInputHandler
                 ResetState();
                 return true;
 
+            case ConsoleKey.Tab:
+                PerformAutoComplete();
+                return true;
+
             case ConsoleKey.Backspace:
                 if (!_selection.IsActiveAt(_buffer.CursorPosition) && _buffer.CursorPosition == 0)
                     return true; // nothing to delete
@@ -317,6 +325,25 @@ internal class UserInputHandler : IInputHandler
             _selection.ForMovement(shift: true, cursor); // re-anchor
         else
             _selection.Clear();
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Auto-Complete (Tab)
+    // ══════════════════════════════════════════════════════════════════
+
+    private void PerformAutoComplete()
+    {
+        if (AutoCompleteProvider == null)
+            return;
+
+        string current = _buffer.CurrentInput;
+        string? completed = AutoCompleteProvider(current);
+
+        if (string.IsNullOrEmpty(completed) || completed == current)
+            return;
+
+        Snapshot();
+        _buffer.SetContent(completed, completed.Length);
     }
 
     // ══════════════════════════════════════════════════════════════════
