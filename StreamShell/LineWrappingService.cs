@@ -19,7 +19,7 @@ public static class LineWrappingService
         bool isLastSegment,
         bool isFirstVisualLine,
         int prefixMargin = 2,
-        int rightMargin = 2)
+        int rightMargin = 4)
     {
         var lines = new List<string>();
         int totalMargin = prefixMargin + rightMargin;
