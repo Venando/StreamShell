@@ -2,145 +2,286 @@ using System.Text;
 
 namespace StreamShell;
 
+/// <summary>
+/// Handles keyboard input processing — reads key events, dispatches them
+/// to buffer, selection, clipboard, and undo state managers.
+/// Does NOT handle rendering or terminal cursor positioning.
+/// </summary>
 internal class UserInputHandler : IInputHandler
 {
-    private readonly StringBuilder _currentInput = new();
+    private readonly TextBuffer _buffer = new();
+    private readonly SelectionManager _selection = new();
     private readonly StringBuilder _tempInput = new();
-    public string CurrentInput => _currentInput.ToString();
+
+    public string CurrentInput => _buffer.CurrentInput;
     public List<Attachment> Attachments { get; private set; } = new();
     public int LargePasteThreshold { get; set; } = 100;
     public int LargePasteLineThreshold { get; set; } = 4;
-    /// <summary>Set to true when Ctrl+D is pressed while reading input.</summary>
     public bool QuitRequested { get; set; }
 
-    // ── Cursor & Selection State ──────────────────────────────────────
-    private int _cursorPosition;
-    /// <summary>null when no selection is active; otherwise one end of the selection (the other is _cursorPosition).</summary>
-    private int? _selectionAnchor;
+    // ── Cursor & Selection (delegated) ──────────────────────────────
+    public int CursorPosition => _buffer.CursorPosition;
+    public bool HasSelection => _selection.IsActiveAt(_buffer.CursorPosition);
 
-    public int CursorPosition => _cursorPosition;
-    public bool HasSelection => _selectionAnchor.HasValue && _selectionAnchor.Value != _cursorPosition;
     public bool TryGetSelection(out int start, out int length)
-    {
-        if (HasSelection)
-        {
-            start = SelectionStart;
-            length = SelectionLength;
-            return true;
-        }
-        start = 0;
-        length = 0;
-        return false;
-    }
+        => _selection.TryGetSelection(_buffer.CursorPosition, out start, out length);
 
-    private int SelectionStart => Math.Min(_cursorPosition, _selectionAnchor ?? _cursorPosition);
-    private int SelectionEnd => Math.Max(_cursorPosition, _selectionAnchor ?? _cursorPosition);
-    private int SelectionLength => SelectionEnd - SelectionStart;
-    public string SelectedText => HasSelection ? _currentInput.ToString(SelectionStart, SelectionLength) : "";
-
-
-
-    // ── Undo Stack ────────────────────────────────────────────────────
+    // ── Undo Stack ──────────────────────────────────────────────────
     private readonly Stack<(string text, int cursor, int? selection)> _undoStack = new();
     private const int MaxUndoDepth = 50;
 
-    private void Snapshot()
-    {
-        // Trim oldest entries if at capacity
-        if (_undoStack.Count >= MaxUndoDepth)
-        {
-            var items = _undoStack.ToArray();
-            _undoStack.Clear();
-            // Keep the (MaxUndoDepth - 1) most recent entries
-            for (int i = items.Length - (MaxUndoDepth - 1); i < items.Length; i++)
-                _undoStack.Push(items[i]);
-        }
-        _undoStack.Push((_currentInput.ToString(), _cursorPosition, _selectionAnchor));
-    }
-
-    private void Undo()
-    {
-        if (_undoStack.Count == 0)
-            return;
-        var (text, cursor, selection) = _undoStack.Pop();
-        _currentInput.Clear();
-        _currentInput.Append(text);
-        _cursorPosition = cursor;
-        _selectionAnchor = selection;
-    }
-
-    // ── Right Margin ──────────────────────────────────────────────────
+    // ── Right Margin & Vertical Navigation ──────────────────────────
     public int RightMargin { get; set; } = Console.WindowWidth;
-
-    // ── Vertical Navigation ───────────────────────────────────────────
     private int _stickyColumn = -1;
 
-    private int GetEffectiveWidth()
+    // ── Main Processing Loop ────────────────────────────────────────
+    public string? ProcessInput()
     {
-        int effectiveMargin = Math.Max(10, RightMargin);
-        return Math.Max(1, Math.Min(effectiveMargin, Console.WindowWidth));
+        string? submitted = null;
+
+        while (Console.KeyAvailable)
+        {
+            var key = Console.ReadKey(intercept: true);
+            bool ctrl = key.Modifiers.HasFlag(ConsoleModifiers.Control);
+            bool shift = key.Modifiers.HasFlag(ConsoleModifiers.Shift);
+            bool alt = key.Modifiers.HasFlag(ConsoleModifiers.Alt);
+
+            if (HandleEnter(key, ctrl, shift, alt, ref submitted))
+                break;
+            if (HandleControlKey(key, ctrl, shift))
+                continue;
+            if (HandleNavigationKey(key, ctrl, alt, shift))
+                continue;
+            if (HandleEditingKey(key, ctrl))
+                continue;
+
+            // Unhandled non-control characters → buffer for flush
+            if (key.KeyChar != '\0')
+                _tempInput.Append(key.KeyChar);
+        }
+
+        // Flush buffered input (e.g. from Ctrl+V pastes or fast typing)
+        if (_tempInput.Length > 0)
+        {
+            Snapshot();
+            FlushTempInput();
+        }
+
+        return submitted;
     }
 
-    private (int visLine, int visCol) GetVisualPosition(string input, List<string> visualLines, List<int> offsets)
+    // ── Key Dispatch: Enter ──────────────────────────────────────────
+    /// <summary>Handles Enter. Returns true if the outer while should continue or break.</summary>
+    private bool HandleEnter(ConsoleKeyInfo key, bool ctrl, bool shift, bool alt, ref string? submitted)
     {
-        for (int i = visualLines.Count - 1; i >= 0; i--)
+        if (key.Key != ConsoleKey.Enter)
+            return false;
+
+        if (!shift && !ctrl && !alt)
         {
-            if (offsets[i] <= _cursorPosition)
+            while (Console.KeyAvailable)
             {
-                int col = _cursorPosition - offsets[i];
-                if (col <= visualLines[i].Length)
-                    return (i, col);
+                _tempInput.Append('\n');
+                return true; // keep processing buffered keys
+            }
+
+            if (_tempInput.Length == 0 && _buffer.Length > 0)
+            {
+                submitted = _buffer.CurrentInput;
+                ResetState();
+                return true; // break outer while
             }
         }
-        return (visualLines.Count - 1, visualLines[^1].Length);
+
+        // Shift+Enter / Ctrl+Enter / Alt+Enter → literal newline
+        _tempInput.Append('\n');
+        return true;
     }
 
-    // ── Selection Operations ──────────────────────────────────────────
-    private void DeleteSelection()
+    // ── Key Dispatch: Control Keys ───────────────────────────────────
+    private bool HandleControlKey(ConsoleKeyInfo key, bool ctrl, bool shift)
     {
-        if (!HasSelection)
-            return;
-        int start = SelectionStart;
-        int len = SelectionLength;
-        _currentInput.Remove(start, len);
-        _cursorPosition = start;
-        _selectionAnchor = null;
+        if (!ctrl)
+            return false;
+
+        switch (key.Key)
+        {
+            case ConsoleKey.D:
+                QuitRequested = true;
+                return true;
+
+            case ConsoleKey.C when !shift:
+                CopyToClipboard();
+                return true;
+
+            case ConsoleKey.X:
+                Snapshot();
+                CutToClipboard();
+                return true;
+
+            case ConsoleKey.V:
+                Snapshot();
+                PasteFromClipboard();
+                return true;
+
+            case ConsoleKey.Z:
+                Undo();
+                return true;
+        }
+
+        return false;
     }
 
+    // ── Key Dispatch: Navigation ─────────────────────────────────────
+    private bool HandleNavigationKey(ConsoleKeyInfo key, bool ctrl, bool alt, bool shift)
+    {
+        if (alt)
+            return false;
+
+        // Word jumps (Ctrl+arrows)
+        if (ctrl)
+        {
+            switch (key.Key)
+            {
+                case ConsoleKey.LeftArrow:
+                    _stickyColumn = -1;
+                    MoveCursorWordLeft(shift);
+                    return true;
+                case ConsoleKey.RightArrow:
+                    _stickyColumn = -1;
+                    MoveCursorWordRight(shift);
+                    return true;
+            }
+            return false;
+        }
+
+        // Plain navigation keys
+        switch (key.Key)
+        {
+            case ConsoleKey.UpArrow:
+                MoveCursorUp(shift);
+                return true;
+            case ConsoleKey.DownArrow:
+                MoveCursorDown(shift);
+                return true;
+            case ConsoleKey.LeftArrow:
+                _stickyColumn = -1;
+                MoveCursorLeft(shift);
+                return true;
+            case ConsoleKey.RightArrow:
+                _stickyColumn = -1;
+                MoveCursorRight(shift);
+                return true;
+            case ConsoleKey.Home:
+                _stickyColumn = -1;
+                MoveCursorHome(shift);
+                return true;
+            case ConsoleKey.End:
+                _stickyColumn = -1;
+                MoveCursorEnd(shift);
+                return true;
+        }
+
+        return false;
+    }
+
+    // ── Key Dispatch: Editing ────────────────────────────────────────
+    private bool HandleEditingKey(ConsoleKeyInfo key, bool ctrl)
+    {
+        switch (key.Key)
+        {
+            case ConsoleKey.Escape:
+                ResetState();
+                return true;
+
+            case ConsoleKey.Backspace:
+                if (!_selection.IsActiveAt(_buffer.CursorPosition) && _buffer.CursorPosition == 0)
+                    return true; // nothing to delete
+                Snapshot();
+                HandleBackspace();
+                return true;
+
+            case ConsoleKey.Delete when !ctrl:
+                if (_selection.IsActiveAt(_buffer.CursorPosition) || _buffer.CursorPosition < _buffer.Length)
+                {
+                    Snapshot();
+                    HandleDelete();
+                }
+                return true;
+        }
+
+        // Printable characters
+        if (key.KeyChar != '\0' && !char.IsControl(key.KeyChar))
+        {
+            InsertCharacter(key.KeyChar);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void InsertCharacter(char c)
+    {
+        int cursor = _buffer.CursorPosition;
+
+        if (_selection.IsActiveAt(cursor))
+        {
+            Snapshot();
+            _buffer.Remove(_selection.SelectionStart(cursor), _selection.SelectionLength(cursor));
+            _selection.Clear();
+        }
+        else
+        {
+            Snapshot();
+        }
+
+        if (_buffer.CursorPosition < _buffer.Length || _buffer.Length == 0)
+        {
+            _buffer.Insert(c);
+        }
+        else
+        {
+            _tempInput.Append(c);
+        }
+    }
+
+    // ── Selection Handling ──────────────────────────────────────────
     private void HandleBackspace()
     {
-        if (HasSelection)
+        if (_selection.IsActiveAt(_buffer.CursorPosition))
         {
-            DeleteSelection();
+            _buffer.Remove(_selection.SelectionStart(_buffer.CursorPosition), _selection.SelectionLength(_buffer.CursorPosition));
+            _selection.Clear();
         }
-        else if (_cursorPosition > 0)
+        else
         {
-            _currentInput.Remove(_cursorPosition - 1, 1);
-            _cursorPosition--;
+            _buffer.Backspace();
         }
     }
 
     private void HandleDelete()
     {
-        if (HasSelection)
+        if (_selection.IsActiveAt(_buffer.CursorPosition))
         {
-            DeleteSelection();
+            _buffer.Remove(_selection.SelectionStart(_buffer.CursorPosition), _selection.SelectionLength(_buffer.CursorPosition));
+            _selection.Clear();
         }
-        else if (_cursorPosition < _currentInput.Length)
+        else
         {
-            _currentInput.Remove(_cursorPosition, 1);
+            _buffer.Delete();
         }
     }
 
-    // ── Clipboard Operations ──────────────────────────────────────────
+    // ── Clipboard Operations ────────────────────────────────────────
     private void CopyToClipboard()
     {
         try
         {
-            if (HasSelection)
-                ClipboardService.Copy(SelectedText);
-            else
-                ClipboardService.Copy(_currentInput.ToString());
+            string text = _selection.IsActiveAt(_buffer.CursorPosition)
+                ? _selection.SelectedText(_buffer.CursorPosition, _buffer.CurrentInput)
+                : _buffer.CurrentInput;
+
+            ClipboardService.Copy(text);
         }
         catch
         {
@@ -152,27 +293,30 @@ internal class UserInputHandler : IInputHandler
     {
         try
         {
-            if (HasSelection)
+            if (_selection.IsActiveAt(_buffer.CursorPosition))
             {
-                ClipboardService.Copy(SelectedText);
-                DeleteSelection();
+                var text = _selection.SelectedText(_buffer.CursorPosition, _buffer.CurrentInput);
+                ClipboardService.Copy(text);
+                _buffer.Remove(_selection.SelectionStart(_buffer.CursorPosition), _selection.SelectionLength(_buffer.CursorPosition));
+                _selection.Clear();
             }
             else
             {
-                ClipboardService.Copy(_currentInput.ToString());
-                _currentInput.Clear();
-                _cursorPosition = 0;
+                ClipboardService.Copy(_buffer.CurrentInput);
+                _buffer.Clear();
             }
         }
         catch
         {
-            // Clipboard not available; still perform the cut
-            if (HasSelection)
-                DeleteSelection();
+            // Clipboard unavailable; still perform the cut
+            if (_selection.IsActiveAt(_buffer.CursorPosition))
+            {
+                _buffer.Remove(_selection.SelectionStart(_buffer.CursorPosition), _selection.SelectionLength(_buffer.CursorPosition));
+                _selection.Clear();
+            }
             else
             {
-                _currentInput.Clear();
-                _cursorPosition = 0;
+                _buffer.Clear();
             }
         }
     }
@@ -188,17 +332,20 @@ internal class UserInputHandler : IInputHandler
         {
             return;
         }
+
         if (string.IsNullOrEmpty(text))
             return;
 
-        // Replace selection if active
-        if (HasSelection)
-            DeleteSelection();
+        if (_selection.IsActiveAt(_buffer.CursorPosition))
+        {
+            _buffer.Remove(_selection.SelectionStart(_buffer.CursorPosition), _selection.SelectionLength(_buffer.CursorPosition));
+            _selection.Clear();
+        }
 
         InsertPastedText(text);
     }
 
-    // ── Temp Buffer Flush ─────────────────────────────────────────────
+    // ── Temp Buffer / Paste Handling ─────────────────────────────────
     private void FlushTempInput()
     {
         if (_tempInput.Length == 0)
@@ -206,7 +353,6 @@ internal class UserInputHandler : IInputHandler
 
         string text = _tempInput.ToString();
         _tempInput.Clear();
-
         InsertPastedText(text);
     }
 
@@ -219,343 +365,174 @@ internal class UserInputHandler : IInputHandler
             string name = GenerateName(text);
             Attachments.Add(new Attachment(text, AttachmentType.PlainText, lineCount));
             string placeholder = $"[paste {lineCount} lines: {name}]";
-            _currentInput.Insert(_cursorPosition, placeholder);
-            _cursorPosition += placeholder.Length;
+            _buffer.Insert(placeholder);
         }
         else
         {
-            _currentInput.Insert(_cursorPosition, text);
-            _cursorPosition += text.Length;
+            _buffer.Insert(text);
         }
     }
 
-    // ── Main Processing Loop ──────────────────────────────────────────
-    public string? ProcessInput()
+    // ── Undo ────────────────────────────────────────────────────────
+    private void Snapshot()
     {
-        string? submitted = null;
-
-        while (Console.KeyAvailable)
+        if (_undoStack.Count >= MaxUndoDepth)
         {
-            var key = Console.ReadKey(intercept: true);
-            bool ctrl = key.Modifiers.HasFlag(ConsoleModifiers.Control);
-            bool shift = key.Modifiers.HasFlag(ConsoleModifiers.Shift);
-            bool alt = key.Modifiers.HasFlag(ConsoleModifiers.Alt);
-
-            // ── Submit (Enter without Shift/queued keys) ──────────────
-            if (key.Key == ConsoleKey.Enter && !shift && !ctrl && !alt)
-            {
-                if (Console.KeyAvailable)
-                {
-                    _tempInput.Append('\n');
-                    continue;
-                }
-
-                if (_tempInput.Length == 0 && _currentInput.Length > 0)
-                {
-                    submitted = _currentInput.ToString();
-                    ResetState();
-                    break;
-                }
-
-                // No text to submit — add a newline
-                _tempInput.Append('\n');
-                continue;
-            }
-
-            // ── Enter with Shift or modifiers → newline ──────────────
-            if (key.Key == ConsoleKey.Enter)
-            {
-                _tempInput.Append('\n');
-                continue;
-            }
-
-            // ── Quit (Ctrl+D) ─────────────────────────────────────────
-            if (key.Key is ConsoleKey.D && ctrl)
-            {
-                QuitRequested = true;
-                return null;
-            }
-
-            // ── Copy (Ctrl+C) ─────────────────────────────────────────
-            if (key.Key is ConsoleKey.C && ctrl && !shift)
-            {
-                CopyToClipboard();
-                continue;
-            }
-
-            // ── Cut (Ctrl+X) ──────────────────────────────────────────
-            if (key.Key is ConsoleKey.X && ctrl)
-            {
-                Snapshot();
-                CutToClipboard();
-                continue;
-            }
-
-            // ── Paste (Ctrl+V) ────────────────────────────────────────
-            if (key.Key is ConsoleKey.V && ctrl)
-            {
-                Snapshot();
-                PasteFromClipboard();
-                continue;
-            }
-
-            // ── Undo (Ctrl+Z) ─────────────────────────────────────────
-            if (key.Key is ConsoleKey.Z && ctrl)
-            {
-                Undo();
-                continue;
-            }
-
-            // ── Escape (clear all) ────────────────────────────────────
-            if (key.Key == ConsoleKey.Escape)
-            {
-                ResetState();
-                continue;
-            }
-
-            // ── Backspace ─────────────────────────────────────────────
-            if (key.Key == ConsoleKey.Backspace)
-            {
-                if (!HasSelection && _cursorPosition == 0)
-                    continue; // nothing to delete
-                Snapshot();
-                HandleBackspace();
-                continue;
-            }
-
-            // ── Delete ────────────────────────────────────────────────
-            if (key.Key == ConsoleKey.Delete && !ctrl)
-            {
-                if (HasSelection || _cursorPosition < _currentInput.Length)
-                {
-                    Snapshot();
-                    HandleDelete();
-                }
-                continue;
-            }
-
-            // ── Navigation (arrow keys, Home, End) ────────────────────
-            if (!ctrl && !alt)
-            {
-                if (key.Key == ConsoleKey.UpArrow)
-                {
-                    MoveCursorUp(shift);
-                    continue;
-                }
-                if (key.Key == ConsoleKey.DownArrow)
-                {
-                    MoveCursorDown(shift);
-                    continue;
-                }
-                if (key.Key == ConsoleKey.LeftArrow)
-                {
-                    _stickyColumn = -1;
-                    MoveCursorLeft(shift);
-                    continue;
-                }
-                if (key.Key == ConsoleKey.RightArrow)
-                {
-                    _stickyColumn = -1;
-                    MoveCursorRight(shift);
-                    continue;
-                }
-                if (key.Key == ConsoleKey.Home)
-                {
-                    _stickyColumn = -1;
-                    MoveCursorHome(shift);
-                    continue;
-                }
-                if (key.Key == ConsoleKey.End)
-                {
-                    _stickyColumn = -1;
-                    MoveCursorEnd(shift);
-                    continue;
-                }
-            }
-
-            // ── Ctrl+←/→ Word Jump ────────────────────────────────────
-            if (ctrl && !alt)
-            {
-                if (key.Key == ConsoleKey.LeftArrow)
-                {
-                    _stickyColumn = -1;
-                    MoveCursorWordLeft(shift);
-                    continue;
-                }
-                if (key.Key == ConsoleKey.RightArrow)
-                {
-                    _stickyColumn = -1;
-                    MoveCursorWordRight(shift);
-                    continue;
-                }
-            }
-
-            // ── Regular character (printable) ─────────────────────────
-            if (key.KeyChar != '\0' && !char.IsControl(key.KeyChar))
-            {
-                // If there's an active selection, capture the snapshot
-                // and delete it before inserting characters
-                if (HasSelection)
-                {
-                    Snapshot();
-                    DeleteSelection();
-                }
-                else
-                {
-                    Snapshot();
-                }
-
-                // Handle single insert with cursor advancement
-                // vs. buffering for large pastes
-                if (_cursorPosition < _currentInput.Length
-                    || _currentInput.Length == 0)
-                {
-                    _currentInput.Insert(_cursorPosition, key.KeyChar);
-                    _cursorPosition++;
-                }
-                else
-                {
-                    _tempInput.Append(key.KeyChar);
-                }
-                continue;
-            }
-
-            // ── Ignored keys fall through to tempInput ────────────────
-            if (key.KeyChar != '\0')
-                _tempInput.Append(key.KeyChar);
+            var items = _undoStack.ToArray();
+            _undoStack.Clear();
+            for (int i = items.Length - (MaxUndoDepth - 1); i < items.Length; i++)
+                _undoStack.Push(items[i]);
         }
 
-        // Flush buffered input
-        if (_tempInput.Length > 0)
-        {
-            Snapshot();
-            FlushTempInput();
-        }
-
-        return submitted;
+        _undoStack.Push((_buffer.CurrentInput, _buffer.CursorPosition, _selection.GetAnchor()));
     }
 
-    // ── Cursor Movement Helpers ───────────────────────────────────────
+    private void Undo()
+    {
+        if (_undoStack.Count == 0)
+            return;
+
+        var (text, cursor, selection) = _undoStack.Pop();
+        _buffer.SetContent(text, cursor);
+
+        if (selection.HasValue)
+            _selection.ForMovement(shift: true, cursor); // re-anchor
+        else
+            _selection.Clear();
+    }
+
+    // ── Cursor Movement Helpers ─────────────────────────────────────
     private void MoveCursorLeft(bool shift)
     {
-        if (_cursorPosition <= 0)
+        if (_buffer.CursorPosition <= 0)
         {
-            if (!shift) _selectionAnchor = null;
+            _selection.ForMovement(shift, _buffer.CursorPosition);
             return;
         }
 
-        if (!shift)
-            _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue)
-            _selectionAnchor = _cursorPosition;
-
-        _cursorPosition--;
+        _selection.ForMovement(shift, _buffer.CursorPosition);
+        _buffer.MoveTo(_buffer.CursorPosition - 1);
 
         // When selecting with Shift, skip newline characters so the
         // first selected character is visible content, not a structural
         // line break.
         if (shift)
         {
-            while (_cursorPosition > 0 && _currentInput[_cursorPosition] == '\n')
-                _cursorPosition--;
+            while (_buffer.CursorPosition > 0 && _buffer[_buffer.CursorPosition] == '\n')
+                _buffer.MoveTo(_buffer.CursorPosition - 1);
         }
     }
 
     private void MoveCursorRight(bool shift)
     {
-        if (_cursorPosition >= _currentInput.Length)
+        if (_buffer.CursorPosition >= _buffer.Length)
         {
-            if (!shift) _selectionAnchor = null;
+            if (!shift) _selection.Clear();
             return;
         }
 
-        int originalPos = _cursorPosition;
-        _cursorPosition++;
+        int originalPos = _buffer.CursorPosition;
+        _buffer.MoveTo(_buffer.CursorPosition + 1);
 
         // When selecting with Shift, skip newline characters so the
         // first selected character is visible content, not a structural
         // line break.
         if (shift)
         {
-            while (_cursorPosition < _currentInput.Length && _currentInput[_cursorPosition] == '\n')
-                _cursorPosition++;
-        }
+            while (_buffer.CursorPosition < _buffer.Length && _buffer[_buffer.CursorPosition] == '\n')
+                _buffer.MoveTo(_buffer.CursorPosition + 1);
 
-        if (!shift)
-            _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue)
+            // Anchor at the last visible character before the newline
+            if (!_selection.HasAnchor)
+            {
+                int anchor = originalPos;
+                while (anchor > 0 && _buffer[anchor - 1] == '\n')
+                    anchor--;
+                _selection.SetAnchor(anchor);
+            }
+        }
+        else
         {
-            // If the cursor was sitting on a newline, don't anchor there —
-            // find the last visible character before it so the selection
-            // starts with visible content.
-            int anchor = originalPos;
-            while (anchor > 0 && _currentInput[anchor - 1] == '\n')
-                anchor--;
-            _selectionAnchor = anchor;
+            _selection.Clear();
         }
     }
 
     private void MoveCursorHome(bool shift)
     {
-        string input = _currentInput.ToString();
-        int lineStart = _cursorPosition > 0
-            ? input.LastIndexOf('\n', _cursorPosition - 1) + 1
+        string input = _buffer.CurrentInput;
+        int cursor = _buffer.CursorPosition;
+        int lineStart = cursor > 0
+            ? input.LastIndexOf('\n', cursor - 1) + 1
             : 0;
 
-        if (lineStart != _cursorPosition)
+        if (lineStart != cursor)
         {
-            // At line start → move there
-            if (!shift)
-                _selectionAnchor = null;
-            else if (!_selectionAnchor.HasValue)
-                _selectionAnchor = _cursorPosition;
-            _cursorPosition = lineStart;
+            _selection.ForMovement(shift, cursor);
+            _buffer.MoveTo(lineStart);
             return;
         }
 
-        // Already at line start — act like Left arrow.
+        // Already at line start — act like Left arrow
         MoveCursorLeft(shift);
     }
 
     private void MoveCursorEnd(bool shift)
     {
-        string input = _currentInput.ToString();
-        int nextNewline = input.IndexOf('\n', _cursorPosition);
-        int lineEnd = nextNewline >= 0 ? nextNewline : _currentInput.Length;
+        string input = _buffer.CurrentInput;
+        int cursor = _buffer.CursorPosition;
+        int nextNewline = input.IndexOf('\n', cursor);
+        int lineEnd = nextNewline >= 0 ? nextNewline : _buffer.Length;
 
-        if (lineEnd != _cursorPosition)
+        if (lineEnd != cursor)
         {
-            // At line end → move there
-            if (!shift)
-                _selectionAnchor = null;
-            else if (!_selectionAnchor.HasValue)
-                _selectionAnchor = _cursorPosition;
-            _cursorPosition = lineEnd;
+            _selection.ForMovement(shift, cursor);
+            _buffer.MoveTo(lineEnd);
             return;
         }
 
-        // Already at line end — act like Right arrow.
+        // Already at line end — act like Right arrow
         MoveCursorRight(shift);
     }
 
-    // ── Vertical Movement (↑/↓) ───────────────────────────────────────
+    // ── Vertical Movement (↑/↓) ─────────────────────────────────────
+    private int GetEffectiveWidth()
+    {
+        int effectiveMargin = Math.Max(10, RightMargin);
+        return Math.Max(1, Math.Min(effectiveMargin, Console.WindowWidth));
+    }
+
+    private (int visLine, int visCol) GetVisualPosition(string input, List<string> visualLines, List<int> offsets)
+    {
+        int cursor = _buffer.CursorPosition;
+        for (int i = visualLines.Count - 1; i >= 0; i--)
+        {
+            if (offsets[i] <= cursor)
+            {
+                int col = cursor - offsets[i];
+                if (col <= visualLines[i].Length)
+                    return (i, col);
+            }
+        }
+        return (visualLines.Count - 1, visualLines[^1].Length);
+    }
 
     private void MoveCursorUp(bool shift)
     {
-        if (_cursorPosition <= 0)
+        int cursor = _buffer.CursorPosition;
+        if (cursor <= 0)
         {
-            if (!shift) _selectionAnchor = null;
+            _selection.ForMovement(shift, cursor);
             return;
         }
 
-        string input = _currentInput.ToString();
+        string input = _buffer.CurrentInput;
         int width = GetEffectiveWidth();
         var (visualLines, offsets) = ConsoleRenderer.GetVisualLineData(input, width);
         var (visLine, visCol) = GetVisualPosition(input, visualLines, offsets);
 
         if (visLine == 0)
         {
-            if (!shift) _selectionAnchor = null;
+            _selection.ForMovement(shift, cursor);
             return;
         }
 
@@ -566,32 +543,28 @@ internal class UserInputHandler : IInputHandler
         int clampedCol = Math.Min(targetCol, prevLineText.Length);
         int targetPos = offsets[visLine - 1] + clampedCol;
 
-        if (!shift)
-            _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue)
-            _selectionAnchor = _cursorPosition;
-
-        _cursorPosition = targetPos;
+        _selection.ForMovement(shift, cursor);
+        _buffer.MoveTo(targetPos);
     }
 
     private void MoveCursorDown(bool shift)
     {
-        if (_cursorPosition >= _currentInput.Length)
+        int cursor = _buffer.CursorPosition;
+        if (cursor >= _buffer.Length)
         {
-            if (!shift) _selectionAnchor = null;
+            _selection.ForMovement(shift, cursor);
             return;
         }
 
-        string input = _currentInput.ToString();
+        string input = _buffer.CurrentInput;
         int width = GetEffectiveWidth();
         var (visualLines, offsets) = ConsoleRenderer.GetVisualLineData(input, width);
         var (visLine, visCol) = GetVisualPosition(input, visualLines, offsets);
 
         if (visLine >= visualLines.Count - 1)
         {
-            // Move to end of last visual line if already on it
-            if (!shift) _selectionAnchor = null;
-            _cursorPosition = _currentInput.Length;
+            _selection.ForMovement(shift, cursor);
+            _buffer.MoveTo(_buffer.Length);
             return;
         }
 
@@ -602,55 +575,32 @@ internal class UserInputHandler : IInputHandler
         int clampedCol = Math.Min(targetCol, nextLineText.Length);
         int targetPos = offsets[visLine + 1] + clampedCol;
 
-        if (!shift)
-            _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue)
-            _selectionAnchor = _cursorPosition;
-
-        _cursorPosition = targetPos;
+        _selection.ForMovement(shift, cursor);
+        _buffer.MoveTo(targetPos);
     }
 
-    // ── Word-Boundary Movement (Ctrl+←/→) ────────────────────────────
-
+    // ── Word-Boundary Movement (Ctrl+←/→) ──────────────────────────
     private void MoveCursorWordLeft(bool shift)
     {
-        if (_cursorPosition <= 0)
-        {
-            if (!shift) _selectionAnchor = null;
-            return;
-        }
+        _selection.ForMovement(shift, _buffer.CursorPosition);
 
-        if (!shift)
-            _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue)
-            _selectionAnchor = _cursorPosition;
-
-        _cursorPosition = FindPreviousWordStart(_currentInput.ToString(), _cursorPosition);
+        if (_buffer.CursorPosition > 0)
+            _buffer.MoveTo(FindPreviousWordStart(_buffer.CurrentInput, _buffer.CursorPosition));
     }
 
     private void MoveCursorWordRight(bool shift)
     {
-        if (_cursorPosition >= _currentInput.Length)
-        {
-            if (!shift) _selectionAnchor = null;
-            return;
-        }
+        _selection.ForMovement(shift, _buffer.CursorPosition);
 
-        if (!shift)
-            _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue)
-            _selectionAnchor = _cursorPosition;
-
-        _cursorPosition = FindNextWordStart(_currentInput.ToString(), _cursorPosition);
+        if (_buffer.CursorPosition < _buffer.Length)
+            _buffer.MoveTo(FindNextWordStart(_buffer.CurrentInput, _buffer.CursorPosition));
     }
 
     private static int FindPreviousWordStart(string input, int pos)
     {
         if (pos <= 0) return 0;
         int i = pos - 1;
-        // Skip any trailing whitespace
         while (i >= 0 && char.IsWhiteSpace(input[i])) i--;
-        // Skip the word
         while (i >= 0 && !char.IsWhiteSpace(input[i])) i--;
         return i + 1;
     }
@@ -660,14 +610,12 @@ internal class UserInputHandler : IInputHandler
         int len = input.Length;
         if (pos >= len) return len;
         int i = pos;
-        // Skip current word
         while (i < len && !char.IsWhiteSpace(input[i])) i++;
-        // Skip whitespace to find the next word
         while (i < len && char.IsWhiteSpace(input[i])) i++;
         return i;
     }
 
-    // ── Reset ─────────────────────────────────────────────────────────
+    // ── Reset ───────────────────────────────────────────────────────
     public void Reset()
     {
         ResetState();
@@ -676,10 +624,9 @@ internal class UserInputHandler : IInputHandler
 
     private void ResetState()
     {
-        _currentInput.Clear();
+        _buffer.Clear();
         _tempInput.Clear();
-        _cursorPosition = 0;
-        _selectionAnchor = null;
+        _selection.Reset();
         _stickyColumn = -1;
         _undoStack.Clear();
     }

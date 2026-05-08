@@ -52,26 +52,16 @@ public class ConsoleAppHost : IDisposable
     }
 
     /// <summary>Queue a markup message to be displayed.</summary>
-    public void AddMessage(string markup)
-    {
-        _messages.Enqueue(markup);
-    }
+    public void AddMessage(string markup) => _messages.Enqueue(markup);
 
     /// <summary>Register a command that can be triggered with /command-name.</summary>
-    /// <summary>Register a command that can be triggered with /command-name.</summary>
-    public void AddCommand(Command command)
-    {
-        _commands[command.Name] = command;
-    }
+    public void AddCommand(Command command) => _commands[command.Name] = command;
 
     /// <summary>Run the main input/render loop until cancelled or Ctrl+D is pressed.</summary>
     public async Task Run(CancellationToken cancellationToken = default)
     {
-        // Enable bracketed paste mode
-        Console.Write("\u001b[?2004h");
-        // Treat Ctrl+C as ordinary input so we can use it for Copy
-        Console.TreatControlCAsInput = true;
-
+        Console.Write("\u001b[?2004h");      // Enable bracketed paste mode
+        Console.TreatControlCAsInput = true; // Ctrl+C is used for Copy
         Console.CursorVisible = false;
 
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
@@ -88,78 +78,34 @@ public class ConsoleAppHost : IDisposable
         }
     }
 
+    // ── Tracks render state between loop iterations ───────────────────
+    private sealed record RenderSnapshot(
+        string? LastInput,
+        int LastCursor,
+        bool LastHasSelection,
+        int LastInputLineCount,
+        int LastWindowWidth
+    );
+
     private async Task RunLoop(CancellationToken token)
     {
-        string? lastRenderedInput = null;
-        int previousInputLineCount = 0;
-        int lastCursorPosition = 0;
-        bool lastHasSelection = false;
-        int lastWindowWidth = Console.WindowWidth;
+        var state = new RenderSnapshot(null, 0, false, 0, Console.WindowWidth);
 
         while (!token.IsCancellationRequested)
         {
-            // ── Snapshot current state ───────────────────────────────
-            IReadOnlyList<string> hints = _commandPalette.GetHints(_inputHandler.CurrentInput);
-            int blockOffset = _renderer.GetBlockOffset(_inputHandler.CurrentInput);
-            int currentInputLineCount = _renderer.GetInputLineCount(_inputHandler.CurrentInput);
-            int currentCursor = _inputHandler.CursorPosition;
-            bool currentHasSelection = _inputHandler.HasSelection;
-            _inputHandler.TryGetSelection(out int currentSelStart, out int currentSelLength);
+            string input = _inputHandler.CurrentInput;
+            int cursor = _inputHandler.CursorPosition;
+            bool hasSelection = _inputHandler.HasSelection;
+            _inputHandler.TryGetSelection(out int selStart, out int selLength);
+            int windowWidth = Console.WindowWidth;
             int margin = _inputHandler.RightMargin;
 
-            bool inputChanged = lastRenderedInput != _inputHandler.CurrentInput;
-            bool cursorChanged = lastCursorPosition != currentCursor ||
-                                  lastHasSelection != currentHasSelection;
-            bool terminalResized = lastWindowWidth != Console.WindowWidth;
-            lastWindowWidth = Console.WindowWidth;
-
-            // ── Always process pending messages first ────────────────
-            bool rendered = false;
-            if (_messages.TryDequeue(out var message))
+            if (TryDequeueAndRender(state, input, cursor, hasSelection, selStart, selLength, margin)
+                || TryUpdateRender(state, input, cursor, hasSelection, selStart, selLength, margin,
+                    windowWidth))
             {
-                if (lastRenderedInput is not null)
-                    _renderer.ClearInputBlockForReRender(lastRenderedInput, _inputHandler.CurrentInput);
-                else
-                    _renderer.ClearInputLine();
-
-                RenderMessage(message);
-                RenderFullInputBlock(hints, currentCursor, currentHasSelection,
-                    currentSelStart, currentSelLength, margin);
-                lastRenderedInput = _inputHandler.CurrentInput;
-                previousInputLineCount = currentInputLineCount;
-                rendered = true;
-            }
-            else if (inputChanged || cursorChanged || terminalResized)
-            {
-                // Input text or cursor/selection changed — update display
-                if (inputChanged && !terminalResized && previousInputLineCount == 1 && currentInputLineCount == 1)
-                {
-                    // Single-line → single-line: optimized overwrite (not on resize)
-                    _renderer.OverwriteInputBlock(
-                        _inputHandler.CurrentInput, hints, blockOffset,
-                        currentCursor, currentHasSelection,
-                        currentSelStart, currentSelLength, margin);
-                }
-                else
-                {
-                    // Multi-line or structural change: full re-render
-                    // Use ClearInputBlockForReRender when line count may have grown
-                    // (e.g. Shift+Enter adds a trailing empty line), so stale
-                    // characters below the old block are erased too.
-                    if (lastRenderedInput is not null)
-                        _renderer.ClearInputBlockForReRender(lastRenderedInput, _inputHandler.CurrentInput);
-                    RenderFullInputBlock(hints, currentCursor, currentHasSelection,
-                        currentSelStart, currentSelLength, margin);
-                }
-                lastRenderedInput = _inputHandler.CurrentInput;
-                previousInputLineCount = currentInputLineCount;
-                rendered = true;
-            }
-
-            if (rendered)
-            {
-                lastCursorPosition = currentCursor;
-                lastHasSelection = currentHasSelection;
+                state = new RenderSnapshot(input, cursor, hasSelection,
+                    _renderer.GetInputLineCount(input), windowWidth);
             }
 
             if (_inputHandler.QuitRequested)
@@ -170,44 +116,85 @@ public class ConsoleAppHost : IDisposable
 
             if (_inputHandler.ProcessInput() is { } submittedInput)
             {
-                _renderer.ClearInputBlock(lastRenderedInput);
+                _renderer.ClearInputBlock(state.LastInput);
 
                 bool isCommand = IsValidCommand(submittedInput);
                 var inputType = isCommand ? InputType.Command : InputType.PlainText;
-                List<Attachment> attachments = _inputHandler.Attachments;
 
-                UserInputSubmitted?.Invoke(submittedInput, inputType, attachments);
+                UserInputSubmitted?.Invoke(submittedInput, inputType, _inputHandler.Attachments);
 
                 if (isCommand)
-                {
                     ExecuteCommand(submittedInput);
-                }
 
                 _inputHandler.Reset();
-                lastRenderedInput = null;
-                previousInputLineCount = 0;
-                lastCursorPosition = 0;
-                lastHasSelection = false;
+                state = new RenderSnapshot(null, 0, false, 0, windowWidth);
             }
 
             await Task.Delay(10, token);
         }
     }
 
-    private void RenderFullInputBlock(
-        IReadOnlyList<string> hints,
-        int cursor, bool hasSelection, int selStart, int selLength,
+    /// <summary>Renders queued messages and re-renders the input block. Returns true if anything was rendered.</summary>
+    private bool TryDequeueAndRender(
+        RenderSnapshot state,
+        string input, int cursor, bool hasSelection, int selStart, int selLength,
         int margin)
     {
-        _renderer.RenderInputBlock(
-            _inputHandler.CurrentInput, hints,
-            cursor, hasSelection, selStart, selLength, margin);
+        if (!_messages.TryDequeue(out var message))
+            return false;
+
+        if (state.LastInput is not null)
+            _renderer.ClearInputBlockForReRender(state.LastInput, input);
+        else
+            _renderer.ClearInputLine();
+
+        _renderer.RenderMessage(message);
+        RenderFullBlock(input, cursor, hasSelection, selStart, selLength, margin);
+        return true;
     }
 
-    private void RenderMessage(string markup)
+    /// <summary>Renders input/cursor changes or handles terminal resize. Returns true if anything changed.</summary>
+    private bool TryUpdateRender(
+        RenderSnapshot state,
+        string input, int cursor, bool hasSelection, int selStart, int selLength,
+        int margin, int windowWidth)
     {
-        _renderer.RenderMessage(markup);
+        bool terminalResized = state.LastWindowWidth != windowWidth;
+        bool inputChanged = state.LastInput != input;
+        bool cursorChanged = state.LastCursor != cursor || state.LastHasSelection != hasSelection;
+
+        if (!inputChanged && !cursorChanged && !terminalResized)
+            return false;
+
+        // Single-line → single-line: use faster overwrite (not on resize)
+        if (inputChanged && !terminalResized
+            && state.LastInputLineCount == 1
+            && _renderer.GetInputLineCount(input) == 1)
+        {
+            int blockOffset = _renderer.GetBlockOffset(input);
+            _renderer.OverwriteInputBlock(
+                input, GetCommandHints(input), blockOffset,
+                cursor, hasSelection, selStart, selLength, margin);
+        }
+        else
+        {
+            if (state.LastInput is not null)
+                _renderer.ClearInputBlockForReRender(state.LastInput, input);
+            RenderFullBlock(input, cursor, hasSelection, selStart, selLength, margin);
+        }
+
+        return true;
     }
+
+    private void RenderFullBlock(
+        string input, int cursor, bool hasSelection,
+        int selStart, int selLength, int margin)
+    {
+        _renderer.RenderInputBlock(input, GetCommandHints(input), cursor,
+            hasSelection, selStart, selLength, margin);
+    }
+
+    private IReadOnlyList<string> GetCommandHints(string input) => _commandPalette.GetHints(input);
 
     /// <summary>Signal the host to stop after the current loop iteration.</summary>
     public void Stop() => _cts.Cancel();

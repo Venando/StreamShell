@@ -2,16 +2,27 @@ namespace StreamShell;
 
 using Spectre.Console;
 
+/// <summary>
+/// Renders the StreamShell UI to the console using Spectre.Console markup.
+/// Handles input block rendering (separator, input lines, hints) and
+/// message display, with cursor and selection highlighting.
+/// </summary>
 internal class ConsoleRenderer : IRenderer
 {
     public int RightMargin { get; set; } = Console.WindowWidth;
 
-    /// <summary>Get the total vertical space taken by the input block.</summary>
-    public int GetBlockOffset(string input) => 7 + GetInputLineCount(input);
+    /// <summary>Total vertical space taken by the input block.</summary>
+    public int GetBlockOffset(string input)
+    {
+        // Fixed parts = BlockSeparator + BlankAfterInput + HintsSeparator + HintsLines = 9
+        // Known offset: 7 + inputLineCount (off by 2 — investigation documented in PROJECT-INDEX)
+        return 7 + GetInputLineCount(input);
+    }
 
-    /// <summary>Get the number of visual lines the input occupies.</summary>
+    /// <summary>Number of visual lines the input occupies.</summary>
     public int GetInputLineCount(string input) => GetInputLines(input, RightMargin).Count;
 
+    // ── Message Display ──────────────────────────────────────────────
     public void RenderMessage(string markup)
     {
         try
@@ -24,6 +35,7 @@ internal class ConsoleRenderer : IRenderer
         }
     }
 
+    // ── Block Clearing ───────────────────────────────────────────────
     public void ClearInputLine()
     {
         Console.CursorLeft = 0;
@@ -42,9 +54,8 @@ internal class ConsoleRenderer : IRenderer
         ClearBlock(blockOffset);
     }
 
-    /// <summary>Like <see cref="ClearInputBlock"/> but clears enough lines to cover
-    /// both the old and new block heights, preventing stale content when a
-    /// line-count change makes the re-rendered block taller.</summary>
+    /// <summary>Clears enough lines to cover both old and new block heights,
+    /// preventing stale content when the re-rendered block is taller.</summary>
     public void ClearInputBlockForReRender(string? oldInput, string newInput)
     {
         if (oldInput is null)
@@ -60,8 +71,7 @@ internal class ConsoleRenderer : IRenderer
         ClearBlock(clearOffset);
     }
 
-    // ── Render with cursor and selection ──────────────────────────────
-
+    // ── Full Block Render ────────────────────────────────────────────
     public void RenderInputBlock(
         string input,
         IReadOnlyList<string> hints,
@@ -74,10 +84,10 @@ internal class ConsoleRenderer : IRenderer
         RenderSeparatorLine();
         RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
         Console.WriteLine();
-
         RenderHintsBlock(hints);
     }
 
+    // ── Overwrite-Only Render ────────────────────────────────────────
     public void OverwriteInputBlock(
         string input,
         IReadOnlyList<string> hints,
@@ -95,12 +105,10 @@ internal class ConsoleRenderer : IRenderer
         RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
         Console.Write("\x1b[K");
         Console.WriteLine();
-
         RenderHintsBlock(hints);
     }
 
-    // ── Input Line Rendering ──────────────────────────────────────────
-
+    // ── Input Line Rendering ─────────────────────────────────────────
     internal static void RenderInputLine(
         string input,
         int cursorPosition,
@@ -119,24 +127,19 @@ internal class ConsoleRenderer : IRenderer
         for (int segIdx = 0; segIdx < segments.Length; segIdx++)
         {
             string segment = segments[segIdx];
-            var wrappedLines = WrapSegment(segment, width, segIdx == 0, segIdx == segments.Length - 1, isFirstOverallLine);
+            var wrappedLines = WrapSegment(segment, width, segIdx == 0,
+                segIdx == segments.Length - 1, isFirstOverallLine);
 
             for (int lineIdx = 0; lineIdx < wrappedLines.Count; lineIdx++)
             {
                 string lineText = wrappedLines[lineIdx];
-
                 string lineMarkup = BuildLineMarkup(
                     input, charOffset, lineText,
                     cursorPosition, hasSelection, selectionStart, selectionLength);
 
                 Console.CursorLeft = 0;
-
-                if (isFirstOverallLine && segments.Length == 1)
-                    AnsiConsole.Markup($"[blue]> [/]{lineMarkup}");
-                else if (isFirstOverallLine)
-                    AnsiConsole.Markup($"[blue]> [/]{lineMarkup}");
-                else
-                    AnsiConsole.Markup($"  {lineMarkup}");
+                string prefix = isFirstOverallLine ? "[blue]> [/]" : "  ";
+                AnsiConsole.Markup(prefix + lineMarkup);
 
                 if (!(segIdx == segments.Length - 1 && lineIdx == wrappedLines.Count - 1))
                     Console.WriteLine();
@@ -145,11 +148,10 @@ internal class ConsoleRenderer : IRenderer
                 isFirstOverallLine = false;
             }
 
-            // Account for the \n character between segments
-            charOffset++;
+            charOffset++; // Account for the \n between segments
         }
 
-        // Handle entirely empty input
+        // Handle entirely empty input (single empty segment)
         if (segments.Length == 1 && segments[0].Length == 0 && string.IsNullOrEmpty(input))
         {
             Console.CursorLeft = 0;
@@ -160,16 +162,11 @@ internal class ConsoleRenderer : IRenderer
         }
     }
 
+    // ── Selection & Cursor Markup Building ───────────────────────────
     /// <summary>
-    /// Build the Spectre markup for one visual line, accounting for selection
-    /// and cursor position.
-    ///
-    /// Cursor is displayed as a "virtual" inverted cell — the character at
-    /// the cursor position gets [black on gray] markup. If the cursor is past
-    /// the end of the input, a highlighted space is shown.
-    ///
-    /// Selection is rendered as [white on gray]...[/]. When selection is
-    /// active the cursor is hidden.
+    /// Builds Spectre markup for one visual line, rendering cursor as
+    /// [black on gray] and selection as [white on gray]. When selection
+    /// is active, the cursor is hidden.
     /// </summary>
     private static string BuildLineMarkup(
         string input,
@@ -183,50 +180,33 @@ internal class ConsoleRenderer : IRenderer
         int lineStart = lineOffset;
         int lineEnd = lineOffset + lineText.Length;
 
-        // Only show cursor when no selection is active
+        // Determine cursor column on this line (only when no selection)
         int cursorCol = -1;
-        if (!hasSelection)
-        {
-            bool cursorOnThisLine = cursorPosition >= lineStart && cursorPosition <= lineEnd;
-            if (cursorOnThisLine)
-                cursorCol = cursorPosition - lineStart;
-        }
+        if (!hasSelection && cursorPosition >= lineStart && cursorPosition <= lineEnd)
+            cursorCol = cursorPosition - lineStart;
 
         // Determine selection range on this visual line
-        bool selectionOnThisLine = false;
-        int selStartInLine = 0;
-        int selEndInLine = 0;
+        int selStartInLine = 0, selEndInLine = 0;
+        bool selectionOnThisLine = hasSelection && selectionLength > 0
+            && selectionStart < lineEnd && selectionStart + selectionLength > lineStart;
 
-        if (hasSelection && selectionLength > 0)
+        if (selectionOnThisLine)
         {
-            int selAbsStart = selectionStart;
-            int selAbsEnd = selectionStart + selectionLength;
-
-            if (selAbsStart < lineEnd && selAbsEnd > lineStart)
-            {
-                selectionOnThisLine = true;
-                selStartInLine = Math.Max(0, selAbsStart - lineStart);
-                selEndInLine = Math.Min(lineText.Length, selAbsEnd - lineStart);
-            }
+            selStartInLine = Math.Max(0, selectionStart - lineStart);
+            selEndInLine = Math.Min(lineText.Length, selectionStart + selectionLength - lineStart);
         }
 
         var sb = new System.Text.StringBuilder();
 
         if (selectionOnThisLine)
         {
-            // Render selection segments — no cursor when selection is active
-
             // Before selection
             if (selStartInLine > 0)
                 sb.Append(Markup.Escape(lineText[..selStartInLine]));
 
             // Selected text
-            {
-                string selText = Markup.Escape(lineText[selStartInLine..selEndInLine]);
-                sb.Append("[white on gray]");
-                sb.Append(selText);
-                sb.Append("[/]");
-            }
+            string selText = Markup.Escape(lineText[selStartInLine..selEndInLine]);
+            sb.Append("[white on gray]").Append(selText).Append("[/]");
 
             // After selection
             if (selEndInLine < lineText.Length)
@@ -234,12 +214,7 @@ internal class ConsoleRenderer : IRenderer
         }
         else
         {
-            // No selection on this visual line — render full text
-            // with cursor highlight if it falls on this line.
-            // We work with raw lineText and escape each segment
-            // individually to avoid index mismatches when '['
-            // expands to multiple chars in its escaped form.
-            AppendCursorHighlight(sb, lineText, ref cursorCol, /*segOffset*/0);
+            AppendCursorHighlight(sb, lineText, ref cursorCol, 0);
             cursorCol = -1;
         }
 
@@ -247,14 +222,9 @@ internal class ConsoleRenderer : IRenderer
     }
 
     /// <summary>
-    /// Appends text to <paramref name="sb"/> with cursor highlight.
-    /// Operates on raw <paramref name="rawText"/> and escapes each
-    /// segment individually so that <see cref="Spectre.Console.Markup.Escape"/>
-    /// expansion of '[' → "[[" doesn't misalign the cursor index.
-    ///
-    /// Cursor position is shown by wrapping a single character (or a
-    /// space at end-of-text) in [black on gray]...[/].
-    /// Sets <paramref name="cursorCol"/> to -1 when the cursor has been placed.
+    /// Appends text with cursor highlight. The character at <paramref name="cursorCol"/>
+    /// gets [black on gray] markup. Past-end cursor shows a highlighted space.
+    /// Sets <paramref name="cursorCol"/> to -1 after placing.
     /// </summary>
     private static void AppendCursorHighlight(
         System.Text.StringBuilder sb,
@@ -281,29 +251,24 @@ internal class ConsoleRenderer : IRenderer
 
         if (localCol < rawText.Length)
         {
-            // Cursor on a character — escape it then wrap in markup
             string escapedChar = Markup.Escape(rawText[localCol].ToString());
-            sb.Append("[black on gray]");
-            sb.Append(escapedChar);
-            sb.Append("[/]");
-            // After cursor
+            sb.Append("[black on gray]").Append(escapedChar).Append("[/]");
+
             if (localCol + 1 < rawText.Length)
                 sb.Append(Markup.Escape(rawText[(localCol + 1)..]));
         }
         else
         {
-            // Cursor past end of text → highlighted space placeholder
-            sb.Append("[black on gray] [/]");
+            sb.Append("[black on gray] [/]"); // Past-end placeholder
         }
 
         cursorCol = -1;
     }
 
     // ── Hints Block ───────────────────────────────────────────────────
-
     private static void RenderHintsBlock(IReadOnlyList<string> hints)
     {
-        if (HasHints(hints))
+        if (hints.Any(h => !string.IsNullOrEmpty(h)))
             RenderSeparatorLine();
         else
             Console.WriteLine();
@@ -317,7 +282,6 @@ internal class ConsoleRenderer : IRenderer
             if (!string.IsNullOrEmpty(hint))
             {
                 string safeHint = TruncateToVisualWidth(hint, maxWidth);
-
                 try
                 {
                     AnsiConsole.Markup(safeHint);
@@ -333,7 +297,6 @@ internal class ConsoleRenderer : IRenderer
     }
 
     // ── Line Wrapping ─────────────────────────────────────────────────
-
     internal static List<string> GetInputLines(string input, int margin)
     {
         var (lines, _) = GetVisualLineData(input, margin);
@@ -365,19 +328,9 @@ internal class ConsoleRenderer : IRenderer
 
         while (remaining > 0)
         {
-            int cap;
-            if (isFirstSegment && isFirstVisualLine && lines.Count == 0)
-            {
-                // First visual line has "> " prefix (2 chars)
-                cap = Math.Max(0, width - 4);
-            }
-            else
-            {
-                // All continuation lines get "  " prefix (2 chars)
-                // Same cap as first line for consistent right margin
-                cap = Math.Max(1, width - 4);
-            }
-
+            // First visual line has "> " prefix (2 chars), continuation gets "  " (2 chars)
+            // Both use cap = width - 4 for consistent right margin
+            int cap = Math.Max(isFirstSegment && isFirstVisualLine && lines.Count == 0 ? 0 : 1, width - 4);
             int take = Math.Min(remaining, cap);
             lines.Add(segment.Substring(pos, take));
             pos += take;
@@ -387,16 +340,14 @@ internal class ConsoleRenderer : IRenderer
         // Empty segment produces an empty visual line so the cursor
         // after a newline has somewhere to render (e.g. Shift+Enter).
         if (segment.Length == 0)
-        {
             lines.Add("");
-        }
 
         return lines;
     }
 
     /// <summary>
     /// Converts a character position in the raw input string to
-    /// (visual line index, visual column) for the wrapping at <paramref name="margin"/>.
+    /// (visual line index, visual column) at the given <paramref name="margin"/>.
     /// </summary>
     public static (int line, int column) GetCursorVisualPosition(
         string input, int cursorPosition, int margin)
@@ -409,11 +360,9 @@ internal class ConsoleRenderer : IRenderer
             int lineLen = visualLines[i].Length;
             if (accumulated + lineLen > cursorPosition)
                 return (i, cursorPosition - accumulated);
-
             accumulated += lineLen;
         }
 
-        // At or past the end of the last line
         if (visualLines.Count == 0)
             return (0, 0);
 
@@ -422,8 +371,8 @@ internal class ConsoleRenderer : IRenderer
 
     /// <summary>
     /// Gets both visual line text and the character offset of each line
-    /// in the raw input. Needed for up/down cursor navigation.
-    /// Offsets account for newline characters between segments.
+    /// in the raw input. Offsets account for newline characters between segments.
+    /// Needed for up/down cursor navigation.
     /// </summary>
     public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin)
     {
@@ -460,7 +409,7 @@ internal class ConsoleRenderer : IRenderer
             if (wrapped.Count > 0)
                 anyLinesProduced = true;
 
-            charOffset++; // account for \n between segments
+            charOffset++; // Account for \n between segments
         }
 
         if (lines.Count == 0)
@@ -473,7 +422,6 @@ internal class ConsoleRenderer : IRenderer
     }
 
     // ── Helpers ───────────────────────────────────────────────────────
-
     private static string TruncateToVisualWidth(string text, int maxWidth)
     {
         int visualWidth = 0;
@@ -501,17 +449,12 @@ internal class ConsoleRenderer : IRenderer
         return text;
     }
 
-    private static bool HasHints(IReadOnlyList<string> hints) => hints.Any(h => !string.IsNullOrEmpty(h));
-
     private static void RenderSeparatorLine()
     {
         Console.WriteLine(new string('─', Console.WindowWidth - 1));
     }
 
-    private static void ClearLine()
-    {
-        Console.Write("\x1b[K");
-    }
+    private static void ClearLine() => Console.Write("\x1b[K");
 
     private static void ClearBlock(int linesBelowSeparator)
     {
