@@ -88,44 +88,53 @@ internal class ConsoleRenderer
         int margin)
     {
         int effectiveMargin = Math.Max(10, margin);
+        int width = Math.Max(1, Math.Min(effectiveMargin, Console.WindowWidth));
 
-        var lines = GetInputLines(input, effectiveMargin);
-        int absOffset = 0; // character position in raw input where current visual line starts
+        var segments = input.Split('\n');
+        bool isFirstOverallLine = true;
+        int charOffset = 0;
 
-        for (int i = 0; i < lines.Count; i++)
+        for (int segIdx = 0; segIdx < segments.Length; segIdx++)
         {
-            string lineText = lines[i];
-            int lineEnd = absOffset + lineText.Length;
+            string segment = segments[segIdx];
+            var wrappedLines = WrapSegment(segment, width, segIdx == 0, segIdx == segments.Length - 1, isFirstOverallLine);
 
-            // Build the Spectre.Console markup for this visual line
-            string lineMarkup = BuildLineMarkup(
-                input, absOffset, lineText,
-                cursorPosition, hasSelection, selectionStart, selectionLength);
+            for (int lineIdx = 0; lineIdx < wrappedLines.Count; lineIdx++)
+            {
+                string lineText = wrappedLines[lineIdx];
 
-            // Set cursor to column 0
+                string lineMarkup = BuildLineMarkup(
+                    input, charOffset, lineText,
+                    cursorPosition, hasSelection, selectionStart, selectionLength);
+
+                Console.CursorLeft = 0;
+
+                if (isFirstOverallLine && segments.Length == 1)
+                    AnsiConsole.Markup($"[blue]> [/]{lineMarkup}");
+                else if (isFirstOverallLine)
+                    AnsiConsole.Markup($"[blue]> [/]{lineMarkup}");
+                else
+                    AnsiConsole.Markup(lineMarkup);
+
+                if (!(segIdx == segments.Length - 1 && lineIdx == wrappedLines.Count - 1))
+                    Console.WriteLine();
+
+                charOffset += lineText.Length;
+                isFirstOverallLine = false;
+            }
+
+            // Account for the \n character between segments
+            charOffset++;
+        }
+
+        // Handle entirely empty input
+        if (segments.Length == 1 && segments[0].Length == 0 && string.IsNullOrEmpty(input))
+        {
             Console.CursorLeft = 0;
-
-            if (lines.Count == 1)
-            {
-                // Single-line input
-                AnsiConsole.Markup($"[blue]> [/]{lineMarkup}");
-            }
-            else if (i == 0)
-            {
-                // First line of multi-line input
-                AnsiConsole.Markup($"[blue]> [/]{lineMarkup}");
-            }
-            else
-            {
-                // Continuation line (no prompt)
-                Console.Write(lineMarkup);
-            }
-
-            // Move to next visual line
-            if (i < lines.Count - 1)
-                Console.WriteLine();
-
-            absOffset = lineEnd;
+            string lineMarkup = BuildLineMarkup(
+                input, 0, "",
+                cursorPosition, hasSelection, selectionStart, selectionLength);
+            AnsiConsole.Markup($"[blue]> [/]{lineMarkup}");
         }
     }
 
@@ -204,9 +213,11 @@ internal class ConsoleRenderer
         else
         {
             // No selection on this visual line — render full text
-            // with cursor highlight if it falls on this line
-            string escaped = Markup.Escape(lineText);
-            AppendCursorHighlight(sb, escaped, ref cursorCol, /*segOffset*/0);
+            // with cursor highlight if it falls on this line.
+            // We work with raw lineText and escape each segment
+            // individually to avoid index mismatches when '['
+            // expands to multiple chars in its escaped form.
+            AppendCursorHighlight(sb, lineText, ref cursorCol, /*segOffset*/0);
             cursorCol = -1;
         }
 
@@ -214,49 +225,56 @@ internal class ConsoleRenderer
     }
 
     /// <summary>
-    /// Appends escaped text to <paramref name="sb"/>. If the cursor falls
-    /// within this segment, a single character (or space at end) is wrapped
-    /// in [black on gray]...[/] to show the cursor position.
-    /// Sets cursorCol to -1 when the cursor has been placed.
+    /// Appends text to <paramref name="sb"/> with cursor highlight.
+    /// Operates on raw <paramref name="rawText"/> and escapes each
+    /// segment individually so that <see cref="Spectre.Console.Markup.Escape"/>
+    /// expansion of '[' → "[[" doesn't misalign the cursor index.
+    ///
+    /// Cursor position is shown by wrapping a single character (or a
+    /// space at end-of-text) in [black on gray]...[/].
+    /// Sets <paramref name="cursorCol"/> to -1 when the cursor has been placed.
     /// </summary>
     private static void AppendCursorHighlight(
         System.Text.StringBuilder sb,
-        string escapedText,
+        string rawText,
         ref int cursorCol,
         int segmentOffset)
     {
         if (cursorCol < 0)
         {
-            sb.Append(escapedText);
+            sb.Append(Markup.Escape(rawText));
             return;
         }
 
         int localCol = cursorCol - segmentOffset;
-        if (localCol < 0 || localCol > escapedText.Length)
+        if (localCol < 0 || localCol > rawText.Length)
         {
-            sb.Append(escapedText);
+            sb.Append(Markup.Escape(rawText));
             return;
         }
 
-        // Text before cursor
-        sb.Append(escapedText[..localCol]);
+        // Before cursor
+        if (localCol > 0)
+            sb.Append(Markup.Escape(rawText[..localCol]));
 
-        if (localCol < escapedText.Length)
+        if (localCol < rawText.Length)
         {
-            // Highlight the character at cursor position
+            // Cursor on a character — escape it then wrap in markup
+            string escapedChar = Markup.Escape(rawText[localCol].ToString());
             sb.Append("[black on gray]");
-            sb.Append(escapedText[localCol]);
+            sb.Append(escapedChar);
             sb.Append("[/]");
-            // Remaining text after cursor char
-            sb.Append(escapedText[(localCol + 1)..]);
+            // After cursor
+            if (localCol + 1 < rawText.Length)
+                sb.Append(Markup.Escape(rawText[(localCol + 1)..]));
         }
         else
         {
-            // Cursor past end → highlighted space placeholder
+            // Cursor past end of text → highlighted space placeholder
             sb.Append("[black on gray] [/]");
         }
 
-        cursorCol = -1; // cursor has been placed
+        cursorCol = -1;
     }
 
     // ── Hints Block ───────────────────────────────────────────────────
@@ -303,53 +321,80 @@ internal class ConsoleRenderer
             return new List<string> { "" };
 
         var segments = input.Split('\n');
+        bool anyLinesProduced = false;
 
         for (int segIndex = 0; segIndex < segments.Length; segIndex++)
         {
             string segment = segments[segIndex];
             bool isFirstSegment = segIndex == 0;
             bool isLastSegment = segIndex == segments.Length - 1;
-            bool singleSegment = segments.Length == 1;
 
-            if (singleSegment && segment.Length + 4 < width)
+            var wrapped = WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced);
+            lines.AddRange(wrapped);
+
+            if (wrapped.Count > 0)
+                anyLinesProduced = true;
+        }
+
+        // Ensure empty input always has at least one line
+        if (lines.Count == 0)
+            lines.Add("");
+
+        return lines;
+    }
+
+    /// <summary>
+    /// Wraps a single segment (no newline characters) into visual lines
+    /// at the given terminal <paramref name="width"/>.
+    /// </summary>
+    private static List<string> WrapSegment(
+        string segment,
+        int width,
+        bool isFirstSegment,
+        bool isLastSegment,
+        bool isFirstVisualLine)
+    {
+        var lines = new List<string>();
+
+        // Short single segment that fits on one line
+        if (isFirstSegment && isLastSegment && segment.Length + 4 < width)
+        {
+            lines.Add(segment);
+            return lines;
+        }
+
+        int remaining = segment.Length;
+        int pos = 0;
+
+        while (remaining > 0)
+        {
+            int cap;
+            if (isFirstSegment && isFirstVisualLine && lines.Count == 0)
             {
-                lines.Add(segment);
-                continue;
+                // First visual line has "> " prefix
+                cap = Math.Max(0, width - 4);
+            }
+            else if (isLastSegment && remaining <= width - 2)
+            {
+                cap = Math.Max(1, width - 2);
+            }
+            else
+            {
+                cap = Math.Max(1, width - 1);
             }
 
-            int remaining = segment.Length;
-            int pos = 0;
+            int take = Math.Min(remaining, cap);
+            lines.Add(segment.Substring(pos, take));
+            pos += take;
+            remaining -= take;
+        }
 
-            while (remaining > 0)
-            {
-                int cap;
-                if (isFirstSegment && lines.Count == 0)
-                {
-                    // First visual line has "> " prefix
-                    cap = Math.Max(0, width - 4);
-                }
-                else if (isLastSegment && remaining <= width - 2)
-                {
-                    cap = width - 2;
-                    if (remaining == width - 1)
-                        cap = width - 2;
-                }
-                else
-                {
-                    cap = width - 1;
-                }
-
-                int take = Math.Min(remaining, cap);
-                lines.Add(segment.Substring(pos, take));
-                pos += take;
-                remaining -= take;
-            }
-
-            // Empty segment between newlines
-            if (segment.Length == 0 && (!isLastSegment || segments.Length > 1))
-            {
+        // Empty segment between newlines produces an empty visual line
+        if (segment.Length == 0 && (!isLastSegment || true))
+        {
+            // Only add empty line if there's a following segment
+            if (!isLastSegment)
                 lines.Add("");
-            }
         }
 
         return lines;
