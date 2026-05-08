@@ -1,3 +1,5 @@
+using Spectre.Console;
+
 namespace StreamShell;
 
 /// <summary>Configurable settings for the StreamShell host.</summary>
@@ -43,18 +45,21 @@ public class StreamShellSettings
     public string ContinuationPrefix { get; set; } = "  ";
 
     /// <summary>
-    /// Visual width of the first-line input prefix (after Spectre processes markup).
-    /// Used by WrapSegment to calculate the available text width.
-    /// Default: 2 (for the default "[blue]> [/]" prefix, which renders as "> ").
-    /// </summary>
-    public int PrefixMargin { get; set; } = 2;
-
-    /// <summary>
     /// Right-edge buffer in characters, reserved between the wrapped text and
     /// the console right edge. Used by WrapSegment to calculate wrapping caps.
     /// Default: 4.
     /// </summary>
     public int WrappingRightMargin { get; set; } = 4;
+
+    /// <summary>
+    /// Visual width of the widest input prefix (first-line or continuation),
+    /// after stripping Spectre markup. Derived automatically from
+    /// <see cref="InputPrefix"/> and <see cref="ContinuationPrefix"/>.
+    /// Used by WrapSegment to calculate the available text width.
+    /// </summary>
+    public int PrefixMargin => Math.Max(
+        Markup.Remove(InputPrefix).Length,
+        Markup.Remove(ContinuationPrefix).Length);
 
     /// <summary>Resolves the effective right edge margin, substituting Console.WindowWidth for -1.</summary>
     public int GetEffectiveRightMargin()
