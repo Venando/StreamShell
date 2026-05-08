@@ -1,4 +1,3 @@
-
 using System.Collections.Concurrent;
 
 namespace StreamShell;
@@ -46,13 +45,17 @@ public class ConsoleAppHost : IDisposable
         // Send the ANSI escape sequence to turn on Bracketed Paste Mode
         // \u001b[?2004h = Enable
         Console.Write("\u001b[?2004h");
-        
+
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
 
         Console.CursorVisible = false;
 
         string? lastRenderedInput = null;
         int previousInputLineCount = 0;
+        int lastCursorPosition = 0;
+        bool lastHasSelection = false;
+        int lastSelectionStart = 0;
+        int lastSelectionLength = 0;
 
         while (!linkedCts.Token.IsCancellationRequested)
         {
@@ -60,33 +63,63 @@ public class ConsoleAppHost : IDisposable
             int blockOffset = _renderer.GetBlockOffset(_inputHandler.CurrentInput);
             int currentInputLineCount = _renderer.GetInputLineCount(_inputHandler.CurrentInput);
 
-            if (_messages.TryDequeue(out var message))
-            {
-                if (lastRenderedInput is not null)
-                    _renderer.ClearInputBlock(lastRenderedInput);
-                else
-                    _renderer.ClearInputLine();
+            // Gather current cursor/selection state
+            int currentCursor = _inputHandler.CursorPosition;
+            bool currentHasSelection = _inputHandler.HasSelection;
+            int currentSelStart = _inputHandler.TryGetSelection(out int ss, out int sl) ? ss : 0;
+            int currentSelLength = _inputHandler.TryGetSelection(out _, out int sl2) ? sl2 : 0;
 
-                ConsoleRenderer.RenderMessage(message);
-                ConsoleRenderer.RenderInputBlock(_inputHandler.CurrentInput, hints);
-                lastRenderedInput = _inputHandler.CurrentInput;
-                previousInputLineCount = currentInputLineCount;
-            }
-            else if (lastRenderedInput != _inputHandler.CurrentInput)
+            bool inputChanged = lastRenderedInput != _inputHandler.CurrentInput;
+            bool cursorOrSelectionChanged =
+                lastCursorPosition != currentCursor ||
+                lastHasSelection != currentHasSelection ||
+                currentSelStart != lastSelectionStart ||
+                currentSelLength != lastSelectionLength;
+
+            if (inputChanged || cursorOrSelectionChanged)
             {
-                if (previousInputLineCount == 1 && currentInputLineCount == 1)
-                {
-                    ConsoleRenderer.OverwriteInputBlock(_inputHandler.CurrentInput, hints, blockOffset);
-                }
-                else
+                int margin = _inputHandler.RightMargin;
+
+                if (_messages.TryDequeue(out var message))
                 {
                     if (lastRenderedInput is not null)
                         _renderer.ClearInputBlock(lastRenderedInput);
-                    ConsoleRenderer.RenderInputBlock(_inputHandler.CurrentInput, hints);
+                    else
+                        _renderer.ClearInputLine();
+
+                    RenderMessage(message);
+                    RenderFullInputBlock(hints, currentCursor, currentHasSelection, currentSelStart, currentSelLength, margin);
+                    lastRenderedInput = _inputHandler.CurrentInput;
+                    previousInputLineCount = currentInputLineCount;
+                }
+                else if (inputChanged && previousInputLineCount == 1 && currentInputLineCount == 1)
+                {
+                    // Single-line → single-line: optimized overwrite
+                    ConsoleRenderer.OverwriteInputBlock(
+                        _inputHandler.CurrentInput, hints, blockOffset,
+                        currentCursor, currentHasSelection, currentSelStart, currentSelLength, margin);
+                    lastRenderedInput = _inputHandler.CurrentInput;
+                }
+                else
+                {
+                    // Multi-line or structural change: full re-render
+                    if (lastRenderedInput is not null)
+                        _renderer.ClearInputBlock(lastRenderedInput);
+                    RenderFullInputBlock(hints, currentCursor, currentHasSelection, currentSelStart, currentSelLength, margin);
+                    lastRenderedInput = _inputHandler.CurrentInput;
+                    previousInputLineCount = currentInputLineCount;
                 }
 
-                lastRenderedInput = _inputHandler.CurrentInput;
-                previousInputLineCount = currentInputLineCount;
+                lastCursorPosition = currentCursor;
+                lastHasSelection = currentHasSelection;
+                lastSelectionStart = currentSelStart;
+                lastSelectionLength = currentSelLength;
+            }
+
+            if (_inputHandler.QuitRequested)
+            {
+                _inputHandler.QuitRequested = false;
+                break;
             }
 
             if (_inputHandler.ProcessInput() is { } submittedInput)
@@ -107,10 +140,29 @@ public class ConsoleAppHost : IDisposable
                 _inputHandler.Reset();
                 lastRenderedInput = null;
                 previousInputLineCount = 0;
+                lastCursorPosition = 0;
+                lastHasSelection = false;
+                lastSelectionStart = 0;
+                lastSelectionLength = 0;
             }
 
             await Task.Delay(10, linkedCts.Token);
         }
+    }
+
+    private void RenderFullInputBlock(
+        IReadOnlyList<string> hints,
+        int cursor, bool hasSelection, int selStart, int selLength,
+        int margin)
+    {
+        ConsoleRenderer.RenderInputBlock(
+            _inputHandler.CurrentInput, hints,
+            cursor, hasSelection, selStart, selLength, margin);
+    }
+
+    private static void RenderMessage(string markup)
+    {
+        ConsoleRenderer.RenderMessage(markup);
     }
 
     public void Stop() => _cts.Cancel();
