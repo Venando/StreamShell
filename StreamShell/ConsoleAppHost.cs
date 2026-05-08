@@ -1,45 +1,69 @@
 using System.Collections.Concurrent;
 
 namespace StreamShell;
+
+/// <summary>Distinguishes user-submitted input as plain text or a command.</summary>
 public enum InputType
 {
+    /// <summary>Ordinary text input.</summary>
     PlainText,
+    /// <summary>Input that matched a registered command (starts with /).</summary>
     Command
 }
 
-// TODO: Fix issues with hints able to take only 1 line
-// TODO: Add ability to stream message
-// TODO: Add advanced user space text rendering
+/// <summary>
+/// Console-based app host built on Spectre.Console.
+/// Manages message display, command processing, and interactive input
+/// with cursor navigation, selection, clipboard, and undo support.
+/// </summary>
 public class ConsoleAppHost : IDisposable
 {
     private readonly ConcurrentQueue<string> _messages = new();
     private readonly List<Command> _commands = new();
-    private readonly UserInputHandler _inputHandler = new();
-    private readonly ConsoleRenderer _renderer = new();
+    private readonly IInputHandler _inputHandler;
+    private readonly IRenderer _renderer;
     private readonly CommandPalette _commandPalette;
     private readonly CancellationTokenSource _cts = new();
 
+    /// <summary>Current settings that control paste thresholds and other behavior.</summary>
     public StreamShellSettings Settings { get; } = new();
 
+    /// <summary>
+    /// Raised when the user submits input (Enter without modifiers).
+    /// Provides the raw text, whether it is a command or plain text,
+    /// and any attachments (large pastes).
+    /// </summary>
     public event Action<string, InputType, IReadOnlyList<Attachment>>? UserInputSubmitted;
 
+    /// <summary>Creates a host wired to the real console renderer and input handler.</summary>
     public ConsoleAppHost()
+        : this(new ConsoleRenderer(), new UserInputHandler())
     {
+    }
+
+    /// <summary>Creates a host with explicit renderer and input handler (for testing).</summary>
+    internal ConsoleAppHost(IRenderer renderer, IInputHandler inputHandler)
+    {
+        _renderer = renderer;
+        _inputHandler = inputHandler;
         _commandPalette = new CommandPalette(_commands);
         _inputHandler.LargePasteThreshold = Settings.LargePasteThreshold;
         _inputHandler.LargePasteLineThreshold = Settings.LargePasteLineThreshold;
     }
 
+    /// <summary>Queue a markup message to be displayed.</summary>
     public void AddMessage(string markup)
     {
         _messages.Enqueue(markup);
     }
 
+    /// <summary>Register a command that can be triggered with /command-name.</summary>
     public void AddCommand(Command command)
     {
         _commands.Add(command);
     }
 
+    /// <summary>Run the main input/render loop until cancelled or Ctrl+D is pressed.</summary>
     public async Task Run(CancellationToken cancellationToken = default)
     {
         // Enable bracketed paste mode
@@ -96,7 +120,7 @@ public class ConsoleAppHost : IDisposable
                 if (inputChanged && !terminalResized && previousInputLineCount == 1 && currentInputLineCount == 1)
                 {
                     // Single-line → single-line: optimized overwrite (not on resize)
-                    ConsoleRenderer.OverwriteInputBlock(
+                    _renderer.OverwriteInputBlock(
                         _inputHandler.CurrentInput, hints, blockOffset,
                         currentCursor, currentHasSelection,
                         currentSelStart, currentSelLength, margin);
@@ -160,18 +184,20 @@ public class ConsoleAppHost : IDisposable
         int cursor, bool hasSelection, int selStart, int selLength,
         int margin)
     {
-        ConsoleRenderer.RenderInputBlock(
+        _renderer.RenderInputBlock(
             _inputHandler.CurrentInput, hints,
             cursor, hasSelection, selStart, selLength, margin);
     }
 
-    private static void RenderMessage(string markup)
+    private void RenderMessage(string markup)
     {
-        ConsoleRenderer.RenderMessage(markup);
+        _renderer.RenderMessage(markup);
     }
 
+    /// <summary>Signal the host to stop after the current loop iteration.</summary>
     public void Stop() => _cts.Cancel();
 
+    /// <summary>Dispose the host, cancelling the run loop and restoring cursor visibility.</summary>
     public void Dispose()
     {
         _cts.Cancel();

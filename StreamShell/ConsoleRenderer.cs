@@ -2,7 +2,7 @@ namespace StreamShell;
 
 using Spectre.Console;
 
-internal class ConsoleRenderer
+internal class ConsoleRenderer : IRenderer
 {
     public int RightMargin { get; set; } = Console.WindowWidth;
 
@@ -12,7 +12,7 @@ internal class ConsoleRenderer
     /// <summary>Get the number of visual lines the input occupies.</summary>
     public int GetInputLineCount(string input) => GetInputLines(input, RightMargin).Count;
 
-    public static void RenderMessage(string markup)
+    public void RenderMessage(string markup)
     {
         try
         {
@@ -60,7 +60,7 @@ internal class ConsoleRenderer
 
     // ── Render with cursor and selection ──────────────────────────────
 
-    public static void RenderInputBlock(
+    public void RenderInputBlock(
         string input,
         IReadOnlyList<string> hints,
         int cursorPosition,
@@ -76,7 +76,7 @@ internal class ConsoleRenderer
         RenderHintsBlock(hints);
     }
 
-    public static void OverwriteInputBlock(
+    public void OverwriteInputBlock(
         string input,
         IReadOnlyList<string> hints,
         int blockOffset,
@@ -332,32 +332,7 @@ internal class ConsoleRenderer
 
     internal static List<string> GetInputLines(string input, int margin)
     {
-        int width = Math.Max(1, Math.Min(margin, Console.WindowWidth));
-        var lines = new List<string>();
-
-        if (string.IsNullOrEmpty(input))
-            return new List<string> { "" };
-
-        var segments = input.Split('\n');
-        bool anyLinesProduced = false;
-
-        for (int segIndex = 0; segIndex < segments.Length; segIndex++)
-        {
-            string segment = segments[segIndex];
-            bool isFirstSegment = segIndex == 0;
-            bool isLastSegment = segIndex == segments.Length - 1;
-
-            var wrapped = WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced);
-            lines.AddRange(wrapped);
-
-            if (wrapped.Count > 0)
-                anyLinesProduced = true;
-        }
-
-        // Ensure empty input always has at least one line
-        if (lines.Count == 0)
-            lines.Add("");
-
+        var (lines, _) = GetVisualLineData(input, margin);
         return lines;
     }
 

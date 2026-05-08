@@ -1,7 +1,13 @@
 namespace StreamShell;
 
+/// <summary>Splits and parses command input into positional and named arguments.</summary>
 public static class CommandParser
 {
+    /// <summary>
+    /// Parses a command string into positional args and named args (--key value).
+    /// Named args without an explicit value get an empty string. Positional
+    /// args appearing after a named arg still count as positional.
+    /// </summary>
     public static (string[] PositionalArgs, Dictionary<string, string> NamedArgs) Parse(string input)
     {
         var parts = Split(input);

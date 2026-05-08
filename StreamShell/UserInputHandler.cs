@@ -2,14 +2,14 @@ using System.Text;
 
 namespace StreamShell;
 
-internal class UserInputHandler
+internal class UserInputHandler : IInputHandler
 {
     private readonly StringBuilder _currentInput = new();
     private readonly StringBuilder _tempInput = new();
     public string CurrentInput => _currentInput.ToString();
     public List<Attachment> Attachments { get; private set; } = new();
-    public int LargePasteThreshold { get; internal set; } = 100;
-    public int LargePasteLineThreshold { get; internal set; } = 4;
+    public int LargePasteThreshold { get; set; } = 100;
+    public int LargePasteLineThreshold { get; set; } = 4;
     /// <summary>Set to true when Ctrl+D is pressed while reading input.</summary>
     public bool QuitRequested { get; set; }
 
@@ -20,12 +20,6 @@ internal class UserInputHandler
 
     public int CursorPosition => _cursorPosition;
     public bool HasSelection => _selectionAnchor.HasValue && _selectionAnchor.Value != _cursorPosition;
-    private int SelectionStart => Math.Min(_cursorPosition, _selectionAnchor ?? _cursorPosition);
-    private int SelectionEnd => Math.Max(_cursorPosition, _selectionAnchor ?? _cursorPosition);
-    private int SelectionLength => SelectionEnd - SelectionStart;
-    public string SelectedText => HasSelection ? _currentInput.ToString(SelectionStart, SelectionLength) : "";
-
-    /// <summary>Returns the selected range as a span when a selection exists.</summary>
     public bool TryGetSelection(out int start, out int length)
     {
         if (HasSelection)
@@ -38,6 +32,13 @@ internal class UserInputHandler
         length = 0;
         return false;
     }
+
+    private int SelectionStart => Math.Min(_cursorPosition, _selectionAnchor ?? _cursorPosition);
+    private int SelectionEnd => Math.Max(_cursorPosition, _selectionAnchor ?? _cursorPosition);
+    private int SelectionLength => SelectionEnd - SelectionStart;
+    public string SelectedText => HasSelection ? _currentInput.ToString(SelectionStart, SelectionLength) : "";
+
+
 
     // ── Undo Stack ────────────────────────────────────────────────────
     private readonly Stack<(string text, int cursor, int? selection)> _undoStack = new();
@@ -194,21 +195,7 @@ internal class UserInputHandler
         if (HasSelection)
             DeleteSelection();
 
-        int lineCount = text.Split('\n').Length;
-
-        if (text.Length > LargePasteThreshold || lineCount > LargePasteLineThreshold)
-        {
-            string name = GenerateName(text);
-            Attachments.Add(new Attachment(text, AttachmentType.PlainText, lineCount));
-            string placeholder = $"[paste {lineCount} lines: {name}]";
-            _currentInput.Insert(_cursorPosition, placeholder);
-            _cursorPosition += placeholder.Length;
-        }
-        else
-        {
-            _currentInput.Insert(_cursorPosition, text);
-            _cursorPosition += text.Length;
-        }
+        InsertPastedText(text);
     }
 
     // ── Temp Buffer Flush ─────────────────────────────────────────────
@@ -220,7 +207,11 @@ internal class UserInputHandler
         string text = _tempInput.ToString();
         _tempInput.Clear();
 
-        // Insert at cursor position, replacing any selection
+        InsertPastedText(text);
+    }
+
+    private void InsertPastedText(string text)
+    {
         int lineCount = text.Split('\n').Length;
 
         if (text.Length > LargePasteThreshold || lineCount > LargePasteLineThreshold)
