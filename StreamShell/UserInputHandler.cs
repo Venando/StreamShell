@@ -439,11 +439,7 @@ internal class UserInputHandler
             return;
         }
 
-        if (!shift)
-            _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue)
-            _selectionAnchor = _cursorPosition;
-
+        int originalPos = _cursorPosition;
         _cursorPosition++;
 
         // When selecting with Shift, skip newline characters so the
@@ -453,6 +449,19 @@ internal class UserInputHandler
         {
             while (_cursorPosition < _currentInput.Length && _currentInput[_cursorPosition] == '\n')
                 _cursorPosition++;
+        }
+
+        if (!shift)
+            _selectionAnchor = null;
+        else if (!_selectionAnchor.HasValue)
+        {
+            // If the cursor was sitting on a newline, don't anchor there —
+            // find the last visible character before it so the selection
+            // starts with visible content.
+            int anchor = originalPos;
+            while (anchor > 0 && _currentInput[anchor - 1] == '\n')
+                anchor--;
+            _selectionAnchor = anchor;
         }
     }
 
