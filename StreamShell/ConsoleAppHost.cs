@@ -37,8 +37,11 @@ public class ConsoleAppHost : IDisposable
 
     /// <summary>Creates a host wired to the real console renderer and input handler.</summary>
     public ConsoleAppHost()
-        : this(new ConsoleRenderer(), new UserInputHandler())
     {
+        _renderer = new ConsoleRenderer(Settings);
+        _inputHandler = new UserInputHandler();
+        _commandPalette = new CommandPalette(_commands.Values);
+        ApplySettings();
     }
 
     /// <summary>Creates a host with explicit renderer and input handler (for testing).</summary>
@@ -47,8 +50,20 @@ public class ConsoleAppHost : IDisposable
         _renderer = renderer;
         _inputHandler = inputHandler;
         _commandPalette = new CommandPalette(_commands.Values);
+        ApplySettings();
+    }
+
+    /// <summary>Applies the current Settings values to the renderer and input handler.</summary>
+    private void ApplySettings()
+    {
         _inputHandler.LargePasteThreshold = Settings.LargePasteThreshold;
         _inputHandler.LargePasteLineThreshold = Settings.LargePasteLineThreshold;
+
+        int effectiveMargin = Settings.GetEffectiveRightMargin();
+        _inputHandler.RightMargin = effectiveMargin;
+
+        if (_renderer is ConsoleRenderer cr)
+            cr.RightMargin = effectiveMargin;
     }
 
     /// <summary>Queue a markup message to be displayed.</summary>

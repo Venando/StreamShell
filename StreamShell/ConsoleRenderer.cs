@@ -9,6 +9,18 @@ using Spectre.Console;
 /// </summary>
 internal class ConsoleRenderer : IRenderer
 {
+    private readonly StreamShellSettings _settings;
+
+    /// <summary>Creates a renderer with default settings.</summary>
+    public ConsoleRenderer() : this(new StreamShellSettings()) { }
+
+    /// <summary>Creates a renderer with the specified settings.</summary>
+    public ConsoleRenderer(StreamShellSettings settings)
+    {
+        _settings = settings;
+        RightMargin = settings.GetEffectiveRightMargin();
+    }
+
     public int RightMargin { get; set; } = Console.WindowWidth;
 
     private const int BlockOffsetBase = 7; // Known off-by-2 for some cases — see PROJECT-INDEX
@@ -110,7 +122,7 @@ internal class ConsoleRenderer : IRenderer
     }
 
     // ── Input Line Rendering ─────────────────────────────────────────
-    internal static void RenderInputLine(
+    internal void RenderInputLine(
         string input,
         int cursorPosition,
         bool hasSelection,
@@ -139,7 +151,10 @@ internal class ConsoleRenderer : IRenderer
                     cursorPosition, hasSelection, selectionStart, selectionLength);
 
                 Console.CursorLeft = 0;
-                string prefix = isFirstOverallLine ? "[blue]> [/]" : "  ";
+
+                string prefix = isFirstOverallLine
+                    ? _settings.InputPrefix
+                    : _settings.ContinuationPrefix;
                 AnsiConsole.Markup(prefix + lineMarkup);
 
                 if (!(segIdx == segments.Length - 1 && lineIdx == wrappedLines.Count - 1))
@@ -159,17 +174,17 @@ internal class ConsoleRenderer : IRenderer
             string lineMarkup = BuildLineMarkup(
                 input, 0, "",
                 cursorPosition, hasSelection, selectionStart, selectionLength);
-            AnsiConsole.Markup($"[blue]> [/]{lineMarkup}");
+            AnsiConsole.Markup($"{_settings.InputPrefix}{lineMarkup}");
         }
     }
 
     // ── Selection & Cursor Markup Building ───────────────────────────
     /// <summary>
-    /// Builds Spectre markup for one visual line, rendering cursor as
-    /// [black on gray] and selection as [white on gray]. When selection
-    /// is active, the cursor is hidden.
+    /// Builds Spectre markup for one visual line, rendering cursor and
+    /// selection using the configured markup styles from settings.
+    /// When selection is active, the cursor is hidden.
     /// </summary>
-    private static string BuildLineMarkup(
+    private string BuildLineMarkup(
         string input,
         int lineOffset,
         string lineText,
@@ -207,7 +222,8 @@ internal class ConsoleRenderer : IRenderer
 
             // Selected text
             string selText = Markup.Escape(lineText[selStartInLine..selEndInLine]);
-            sb.Append("[white on gray]").Append(selText).Append("[/]");
+            sb.Append("[").Append(_settings.SelectionMarkup).Append("]")
+              .Append(selText).Append("[/]");
 
             // After selection
             if (selEndInLine < lineText.Length)
@@ -223,11 +239,12 @@ internal class ConsoleRenderer : IRenderer
     }
 
     /// <summary>
-    /// Appends text with cursor highlight. The character at <paramref name="cursorCol"/>
-    /// gets [black on gray] markup. Past-end cursor shows a highlighted space.
+    /// Appends text with cursor highlight using the configured cursor markup style.
+    /// The character at <paramref name="cursorCol"/> gets the style.
+    /// Past-end cursor shows a highlighted space.
     /// Sets <paramref name="cursorCol"/> to -1 after placing.
     /// </summary>
-    private static void AppendCursorHighlight(
+    private void AppendCursorHighlight(
         System.Text.StringBuilder sb,
         string rawText,
         ref int cursorCol,
@@ -250,17 +267,20 @@ internal class ConsoleRenderer : IRenderer
         if (localCol > 0)
             sb.Append(Markup.Escape(rawText[..localCol]));
 
+        string cursorStyle = _settings.CursorMarkup;
+
         if (localCol < rawText.Length)
         {
             string escapedChar = Markup.Escape(rawText[localCol].ToString());
-            sb.Append("[black on gray]").Append(escapedChar).Append("[/]");
+            sb.Append("[").Append(cursorStyle).Append("]")
+              .Append(escapedChar).Append("[/]");
 
             if (localCol + 1 < rawText.Length)
                 sb.Append(Markup.Escape(rawText[(localCol + 1)..]));
         }
         else
         {
-            sb.Append("[black on gray] [/]"); // Past-end placeholder
+            sb.Append("[").Append(cursorStyle).Append("] [/]"); // Past-end placeholder
         }
 
         cursorCol = -1;
