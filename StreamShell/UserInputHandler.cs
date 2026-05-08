@@ -465,18 +465,8 @@ internal class UserInputHandler
             return;
         }
 
-        // Already at line start — act like Left arrow:
-        // move one character left, wrapping to previous line.
-        if (_cursorPosition <= 0)
-        {
-            if (!shift) _selectionAnchor = null;
-            return;
-        }
-        if (!shift)
-            _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue)
-            _selectionAnchor = _cursorPosition;
-        _cursorPosition--;
+        // Already at line start — act like Left arrow.
+        MoveCursorLeft(shift);
     }
 
     private void MoveCursorEnd(bool shift)
@@ -496,18 +486,8 @@ internal class UserInputHandler
             return;
         }
 
-        // Already at line end — act like Right arrow:
-        // move one character right, wrapping to next line.
-        if (_cursorPosition >= _currentInput.Length)
-        {
-            if (!shift) _selectionAnchor = null;
-            return;
-        }
-        if (!shift)
-            _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue)
-            _selectionAnchor = _cursorPosition;
-        _cursorPosition++;
+        // Already at line end — act like Right arrow.
+        MoveCursorRight(shift);
     }
 
     // ── Word-Boundary Movement (Ctrl+←/→) ────────────────────────────
