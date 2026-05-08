@@ -421,11 +421,14 @@ internal class UserInputHandler
 
         _cursorPosition--;
 
-        // Skip newline characters when moving left from start of a line.
-        // A newline is a structural boundary — selecting it would include
-        // the invisible line break as the first highlighted character.
-        while (_cursorPosition > 0 && _currentInput[_cursorPosition] == '\n')
-            _cursorPosition--;
+        // When selecting with Shift, skip newline characters so the
+        // first selected character is visible content, not a structural
+        // line break.
+        if (shift)
+        {
+            while (_cursorPosition > 0 && _currentInput[_cursorPosition] == '\n')
+                _cursorPosition--;
+        }
     }
 
     private void MoveCursorRight(bool shift)
