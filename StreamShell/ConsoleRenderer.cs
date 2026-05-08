@@ -36,7 +36,9 @@ internal class ConsoleRenderer : IRenderer
             return;
 
         int blockOffset = GetBlockOffset(lastInput);
-        Console.CursorTop -= blockOffset;
+        int bufferHeight = Console.BufferHeight;
+        int newTop = Console.CursorTop - blockOffset;
+        Console.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
         ClearBlock(blockOffset);
     }
 
@@ -86,7 +88,9 @@ internal class ConsoleRenderer : IRenderer
         int selectionLength,
         int margin)
     {
-        Console.CursorTop -= blockOffset - 1;
+        int bufferHeight = Console.BufferHeight;
+        int newTop = Console.CursorTop - (blockOffset - 1);
+        Console.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
 
         RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
         Console.Write("\x1b[K");
