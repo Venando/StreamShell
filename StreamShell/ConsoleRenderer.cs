@@ -40,6 +40,22 @@ internal class ConsoleRenderer
         ClearBlock(blockOffset);
     }
 
+    /// <summary>Like <see cref="ClearInputBlock"/> but clears enough lines to cover
+    /// both the old and new block heights, preventing stale content when a
+    /// line-count change makes the re-rendered block taller.</summary>
+    public void ClearInputBlockForReRender(string? oldInput, string newInput)
+    {
+        if (oldInput is null)
+            return;
+
+        int oldOffset = GetBlockOffset(oldInput);
+        int newOffset = GetBlockOffset(newInput);
+        int clearOffset = Math.Max(oldOffset, newOffset);
+
+        Console.CursorTop -= oldOffset;
+        ClearBlock(clearOffset);
+    }
+
     // ── Render with cursor and selection ──────────────────────────────
 
     public static void RenderInputBlock(
@@ -389,12 +405,11 @@ internal class ConsoleRenderer
             remaining -= take;
         }
 
-        // Empty segment between newlines produces an empty visual line
-        if (segment.Length == 0 && (!isLastSegment || true))
+        // Empty segment produces an empty visual line so the cursor
+        // after a newline has somewhere to render (e.g. Shift+Enter).
+        if (segment.Length == 0)
         {
-            // Only add empty line if there's a following segment
-            if (!isLastSegment)
-                lines.Add("");
+            lines.Add("");
         }
 
         return lines;

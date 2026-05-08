@@ -76,7 +76,7 @@ public class ConsoleAppHost : IDisposable
             if (_messages.TryDequeue(out var message))
             {
                 if (lastRenderedInput is not null)
-                    _renderer.ClearInputBlock(lastRenderedInput);
+                    _renderer.ClearInputBlockForReRender(lastRenderedInput, _inputHandler.CurrentInput);
                 else
                     _renderer.ClearInputLine();
 
@@ -101,8 +101,11 @@ public class ConsoleAppHost : IDisposable
                 else
                 {
                     // Multi-line or structural change: full re-render
+                    // Use ClearInputBlockForReRender when line count may have grown
+                    // (e.g. Shift+Enter adds a trailing empty line), so stale
+                    // characters below the old block are erased too.
                     if (lastRenderedInput is not null)
-                        _renderer.ClearInputBlock(lastRenderedInput);
+                        _renderer.ClearInputBlockForReRender(lastRenderedInput, _inputHandler.CurrentInput);
                     RenderFullInputBlock(hints, currentCursor, currentHasSelection,
                         currentSelStart, currentSelLength, margin);
                 }
