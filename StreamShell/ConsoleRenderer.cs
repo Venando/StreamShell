@@ -168,8 +168,9 @@ internal class ConsoleRenderer
             }
         }
 
-        // Build segments: text is split into runs where selection boundaries and
-        // cursor column are segment boundaries.
+        // Build segments: text is split into runs at selection boundaries and
+        // cursor position. The cursor is rendered inline, selection uses
+        // [white on gray] markup.
         var sb = new System.Text.StringBuilder();
 
         if (selectionOnThisLine)
@@ -178,18 +179,16 @@ internal class ConsoleRenderer
             if (selStartInLine > 0)
             {
                 string beforeSel = Markup.Escape(lineText[..selStartInLine]);
-                InsertCursorIntoSegment(sb, beforeSel, cursorCol, 0);
-                cursorCol = -1; // cursor already rendered
-                sb.Append(beforeSel);
+                AppendTextWithCursor(sb, beforeSel, ref cursorCol, /*segOffset*/0);
+                cursorCol = -1;
             }
 
-            // Segment 2: selected text
+            // Segment 2: selected text (wrapped in markup)
             {
                 string selText = Markup.Escape(lineText[selStartInLine..selEndInLine]);
                 sb.Append("[white on gray]");
-                InsertCursorIntoSegment(sb, selText, cursorCol, 0);
+                AppendTextWithCursor(sb, selText, ref cursorCol, /*segOffset*/selStartInLine);
                 cursorCol = -1;
-                sb.Append(selText);
                 sb.Append("[/]");
             }
 
@@ -197,50 +196,59 @@ internal class ConsoleRenderer
             if (selEndInLine < lineText.Length)
             {
                 string afterSel = Markup.Escape(lineText[selEndInLine..]);
-                InsertCursorIntoSegment(sb, afterSel, cursorCol, 0);
+                AppendTextWithCursor(sb, afterSel, ref cursorCol, /*segOffset*/selEndInLine);
                 cursorCol = -1;
-                sb.Append(afterSel);
             }
 
-            // Cursor not yet rendered and on this line but outside selection?
+            // Residual: cursor not yet placed anywhere on this line
             if (cursorCol >= 0)
             {
-                InsertCursorIntoSegment(sb, "", cursorCol, 0);
+                sb.Append("[white]|[/]");
             }
         }
         else
         {
-            // No selection on this line — just render the text with cursor
+            // No selection on this line — render full text with cursor
             string escaped = Markup.Escape(lineText);
-            InsertCursorIntoSegment(sb, escaped, cursorCol, 0);
-            sb.Append(escaped);
+            AppendTextWithCursor(sb, escaped, ref cursorCol, /*segOffset*/0);
+            cursorCol = -1;
         }
 
         return sb.ToString();
     }
 
     /// <summary>
-    /// Inserts [white]|[/] cursor marker into the segment at <paramref name="cursorCol"/>
-    /// if cursorColumn is within [0, segmentLength]. The segment text and cursorCol are
-    /// relative to the start of this segment (segmentOffset accounts for earlier segments).
+    /// Appends escaped text to <paramref name="sb"/>, splitting it to insert a
+    /// [white]|[/] cursor marker if <paramref name="cursorCol"/> falls within
+    /// this segment (relative to the visual line start).
+    /// Sets cursorCol to -1 when the cursor has been placed.
     /// </summary>
-    private static void InsertCursorIntoSegment(
+    private static void AppendTextWithCursor(
         System.Text.StringBuilder sb,
-        string segmentText,
-        int cursorCol,
+        string escapedText,
+        ref int cursorCol,
         int segmentOffset)
     {
         if (cursorCol < 0)
+        {
+            sb.Append(escapedText);
             return;
+        }
 
         int localCol = cursorCol - segmentOffset;
-        if (localCol >= 0 && localCol <= segmentText.Length)
+        if (localCol < 0 || localCol > escapedText.Length)
         {
-            // Insert cursor at localCol within segmentText
-            sb.Append(segmentText[..localCol]);
-            sb.Append("[white]|[/]");
-            sb.Append(segmentText[localCol..]);
+            // Cursor is outside this segment — render text as-is
+            sb.Append(escapedText);
+            return;
         }
+
+        // Split at cursor: before + cursor marker + after
+        sb.Append(escapedText[..localCol]);
+        sb.Append("[white]|[/]");
+        sb.Append(escapedText[localCol..]);
+
+        cursorCol = -1; // cursor has been placed
     }
 
     // ── Hints Block ───────────────────────────────────────────────────
