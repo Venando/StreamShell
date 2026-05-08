@@ -58,12 +58,6 @@ public class ConsoleAppHost : IDisposable
     {
         _inputHandler.LargePasteThreshold = Settings.LargePasteThreshold;
         _inputHandler.LargePasteLineThreshold = Settings.LargePasteLineThreshold;
-
-        int effectiveMargin = Settings.GetEffectiveRightMargin();
-        _inputHandler.RightMargin = effectiveMargin;
-
-        if (_renderer is ConsoleRenderer cr)
-            cr.RightMargin = effectiveMargin;
     }
 
     /// <summary>Queue a markup message to be displayed.</summary>

@@ -18,7 +18,6 @@ internal class ConsoleRenderer : IRenderer
     public ConsoleRenderer(StreamShellSettings settings)
     {
         _settings = settings;
-        RightMargin = settings.GetEffectiveRightMargin();
     }
 
     public int RightMargin { get; set; } = Console.WindowWidth;

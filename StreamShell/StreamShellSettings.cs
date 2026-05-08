@@ -26,13 +26,6 @@ public class StreamShellSettings
     public string SelectionMarkup { get; set; } = "white on gray";
 
     /// <summary>
-    /// Right-edge margin for text wrapping in the input field.
-    /// When set to -1, uses Console.WindowWidth at construction time.
-    /// Must be at least 10 to ensure visible characters.
-    /// </summary>
-    public int RightEdgeMargin { get; set; } = -1;
-
-    /// <summary>
     /// Spectre.Console markup for the first-line input field prefix.
     /// Default: "[blue]> [/]"
     /// </summary>
@@ -61,7 +54,4 @@ public class StreamShellSettings
         Markup.Remove(InputPrefix).Length,
         Markup.Remove(ContinuationPrefix).Length);
 
-    /// <summary>Resolves the effective right edge margin, substituting Console.WindowWidth for -1.</summary>
-    public int GetEffectiveRightMargin()
-        => RightEdgeMargin > 0 ? RightEdgeMargin : Console.WindowWidth;
 }
