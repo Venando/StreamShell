@@ -17,12 +17,15 @@ public static class LineWrappingService
         int width,
         bool isFirstSegment,
         bool isLastSegment,
-        bool isFirstVisualLine)
+        bool isFirstVisualLine,
+        int prefixMargin = 2,
+        int rightMargin = 4)
     {
         var lines = new List<string>();
+        int totalMargin = prefixMargin + rightMargin;
 
         // Short single segment that fits on one line
-        if (isFirstSegment && isLastSegment && segment.Length + 4 < width)
+        if (isFirstSegment && isLastSegment && segment.Length + totalMargin < width)
         {
             lines.Add(segment);
             return lines;
@@ -35,7 +38,7 @@ public static class LineWrappingService
         {
             // First visual line has "> " prefix (2 chars), continuation gets "  " (2 chars)
             // Both use cap = width - 4 for consistent right margin
-            int cap = Math.Max(isFirstSegment && isFirstVisualLine && lines.Count == 0 ? 0 : 1, width - 4);
+            int cap = Math.Max(isFirstSegment && isFirstVisualLine && lines.Count == 0 ? 0 : 1, width - totalMargin);
             int take = Math.Min(remaining, cap);
             lines.Add(segment.Substring(pos, take));
             pos += take;
