@@ -50,4 +50,13 @@ public interface IInputHandler
 
     /// <summary>Remove all saved input field states.</summary>
     void RemoveAllSavedInputFields();
+
+    /// <summary>
+    /// Replace the current input field content with the given text.
+    /// Clears selection, moves cursor to end of text, and clears undo history.
+    /// </summary>
+    void SetInputFieldContent(string text);
+
+    /// <summary>Returns the IDs of all currently saved input field states.</summary>
+    IReadOnlyList<string> GetSavedInputFieldIds();
 }

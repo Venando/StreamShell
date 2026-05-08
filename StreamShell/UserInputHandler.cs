@@ -385,4 +385,20 @@ internal class UserInputHandler : IInputHandler
     /// <summary>Removes all saved input field states.</summary>
     public void RemoveAllSavedInputFields()
         => _savedInputs.Clear();
+
+    /// <summary>
+    /// Replaces the input buffer with the given text, resets cursor to end,
+    /// clears selection and undo history. Attachments are not affected.
+    /// </summary>
+    public void SetInputFieldContent(string text)
+    {
+        if (text is null) throw new ArgumentNullException(nameof(text));
+        _buffer.SetContent(text, text.Length);
+        _selection.Clear();
+        _undo.Clear();
+    }
+
+    /// <summary>Returns the IDs of all currently saved input field states.</summary>
+    public IReadOnlyList<string> GetSavedInputFieldIds()
+        => _savedInputs.Keys.ToList();
 }
