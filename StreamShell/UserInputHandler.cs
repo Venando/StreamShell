@@ -440,22 +440,46 @@ internal class UserInputHandler
 
     private void MoveCursorHome(bool shift)
     {
+        // Find start of current line (after the last \n before cursor)
+        string input = _currentInput.ToString();
+        int lineStart = _cursorPosition > 0
+            ? input.LastIndexOf('\n', _cursorPosition - 1) + 1
+            : 0;
+
+        if (lineStart == _cursorPosition)
+        {
+            // Already at line start — clear selection if no shift
+            if (!shift) _selectionAnchor = null;
+            return;
+        }
+
         if (!shift)
             _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue && _cursorPosition > 0)
+        else if (!_selectionAnchor.HasValue)
             _selectionAnchor = _cursorPosition;
 
-        _cursorPosition = 0;
+        _cursorPosition = lineStart;
     }
 
     private void MoveCursorEnd(bool shift)
     {
+        // Find end of current line (before the next \n or end of input)
+        string input = _currentInput.ToString();
+        int nextNewline = input.IndexOf('\n', _cursorPosition);
+        int lineEnd = nextNewline >= 0 ? nextNewline : _currentInput.Length;
+
+        if (lineEnd == _cursorPosition)
+        {
+            if (!shift) _selectionAnchor = null;
+            return;
+        }
+
         if (!shift)
             _selectionAnchor = null;
-        else if (!_selectionAnchor.HasValue && _cursorPosition < _currentInput.Length)
+        else if (!_selectionAnchor.HasValue)
             _selectionAnchor = _cursorPosition;
 
-        _cursorPosition = _currentInput.Length;
+        _cursorPosition = lineEnd;
     }
 
     // ── Word-Boundary Movement (Ctrl+←/→) ────────────────────────────
