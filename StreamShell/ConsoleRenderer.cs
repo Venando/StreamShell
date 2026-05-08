@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace StreamShell;
 
 using Spectre.Console;
@@ -11,16 +9,15 @@ using Spectre.Console;
 /// </summary>
 internal class ConsoleRenderer : IRenderer
 {
-    /// <summary>
-    /// Number of fixed lines in the input block (above the variable input lines):
-    /// 1 (block separator) + 1 (blank line after input) + 1 (hints separator) + 6 (hint lines) = 9
-    /// </summary>
-    private const int FixedBlockLines = 9;
-
     public int RightMargin { get; set; } = Console.WindowWidth;
 
     /// <summary>Total vertical space taken by the input block.</summary>
-    public int GetBlockOffset(string input) => FixedBlockLines + GetInputLineCount(input);
+    public int GetBlockOffset(string input)
+    {
+        // Fixed parts = BlockSeparator + BlankAfterInput + HintsSeparator + HintsLines = 9
+        // Known offset: 7 + inputLineCount (off by 2 — investigation documented in PROJECT-INDEX)
+        return 7 + GetInputLineCount(input);
+    }
 
     /// <summary>Number of visual lines the input occupies.</summary>
     public int GetInputLineCount(string input) => GetInputLines(input, RightMargin).Count;
@@ -50,7 +47,11 @@ internal class ConsoleRenderer : IRenderer
         if (lastInput is null)
             return;
 
-        ClearBlockFromCursor(GetBlockOffset(lastInput));
+        int blockOffset = GetBlockOffset(lastInput);
+        int bufferHeight = Console.BufferHeight;
+        int newTop = Console.CursorTop - blockOffset;
+        Console.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+        ClearBlock(blockOffset);
     }
 
     /// <summary>Clears enough lines to cover both old and new block heights,
@@ -60,27 +61,14 @@ internal class ConsoleRenderer : IRenderer
         if (oldInput is null)
             return;
 
-        int clearHeight = Math.Max(GetBlockOffset(oldInput), GetBlockOffset(newInput));
-        ClearBlockFromCursor(clearHeight);
-    }
-
-    /// <summary>
-    /// Moves cursor up by <paramref name="blockHeight"/> lines (clamped to buffer bounds),
-    /// then clears that many lines downward.
-    /// </summary>
-    private static void ClearBlockFromCursor(int blockHeight)
-    {
+        int oldOffset = GetBlockOffset(oldInput);
+        int newOffset = GetBlockOffset(newInput);
+        int clearOffset = Math.Max(oldOffset, newOffset);
         int bufferHeight = Console.BufferHeight;
-        int top = Math.Clamp(Console.CursorTop - blockHeight, 0, bufferHeight - 1);
-        int bottom = Math.Min(top + blockHeight, bufferHeight - 1);
 
-        for (int i = top; i <= bottom; i++)
-        {
-            Console.SetCursorPosition(0, i);
-            Console.Write("\x1b[K");
-        }
-
-        Console.SetCursorPosition(0, top);
+        int newTop = Console.CursorTop - oldOffset;
+        Console.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+        ClearBlock(clearOffset);
     }
 
     // ── Full Block Render ────────────────────────────────────────────
@@ -467,4 +455,22 @@ internal class ConsoleRenderer : IRenderer
     }
 
     private static void ClearLine() => Console.Write("\x1b[K");
+
+    private static void ClearBlock(int linesBelowSeparator)
+    {
+        int startTop = Console.CursorTop;
+        int bufferHeight = Console.BufferHeight;
+
+        for (int i = 0; i <= linesBelowSeparator; i++)
+        {
+            int top = startTop + i;
+            if (top < 0 || top >= bufferHeight)
+                continue;
+            Console.SetCursorPosition(0, top);
+            ClearLine();
+        }
+
+        startTop = Math.Max(0, Math.Min(startTop, bufferHeight - 1));
+        Console.SetCursorPosition(0, startTop);
+    }
 }
