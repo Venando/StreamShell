@@ -51,8 +51,10 @@ internal class ConsoleRenderer
         int oldOffset = GetBlockOffset(oldInput);
         int newOffset = GetBlockOffset(newInput);
         int clearOffset = Math.Max(oldOffset, newOffset);
+        int bufferHeight = Console.BufferHeight;
 
-        Console.CursorTop -= oldOffset;
+        int newTop = Console.CursorTop - oldOffset;
+        Console.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
         ClearBlock(clearOffset);
     }
 
@@ -130,7 +132,7 @@ internal class ConsoleRenderer
                 else if (isFirstOverallLine)
                     AnsiConsole.Markup($"[blue]> [/]{lineMarkup}");
                 else
-                    AnsiConsole.Markup(lineMarkup);
+                    AnsiConsole.Markup($"  {lineMarkup}");
 
                 if (!(segIdx == segments.Length - 1 && lineIdx == wrappedLines.Count - 1))
                     Console.WriteLine();
@@ -485,11 +487,18 @@ internal class ConsoleRenderer
     private static void ClearBlock(int linesBelowSeparator)
     {
         int startTop = Console.CursorTop;
+        int bufferHeight = Console.BufferHeight;
+
         for (int i = 0; i <= linesBelowSeparator; i++)
         {
-            Console.SetCursorPosition(0, startTop + i);
+            int top = startTop + i;
+            if (top < 0 || top >= bufferHeight)
+                continue;
+            Console.SetCursorPosition(0, top);
             ClearLine();
         }
+
+        startTop = Math.Max(0, Math.Min(startTop, bufferHeight - 1));
         Console.SetCursorPosition(0, startTop);
     }
 }

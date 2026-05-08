@@ -55,6 +55,7 @@ public class ConsoleAppHost : IDisposable
         int previousInputLineCount = 0;
         int lastCursorPosition = 0;
         bool lastHasSelection = false;
+        int lastWindowWidth = Console.WindowWidth;
 
         while (!linkedCts.Token.IsCancellationRequested)
         {
@@ -70,6 +71,8 @@ public class ConsoleAppHost : IDisposable
             bool inputChanged = lastRenderedInput != _inputHandler.CurrentInput;
             bool cursorChanged = lastCursorPosition != currentCursor ||
                                   lastHasSelection != currentHasSelection;
+            bool terminalResized = lastWindowWidth != Console.WindowWidth;
+            lastWindowWidth = Console.WindowWidth;
 
             // ── Always process pending messages first ────────────────
             bool rendered = false;
@@ -87,12 +90,12 @@ public class ConsoleAppHost : IDisposable
                 previousInputLineCount = currentInputLineCount;
                 rendered = true;
             }
-            else if (inputChanged || cursorChanged)
+            else if (inputChanged || cursorChanged || terminalResized)
             {
                 // Input text or cursor/selection changed — update display
-                if (inputChanged && previousInputLineCount == 1 && currentInputLineCount == 1)
+                if (inputChanged && !terminalResized && previousInputLineCount == 1 && currentInputLineCount == 1)
                 {
-                    // Single-line → single-line: optimized overwrite
+                    // Single-line → single-line: optimized overwrite (not on resize)
                     ConsoleRenderer.OverwriteInputBlock(
                         _inputHandler.CurrentInput, hints, blockOffset,
                         currentCursor, currentHasSelection,
