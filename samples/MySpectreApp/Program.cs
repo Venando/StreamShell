@@ -49,6 +49,54 @@ host.AddCommand(new Command("cost", "Shows cost info", (args, named) =>
 }));
 
 // ════════════════════════════════════════════════════════════════
+//  Config command with argument autocomplete
+// ════════════════════════════════════════════════════════════════
+
+host.AddCommand("config", "Shows or sets a config value",
+    (args, named) =>
+    {
+        if (args.Length == 0)
+        {
+            host.AddMessage("[yellow]Usage: /config <name> [value][/]");
+            return Task.CompletedTask;
+        }
+
+        string name = args[0];
+        string value = args.Length > 1 ? args[1] : "(current)";
+        host.AddMessage($"[green]Config [bold]{Markup.Escape(name)}[/] = [cyan]{Markup.Escape(value)}[/][/]");
+        return Task.CompletedTask;
+    },
+    [
+        "LargePasteThreshold",
+        "CursorMarkup",
+        "SelectionMarkup",
+        "InputPrefix",
+        "ContinuationPrefix",
+        "WrappingRightMargin"
+    ]);
+
+// ════════════════════════════════════════════════════════════════
+//  Demo command showing multi-word argument completions
+// ════════════════════════════════════════════════════════════════
+
+host.AddCommand("demo", "Demo command with argument completions",
+    (args, named) =>
+    {
+        string joined = string.Join(" ", args);
+        host.AddMessage($"[green]Demo executed with: [cyan]{Markup.Escape(joined)}[/][/]");
+        return Task.CompletedTask;
+    },
+    [
+        "pc",
+        "mac",
+        "linux ubuntu",
+        "linux fedora",
+        "linux arch",
+        "windows 10",
+        "windows 11"
+    ]);
+
+// ════════════════════════════════════════════════════════════════
 //  Input Field Save / Load test commands
 // ════════════════════════════════════════════════════════════════
 
@@ -159,6 +207,8 @@ _ = Task.Run(async () =>
 
 host.AddMessage("[yellow]StreamShell demo started. Type text or commands like /context[/]");
 host.AddMessage("[yellow]Large paste (>200 chars) will be attached as file[/]");
+host.AddMessage("[yellow]Try [bold]/config[/] [grey]Large[/] (Tab autocomplete for config names)[/]");
+host.AddMessage("[yellow]Try [bold]/demo[/] [grey]li[/] (Tab for multi-word arg completions)[/]");
 host.AddMessage("");
 host.AddMessage("[yellow]--- Save/Load test ---[/]");
 host.AddMessage("[yellow]/save <text>  — save text as input field state[/]");
