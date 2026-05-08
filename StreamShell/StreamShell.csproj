@@ -22,4 +22,9 @@
     <PackageReference Include="Spectre.Console" Version="0.55.2" />
   </ItemGroup>
 
+  <!-- Test internals visibility -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="StreamShell.Tests" />
+  </ItemGroup>
+
 </Project>
