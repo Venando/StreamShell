@@ -11,6 +11,7 @@ internal class UserInputHandler : IInputHandler
 {
     private readonly TextBuffer _buffer = new();
     private readonly SelectionManager _selection = new();
+    private readonly UndoManager _undo = new();
     private readonly StringBuilder _tempInput = new();
 
     public string CurrentInput => _buffer.CurrentInput;
@@ -26,9 +27,7 @@ internal class UserInputHandler : IInputHandler
     public bool TryGetSelection(out int start, out int length)
         => _selection.TryGetSelection(_buffer.CursorPosition, out start, out length);
 
-    // ── Undo Stack ──────────────────────────────────────────────────
-    private readonly Stack<(string text, int cursor, int? selection)> _undoStack = new();
-    private const int MaxUndoDepth = 50;
+    // ── Undo (delegated to UndoManager) ─────────────────────────────
 
     // ── Right Margin & Vertical Navigation ──────────────────────────
     public int RightMargin { get; set; } = Console.WindowWidth;
@@ -222,54 +221,40 @@ internal class UserInputHandler : IInputHandler
 
     private void InsertCharacter(char c)
     {
-        int cursor = _buffer.CursorPosition;
+        Snapshot();
 
-        if (_selection.IsActiveAt(cursor))
-        {
-            Snapshot();
-            _buffer.Remove(_selection.SelectionStart(cursor), _selection.SelectionLength(cursor));
-            _selection.Clear();
-        }
-        else
-        {
-            Snapshot();
-        }
+        if (_selection.IsActiveAt(_buffer.CursorPosition))
+            RemoveSelectedText();
 
         if (_buffer.CursorPosition < _buffer.Length || _buffer.Length == 0)
-        {
             _buffer.Insert(c);
-        }
         else
-        {
             _tempInput.Append(c);
-        }
     }
 
     // ── Selection Handling ──────────────────────────────────────────
     private void HandleBackspace()
     {
-        if (_selection.IsActiveAt(_buffer.CursorPosition))
-        {
-            _buffer.Remove(_selection.SelectionStart(_buffer.CursorPosition), _selection.SelectionLength(_buffer.CursorPosition));
-            _selection.Clear();
-        }
-        else
-        {
+        if (!RemoveSelectedText())
             _buffer.Backspace();
-        }
     }
 
     private void HandleDelete()
     {
-        if (_selection.IsActiveAt(_buffer.CursorPosition))
-        {
-            _buffer.Remove(_selection.SelectionStart(_buffer.CursorPosition), _selection.SelectionLength(_buffer.CursorPosition));
-            _selection.Clear();
-        }
-        else
-        {
+        if (!RemoveSelectedText())
             _buffer.Delete();
-        }
+    }
+
+    /// <summary>If selection is active, removes it and returns true. Otherwise returns false.</summary>
+    private bool RemoveSelectedText()
+    {
+        int cursor = _buffer.CursorPosition;
+        if (!_selection.IsActiveAt(cursor))
+            return false;
+
+        _buffer.Remove(_selection.SelectionStart(cursor), _selection.SelectionLength(cursor));
+        _selection.Clear();
+        return true;
     }
 
     // ── Clipboard Operations ────────────────────────────────────────
@@ -293,32 +278,20 @@ internal class UserInputHandler : IInputHandler
     {
         try
         {
-            if (_selection.IsActiveAt(_buffer.CursorPosition))
-            {
-                var text = _selection.SelectedText(_buffer.CursorPosition, _buffer.CurrentInput);
-                ClipboardService.Copy(text);
-                _buffer.Remove(_selection.SelectionStart(_buffer.CursorPosition), _selection.SelectionLength(_buffer.CursorPosition));
-                _selection.Clear();
-            }
-            else
-            {
-                ClipboardService.Copy(_buffer.CurrentInput);
-                _buffer.Clear();
-            }
+            int cursor = _buffer.CursorPosition;
+            string text = _selection.IsActiveAt(cursor)
+                ? _selection.SelectedText(cursor, _buffer.CurrentInput)
+                : _buffer.CurrentInput;
+
+            ClipboardService.Copy(text);
         }
         catch
         {
-            // Clipboard unavailable; still perform the cut
-            if (_selection.IsActiveAt(_buffer.CursorPosition))
-            {
-                _buffer.Remove(_selection.SelectionStart(_buffer.CursorPosition), _selection.SelectionLength(_buffer.CursorPosition));
-                _selection.Clear();
-            }
-            else
-            {
-                _buffer.Clear();
-            }
+            // Clipboard unavailable; perform just the removal below
         }
+
+        if (!RemoveSelectedText())
+            _buffer.Clear();
     }
 
     private void PasteFromClipboard()
@@ -337,10 +310,7 @@ internal class UserInputHandler : IInputHandler
             return;
 
         if (_selection.IsActiveAt(_buffer.CursorPosition))
-        {
-            _buffer.Remove(_selection.SelectionStart(_buffer.CursorPosition), _selection.SelectionLength(_buffer.CursorPosition));
-            _selection.Clear();
-        }
+            RemoveSelectedText();
 
         InsertPastedText(text);
     }
@@ -373,26 +343,17 @@ internal class UserInputHandler : IInputHandler
         }
     }
 
-    // ── Undo ────────────────────────────────────────────────────────
+    // ── Undo (delegated to UndoManager) ────────────────────────────────
     private void Snapshot()
     {
-        if (_undoStack.Count >= MaxUndoDepth)
-        {
-            var items = _undoStack.ToArray();
-            _undoStack.Clear();
-            for (int i = items.Length - (MaxUndoDepth - 1); i < items.Length; i++)
-                _undoStack.Push(items[i]);
-        }
-
-        _undoStack.Push((_buffer.CurrentInput, _buffer.CursorPosition, _selection.GetAnchor()));
+        _undo.Snapshot(_buffer.CurrentInput, _buffer.CursorPosition, _selection.GetAnchor());
     }
 
     private void Undo()
     {
-        if (_undoStack.Count == 0)
+        if (!_undo.TryUndo(out string text, out int cursor, out int? selection))
             return;
 
-        var (text, cursor, selection) = _undoStack.Pop();
         _buffer.SetContent(text, cursor);
 
         if (selection.HasValue)
@@ -628,7 +589,7 @@ internal class UserInputHandler : IInputHandler
         _tempInput.Clear();
         _selection.Reset();
         _stickyColumn = -1;
-        _undoStack.Clear();
+        _undo.Clear();
     }
 
     private static string GenerateName(string content)
