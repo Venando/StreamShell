@@ -2,7 +2,7 @@ using Spectre.Console;
 
 namespace StreamShell;
 
-internal class CommandPalette(IEnumerable<Command> commands)
+internal class CommandPalette
 {
     public const int MaxHeight = 6;
 
@@ -18,9 +18,22 @@ internal class CommandPalette(IEnumerable<Command> commands)
         return arr;
     }
 
-    private readonly Command[] _commands = commands.ToArray();
+    private readonly Func<IEnumerable<Command>> _commandProvider;
     private string? _lastInput;
     private IReadOnlyList<string>? _lastHints;
+
+    /// <summary>Creates a palette that reads from a live command provider.</summary>
+    public CommandPalette(Func<IEnumerable<Command>> commandProvider)
+    {
+        _commandProvider = commandProvider;
+    }
+
+    /// <summary>Creates a palette with a fixed set of commands (for testing).</summary>
+    public CommandPalette(IEnumerable<Command> commands)
+    {
+        var arr = commands.ToArray();
+        _commandProvider = () => arr;
+    }
 
     public IReadOnlyList<string> GetHints(string currentInput)
     {
@@ -48,8 +61,9 @@ internal class CommandPalette(IEnumerable<Command> commands)
         string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
 
         // Find matching commands
+        var currentCommands = _commandProvider();
         List<Command> matching = new(MaxHeight);
-        foreach (var cmd in _commands)
+        foreach (var cmd in currentCommands)
         {
             if (cmd.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
             {
@@ -116,8 +130,9 @@ internal class CommandPalette(IEnumerable<Command> commands)
         string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
 
         // Find matching commands
+        var currentCommands = _commandProvider();
         List<Command> matching = new();
-        foreach (var cmd in _commands)
+        foreach (var cmd in currentCommands)
         {
             if (cmd.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
                 matching.Add(cmd);

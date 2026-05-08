@@ -43,7 +43,7 @@ public class ConsoleAppHost : IDisposable
     {
         _renderer = new ConsoleRenderer(Settings);
         _inputHandler = new UserInputHandler();
-        _commandPalette = new CommandPalette(_commands.Values);
+        _commandPalette = new CommandPalette(() => _commands.Values);
         ApplySettings();
         WireUpAutoComplete();
     }
@@ -53,7 +53,7 @@ public class ConsoleAppHost : IDisposable
     {
         _renderer = renderer;
         _inputHandler = inputHandler;
-        _commandPalette = new CommandPalette(_commands.Values);
+        _commandPalette = new CommandPalette(() => _commands.Values);
         ApplySettings();
         WireUpAutoComplete();
     }
