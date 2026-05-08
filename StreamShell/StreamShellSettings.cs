@@ -14,22 +14,22 @@ public class StreamShellSettings
     /// <summary>
     /// Spectre.Console markup style string for the cursor highlight.
     /// Applied to the character under the cursor (or a placeholder space past the end).
-    /// Default: "black on gray".
+    /// Default: "bold black on cyan".
     /// </summary>
-    public string CursorMarkup { get; set; } = "black on gray";
+    public string CursorMarkup { get; set; } = "bold black on cyan";
 
     /// <summary>
     /// Spectre.Console markup style string for selected text.
     /// Applied to the range of characters selected with Shift+arrow.
-    /// Default: "white on gray".
+    /// Default: "bold cyan on Grey27".
     /// </summary>
-    public string SelectionMarkup { get; set; } = "white on gray";
+    public string SelectionMarkup { get; set; } = "bold cyan on Grey27";
 
     /// <summary>
     /// Spectre.Console markup for the first-line input field prefix.
-    /// Default: "[blue]> [/]"
+    /// Default: "[bold SkyBlue1]> [/]"
     /// </summary>
-    public string InputPrefix { get; set; } = "[blue]> [/]";
+    public string InputPrefix { get; set; } = "[bold SkyBlue1]> [/]";
 
     /// <summary>
     /// Plain text prefix for continuation (wrapped) input lines.
