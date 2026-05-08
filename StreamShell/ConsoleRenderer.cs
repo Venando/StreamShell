@@ -7,7 +7,8 @@ internal class ConsoleRenderer : IRenderer
     public int RightMargin { get; set; } = Console.WindowWidth;
 
     /// <summary>Get the total vertical space taken by the input block.</summary>
-    public int GetBlockOffset(string input) => 7 + GetInputLineCount(input);
+    /// Block layout: separator(1) + input(N) + blank(1) + hints-separator(1) + hints(6) = N + 9
+    public int GetBlockOffset(string input) => 9 + GetInputLineCount(input);
 
     /// <summary>Get the number of visual lines the input occupies.</summary>
     public int GetInputLineCount(string input) => GetInputLines(input, RightMargin).Count;
