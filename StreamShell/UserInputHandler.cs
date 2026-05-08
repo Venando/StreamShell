@@ -445,6 +445,15 @@ internal class UserInputHandler
             _selectionAnchor = _cursorPosition;
 
         _cursorPosition++;
+
+        // When selecting with Shift, skip newline characters so the
+        // first selected character is visible content, not a structural
+        // line break.
+        if (shift)
+        {
+            while (_cursorPosition < _currentInput.Length && _currentInput[_cursorPosition] == '\n')
+                _cursorPosition++;
+        }
     }
 
     private void MoveCursorHome(bool shift)
