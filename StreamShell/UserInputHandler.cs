@@ -71,6 +71,29 @@ internal class UserInputHandler
     // ── Right Margin ──────────────────────────────────────────────────
     public int RightMargin { get; set; } = Console.WindowWidth;
 
+    // ── Vertical Navigation ───────────────────────────────────────────
+    private int _stickyColumn = -1;
+
+    private int GetEffectiveWidth()
+    {
+        int effectiveMargin = Math.Max(10, RightMargin);
+        return Math.Max(1, Math.Min(effectiveMargin, Console.WindowWidth));
+    }
+
+    private (int visLine, int visCol) GetVisualPosition(string input, List<string> visualLines, List<int> offsets)
+    {
+        for (int i = visualLines.Count - 1; i >= 0; i--)
+        {
+            if (offsets[i] <= _cursorPosition)
+            {
+                int col = _cursorPosition - offsets[i];
+                if (col <= visualLines[i].Length)
+                    return (i, col);
+            }
+        }
+        return (visualLines.Count - 1, visualLines[^1].Length);
+    }
+
     // ── Selection Operations ──────────────────────────────────────────
     private void DeleteSelection()
     {
@@ -323,23 +346,37 @@ internal class UserInputHandler
             // ── Navigation (arrow keys, Home, End) ────────────────────
             if (!ctrl && !alt)
             {
+                if (key.Key == ConsoleKey.UpArrow)
+                {
+                    MoveCursorUp(shift);
+                    continue;
+                }
+                if (key.Key == ConsoleKey.DownArrow)
+                {
+                    MoveCursorDown(shift);
+                    continue;
+                }
                 if (key.Key == ConsoleKey.LeftArrow)
                 {
+                    _stickyColumn = -1;
                     MoveCursorLeft(shift);
                     continue;
                 }
                 if (key.Key == ConsoleKey.RightArrow)
                 {
+                    _stickyColumn = -1;
                     MoveCursorRight(shift);
                     continue;
                 }
                 if (key.Key == ConsoleKey.Home)
                 {
+                    _stickyColumn = -1;
                     MoveCursorHome(shift);
                     continue;
                 }
                 if (key.Key == ConsoleKey.End)
                 {
+                    _stickyColumn = -1;
                     MoveCursorEnd(shift);
                     continue;
                 }
@@ -350,11 +387,13 @@ internal class UserInputHandler
             {
                 if (key.Key == ConsoleKey.LeftArrow)
                 {
+                    _stickyColumn = -1;
                     MoveCursorWordLeft(shift);
                     continue;
                 }
                 if (key.Key == ConsoleKey.RightArrow)
                 {
+                    _stickyColumn = -1;
                     MoveCursorWordRight(shift);
                     continue;
                 }
@@ -508,6 +547,78 @@ internal class UserInputHandler
         MoveCursorRight(shift);
     }
 
+    // ── Vertical Movement (↑/↓) ───────────────────────────────────────
+
+    private void MoveCursorUp(bool shift)
+    {
+        if (_cursorPosition <= 0)
+        {
+            if (!shift) _selectionAnchor = null;
+            return;
+        }
+
+        string input = _currentInput.ToString();
+        int width = GetEffectiveWidth();
+        var (visualLines, offsets) = ConsoleRenderer.GetVisualLineData(input, width);
+        var (visLine, visCol) = GetVisualPosition(input, visualLines, offsets);
+
+        if (visLine == 0)
+        {
+            if (!shift) _selectionAnchor = null;
+            return;
+        }
+
+        int targetCol = _stickyColumn >= 0 ? _stickyColumn : visCol;
+        _stickyColumn = targetCol;
+
+        string prevLineText = visualLines[visLine - 1];
+        int clampedCol = Math.Min(targetCol, prevLineText.Length);
+        int targetPos = offsets[visLine - 1] + clampedCol;
+
+        if (!shift)
+            _selectionAnchor = null;
+        else if (!_selectionAnchor.HasValue)
+            _selectionAnchor = _cursorPosition;
+
+        _cursorPosition = targetPos;
+    }
+
+    private void MoveCursorDown(bool shift)
+    {
+        if (_cursorPosition >= _currentInput.Length)
+        {
+            if (!shift) _selectionAnchor = null;
+            return;
+        }
+
+        string input = _currentInput.ToString();
+        int width = GetEffectiveWidth();
+        var (visualLines, offsets) = ConsoleRenderer.GetVisualLineData(input, width);
+        var (visLine, visCol) = GetVisualPosition(input, visualLines, offsets);
+
+        if (visLine >= visualLines.Count - 1)
+        {
+            // Move to end of last visual line if already on it
+            if (!shift) _selectionAnchor = null;
+            _cursorPosition = _currentInput.Length;
+            return;
+        }
+
+        int targetCol = _stickyColumn >= 0 ? _stickyColumn : visCol;
+        _stickyColumn = targetCol;
+
+        string nextLineText = visualLines[visLine + 1];
+        int clampedCol = Math.Min(targetCol, nextLineText.Length);
+        int targetPos = offsets[visLine + 1] + clampedCol;
+
+        if (!shift)
+            _selectionAnchor = null;
+        else if (!_selectionAnchor.HasValue)
+            _selectionAnchor = _cursorPosition;
+
+        _cursorPosition = targetPos;
+    }
+
     // ── Word-Boundary Movement (Ctrl+←/→) ────────────────────────────
 
     private void MoveCursorWordLeft(bool shift)
@@ -578,6 +689,7 @@ internal class UserInputHandler
         _tempInput.Clear();
         _cursorPosition = 0;
         _selectionAnchor = null;
+        _stickyColumn = -1;
         _undoStack.Clear();
     }
 

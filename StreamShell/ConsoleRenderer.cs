@@ -365,7 +365,7 @@ internal class ConsoleRenderer
     /// Wraps a single segment (no newline characters) into visual lines
     /// at the given terminal <paramref name="width"/>.
     /// </summary>
-    private static List<string> WrapSegment(
+    internal static List<string> WrapSegment(
         string segment,
         int width,
         bool isFirstSegment,
@@ -439,6 +439,58 @@ internal class ConsoleRenderer
             return (0, 0);
 
         return (visualLines.Count - 1, visualLines[^1].Length);
+    }
+
+    /// <summary>
+    /// Gets both visual line text and the character offset of each line
+    /// in the raw input. Needed for up/down cursor navigation.
+    /// Offsets account for newline characters between segments.
+    /// </summary>
+    public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin)
+    {
+        int width = Math.Max(1, Math.Min(margin, Console.WindowWidth));
+        var lines = new List<string>();
+        var offsets = new List<int>();
+
+        if (string.IsNullOrEmpty(input))
+        {
+            lines.Add("");
+            offsets.Add(0);
+            return (lines, offsets);
+        }
+
+        var segments = input.Split('\n');
+        bool anyLinesProduced = false;
+        int charOffset = 0;
+
+        for (int segIdx = 0; segIdx < segments.Length; segIdx++)
+        {
+            string segment = segments[segIdx];
+            bool isFirstSegment = segIdx == 0;
+            bool isLastSegment = segIdx == segments.Length - 1;
+
+            var wrapped = WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced);
+
+            for (int lineIdx = 0; lineIdx < wrapped.Count; lineIdx++)
+            {
+                offsets.Add(charOffset);
+                lines.Add(wrapped[lineIdx]);
+                charOffset += wrapped[lineIdx].Length;
+            }
+
+            if (wrapped.Count > 0)
+                anyLinesProduced = true;
+
+            charOffset++; // account for \n between segments
+        }
+
+        if (lines.Count == 0)
+        {
+            lines.Add("");
+            offsets.Add(0);
+        }
+
+        return (lines, offsets);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────
