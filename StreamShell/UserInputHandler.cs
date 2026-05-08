@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 
 namespace StreamShell;
@@ -15,6 +16,14 @@ internal class UserInputHandler : IInputHandler
     private readonly StringBuilder _tempInput = new();
     private readonly CursorMovementHandler _cursorMovement;
     private readonly ClipboardHandler _clipboard;
+    private readonly ConcurrentDictionary<string, SavedInputState> _savedInputs = new();
+    private long _saveCounter;
+
+    /// <summary>Snapshot of the input field at a point in time.</summary>
+    private sealed record SavedInputState(
+        string Text,
+        int CursorPosition,
+        List<Attachment> Attachments);
 
     public UserInputHandler()
     {
@@ -337,4 +346,43 @@ internal class UserInputHandler : IInputHandler
         _cursorMovement.ResetStickyColumn();
         _undo.Clear();
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Save / Load / Remove Input Field State
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>Saves the current input field state and returns a unique ID.</summary>
+    public string SaveInputField()
+    {
+        string id = Interlocked.Increment(ref _saveCounter).ToString();
+        var saved = new SavedInputState(
+            _buffer.CurrentInput,
+            _buffer.CursorPosition,
+            Attachments.Select(a => a with { }).ToList());
+        _savedInputs[id] = saved;
+        return id;
+    }
+
+    /// <summary>Restores input field state by ID. Returns false if the ID is unknown.</summary>
+    public bool LoadInputField(string id)
+    {
+        if (!_savedInputs.TryGetValue(id, out var state))
+            return false;
+
+        var attachments = state.Attachments.Select(a => a with { }).ToList();
+
+        Reset();
+        _buffer.SetContent(state.Text, state.CursorPosition);
+        Attachments = attachments;
+
+        return true;
+    }
+
+    /// <summary>Removes a single saved input field by ID. Returns false if the ID is unknown.</summary>
+    public bool RemoveSavedInputField(string id)
+        => _savedInputs.TryRemove(id, out _);
+
+    /// <summary>Removes all saved input field states.</summary>
+    public void RemoveAllSavedInputFields()
+        => _savedInputs.Clear();
 }

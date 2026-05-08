@@ -35,4 +35,19 @@ public interface IInputHandler
 
     /// <summary>Reset input state for a new input cycle.</summary>
     void Reset();
+
+    /// <summary>
+    /// Save the current input field state (text, cursor position, and attachments)
+    /// into a named slot. Returns the unique ID assigned to the saved state.
+    /// </summary>
+    string SaveInputField();
+
+    /// <summary>Restore input field state from a previously saved slot. Returns false if the ID is unknown.</summary>
+    bool LoadInputField(string id);
+
+    /// <summary>Remove a single saved input field by its ID. Returns false if the ID is unknown.</summary>
+    bool RemoveSavedInputField(string id);
+
+    /// <summary>Remove all saved input field states.</summary>
+    void RemoveAllSavedInputFields();
 }
