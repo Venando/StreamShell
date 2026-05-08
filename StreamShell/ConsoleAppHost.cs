@@ -72,17 +72,31 @@ public class ConsoleAppHost : IDisposable
         // Treat Ctrl+C as ordinary input so we can use it for Copy
         Console.TreatControlCAsInput = true;
 
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
-
         Console.CursorVisible = false;
 
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
+
+        try
+        {
+            await RunLoop(linkedCts.Token);
+        }
+        finally
+        {
+            Console.CursorVisible = true;
+            Console.Write("\u001b[?2004l");
+            Console.TreatControlCAsInput = false;
+        }
+    }
+
+    private async Task RunLoop(CancellationToken token)
+    {
         string? lastRenderedInput = null;
         int previousInputLineCount = 0;
         int lastCursorPosition = 0;
         bool lastHasSelection = false;
         int lastWindowWidth = Console.WindowWidth;
 
-        while (!linkedCts.Token.IsCancellationRequested)
+        while (!token.IsCancellationRequested)
         {
             // ── Snapshot current state ───────────────────────────────
             IReadOnlyList<string> hints = _commandPalette.GetHints(_inputHandler.CurrentInput);
@@ -176,7 +190,7 @@ public class ConsoleAppHost : IDisposable
                 lastHasSelection = false;
             }
 
-            await Task.Delay(10, linkedCts.Token);
+            await Task.Delay(10, token);
         }
     }
 
@@ -198,12 +212,13 @@ public class ConsoleAppHost : IDisposable
     /// <summary>Signal the host to stop after the current loop iteration.</summary>
     public void Stop() => _cts.Cancel();
 
-    /// <summary>Dispose the host, cancelling the run loop and restoring cursor visibility.</summary>
+    /// <summary>Dispose the host, cancelling the run loop and restoring terminal state.</summary>
     public void Dispose()
     {
         _cts.Cancel();
         _cts.Dispose();
         Console.CursorVisible = true;
+        Console.Write("\u001b[?2004l");
     }
 
     private void ExecuteCommand(string input)
