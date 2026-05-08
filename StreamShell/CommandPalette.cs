@@ -1,6 +1,6 @@
 namespace StreamShell;
 
-internal class CommandPalette(List<Command> commands)
+internal class CommandPalette(IEnumerable<Command> commands)
 {
     public const int MaxHeight = 6;
 

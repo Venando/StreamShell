@@ -19,7 +19,7 @@ public enum InputType
 public class ConsoleAppHost : IDisposable
 {
     private readonly ConcurrentQueue<string> _messages = new();
-    private readonly List<Command> _commands = new();
+    private readonly ConcurrentDictionary<string, Command> _commands = new(StringComparer.OrdinalIgnoreCase);
     private readonly IInputHandler _inputHandler;
     private readonly IRenderer _renderer;
     private readonly CommandPalette _commandPalette;
@@ -46,7 +46,7 @@ public class ConsoleAppHost : IDisposable
     {
         _renderer = renderer;
         _inputHandler = inputHandler;
-        _commandPalette = new CommandPalette(_commands);
+        _commandPalette = new CommandPalette(_commands.Values);
         _inputHandler.LargePasteThreshold = Settings.LargePasteThreshold;
         _inputHandler.LargePasteLineThreshold = Settings.LargePasteLineThreshold;
     }
@@ -58,9 +58,10 @@ public class ConsoleAppHost : IDisposable
     }
 
     /// <summary>Register a command that can be triggered with /command-name.</summary>
+    /// <summary>Register a command that can be triggered with /command-name.</summary>
     public void AddCommand(Command command)
     {
-        _commands.Add(command);
+        _commands[command.Name] = command;
     }
 
     /// <summary>Run the main input/render loop until cancelled or Ctrl+D is pressed.</summary>
@@ -216,10 +217,7 @@ public class ConsoleAppHost : IDisposable
             ? query[(commandName.Length + 1)..]
             : string.Empty;
 
-        var command = _commands.FirstOrDefault(c =>
-            c.Name.Equals(commandName, StringComparison.OrdinalIgnoreCase));
-
-        if (command is null)
+        if (!_commands.TryGetValue(commandName, out var command))
         {
             AddMessage($"[red]Unknown command: /{commandName}[/]");
             return;
@@ -254,6 +252,6 @@ public class ConsoleAppHost : IDisposable
             return false;
 
         string commandName = parts[0];
-        return _commands.Any(c => c.Name.Equals(commandName, StringComparison.OrdinalIgnoreCase));
+        return _commands.ContainsKey(commandName);
     }
 }
