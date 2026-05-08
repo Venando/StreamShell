@@ -449,46 +449,65 @@ internal class UserInputHandler
 
     private void MoveCursorHome(bool shift)
     {
-        // Find start of current line (after the last \n before cursor)
         string input = _currentInput.ToString();
         int lineStart = _cursorPosition > 0
             ? input.LastIndexOf('\n', _cursorPosition - 1) + 1
             : 0;
 
-        if (lineStart == _cursorPosition)
+        if (lineStart != _cursorPosition)
         {
-            // Already at line start — clear selection if no shift
-            if (!shift) _selectionAnchor = null;
+            // At line start → move there
+            if (!shift)
+                _selectionAnchor = null;
+            else if (!_selectionAnchor.HasValue)
+                _selectionAnchor = _cursorPosition;
+            _cursorPosition = lineStart;
             return;
         }
 
+        // Already at line start — act like Left arrow:
+        // move one character left, wrapping to previous line.
+        if (_cursorPosition <= 0)
+        {
+            if (!shift) _selectionAnchor = null;
+            return;
+        }
         if (!shift)
             _selectionAnchor = null;
         else if (!_selectionAnchor.HasValue)
             _selectionAnchor = _cursorPosition;
-
-        _cursorPosition = lineStart;
+        _cursorPosition--;
     }
 
     private void MoveCursorEnd(bool shift)
     {
-        // Find end of current line (before the next \n or end of input)
         string input = _currentInput.ToString();
         int nextNewline = input.IndexOf('\n', _cursorPosition);
         int lineEnd = nextNewline >= 0 ? nextNewline : _currentInput.Length;
 
-        if (lineEnd == _cursorPosition)
+        if (lineEnd != _cursorPosition)
+        {
+            // At line end → move there
+            if (!shift)
+                _selectionAnchor = null;
+            else if (!_selectionAnchor.HasValue)
+                _selectionAnchor = _cursorPosition;
+            _cursorPosition = lineEnd;
+            return;
+        }
+
+        // Already at line end — act like Right arrow:
+        // move one character right, wrapping to next line.
+        if (_cursorPosition >= _currentInput.Length)
         {
             if (!shift) _selectionAnchor = null;
             return;
         }
-
         if (!shift)
             _selectionAnchor = null;
         else if (!_selectionAnchor.HasValue)
             _selectionAnchor = _cursorPosition;
-
-        _cursorPosition = lineEnd;
+        _cursorPosition++;
     }
 
     // ── Word-Boundary Movement (Ctrl+←/→) ────────────────────────────
