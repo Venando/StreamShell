@@ -111,30 +111,59 @@ internal class UserInputHandler
     // ── Clipboard Operations ──────────────────────────────────────────
     private void CopyToClipboard()
     {
-        if (HasSelection)
-            ClipboardService.Copy(SelectedText);
-        else
-            ClipboardService.Copy(_currentInput.ToString());
+        try
+        {
+            if (HasSelection)
+                ClipboardService.Copy(SelectedText);
+            else
+                ClipboardService.Copy(_currentInput.ToString());
+        }
+        catch
+        {
+            // Clipboard not available on this platform (e.g. WSL)
+        }
     }
 
     private void CutToClipboard()
     {
-        if (HasSelection)
+        try
         {
-            ClipboardService.Copy(SelectedText);
-            DeleteSelection();
+            if (HasSelection)
+            {
+                ClipboardService.Copy(SelectedText);
+                DeleteSelection();
+            }
+            else
+            {
+                ClipboardService.Copy(_currentInput.ToString());
+                _currentInput.Clear();
+                _cursorPosition = 0;
+            }
         }
-        else
+        catch
         {
-            ClipboardService.Copy(_currentInput.ToString());
-            _currentInput.Clear();
-            _cursorPosition = 0;
+            // Clipboard not available; still perform the cut
+            if (HasSelection)
+                DeleteSelection();
+            else
+            {
+                _currentInput.Clear();
+                _cursorPosition = 0;
+            }
         }
     }
 
     private void PasteFromClipboard()
     {
-        string? text = ClipboardService.Paste();
+        string? text;
+        try
+        {
+            text = ClipboardService.Paste();
+        }
+        catch
+        {
+            return;
+        }
         if (string.IsNullOrEmpty(text))
             return;
 
@@ -291,7 +320,7 @@ internal class UserInputHandler
                 continue;
             }
 
-            // ── Navigation (no Ctrl/Alt — arrow keys, Home, End) ─────
+            // ── Navigation (arrow keys, Home, End) ────────────────────
             if (!ctrl && !alt)
             {
                 if (key.Key == ConsoleKey.LeftArrow)
@@ -312,6 +341,21 @@ internal class UserInputHandler
                 if (key.Key == ConsoleKey.End)
                 {
                     MoveCursorEnd(shift);
+                    continue;
+                }
+            }
+
+            // ── Ctrl+←/→ Word Jump ────────────────────────────────────
+            if (ctrl && !alt)
+            {
+                if (key.Key == ConsoleKey.LeftArrow)
+                {
+                    MoveCursorWordLeft(shift);
+                    continue;
+                }
+                if (key.Key == ConsoleKey.RightArrow)
+                {
+                    MoveCursorWordRight(shift);
                     continue;
                 }
             }
@@ -366,7 +410,6 @@ internal class UserInputHandler
     {
         if (_cursorPosition <= 0)
         {
-            // At start: just clear selection if no shift
             if (!shift) _selectionAnchor = null;
             return;
         }
@@ -374,7 +417,7 @@ internal class UserInputHandler
         if (!shift)
             _selectionAnchor = null;
         else if (!_selectionAnchor.HasValue)
-            _selectionAnchor = _cursorPosition; // anchor at current position
+            _selectionAnchor = _cursorPosition;
 
         _cursorPosition--;
     }
@@ -413,6 +456,63 @@ internal class UserInputHandler
             _selectionAnchor = _cursorPosition;
 
         _cursorPosition = _currentInput.Length;
+    }
+
+    // ── Word-Boundary Movement (Ctrl+←/→) ────────────────────────────
+
+    private void MoveCursorWordLeft(bool shift)
+    {
+        if (_cursorPosition <= 0)
+        {
+            if (!shift) _selectionAnchor = null;
+            return;
+        }
+
+        if (!shift)
+            _selectionAnchor = null;
+        else if (!_selectionAnchor.HasValue)
+            _selectionAnchor = _cursorPosition;
+
+        _cursorPosition = FindPreviousWordStart(_currentInput.ToString(), _cursorPosition);
+    }
+
+    private void MoveCursorWordRight(bool shift)
+    {
+        if (_cursorPosition >= _currentInput.Length)
+        {
+            if (!shift) _selectionAnchor = null;
+            return;
+        }
+
+        if (!shift)
+            _selectionAnchor = null;
+        else if (!_selectionAnchor.HasValue)
+            _selectionAnchor = _cursorPosition;
+
+        _cursorPosition = FindNextWordStart(_currentInput.ToString(), _cursorPosition);
+    }
+
+    private static int FindPreviousWordStart(string input, int pos)
+    {
+        if (pos <= 0) return 0;
+        int i = pos - 1;
+        // Skip any trailing whitespace
+        while (i >= 0 && char.IsWhiteSpace(input[i])) i--;
+        // Skip the word
+        while (i >= 0 && !char.IsWhiteSpace(input[i])) i--;
+        return i + 1;
+    }
+
+    private static int FindNextWordStart(string input, int pos)
+    {
+        int len = input.Length;
+        if (pos >= len) return len;
+        int i = pos;
+        // Skip current word
+        while (i < len && !char.IsWhiteSpace(input[i])) i++;
+        // Skip whitespace to find the next word
+        while (i < len && char.IsWhiteSpace(input[i])) i++;
+        return i;
     }
 
     // ── Reset ─────────────────────────────────────────────────────────

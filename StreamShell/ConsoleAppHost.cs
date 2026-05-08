@@ -42,9 +42,10 @@ public class ConsoleAppHost : IDisposable
 
     public async Task Run(CancellationToken cancellationToken = default)
     {
-        // Send the ANSI escape sequence to turn on Bracketed Paste Mode
-        // \u001b[?2004h = Enable
+        // Enable bracketed paste mode
         Console.Write("\u001b[?2004h");
+        // Treat Ctrl+C as ordinary input so we can use it for Copy
+        Console.TreatControlCAsInput = true;
 
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
 
@@ -54,66 +55,66 @@ public class ConsoleAppHost : IDisposable
         int previousInputLineCount = 0;
         int lastCursorPosition = 0;
         bool lastHasSelection = false;
-        int lastSelectionStart = 0;
-        int lastSelectionLength = 0;
 
         while (!linkedCts.Token.IsCancellationRequested)
         {
+            // ── Snapshot current state ───────────────────────────────
             IReadOnlyList<string> hints = _commandPalette.GetHints(_inputHandler.CurrentInput);
             int blockOffset = _renderer.GetBlockOffset(_inputHandler.CurrentInput);
             int currentInputLineCount = _renderer.GetInputLineCount(_inputHandler.CurrentInput);
-
-            // Gather current cursor/selection state
             int currentCursor = _inputHandler.CursorPosition;
             bool currentHasSelection = _inputHandler.HasSelection;
-            int currentSelStart = _inputHandler.TryGetSelection(out int ss, out int sl) ? ss : 0;
-            int currentSelLength = _inputHandler.TryGetSelection(out _, out int sl2) ? sl2 : 0;
+            _inputHandler.TryGetSelection(out int currentSelStart, out int currentSelLength);
+            int margin = _inputHandler.RightMargin;
 
             bool inputChanged = lastRenderedInput != _inputHandler.CurrentInput;
-            bool cursorOrSelectionChanged =
-                lastCursorPosition != currentCursor ||
-                lastHasSelection != currentHasSelection ||
-                currentSelStart != lastSelectionStart ||
-                currentSelLength != lastSelectionLength;
+            bool cursorChanged = lastCursorPosition != currentCursor ||
+                                  lastHasSelection != currentHasSelection;
 
-            if (inputChanged || cursorOrSelectionChanged)
+            // ── Always process pending messages first ────────────────
+            bool rendered = false;
+            if (_messages.TryDequeue(out var message))
             {
-                int margin = _inputHandler.RightMargin;
+                if (lastRenderedInput is not null)
+                    _renderer.ClearInputBlock(lastRenderedInput);
+                else
+                    _renderer.ClearInputLine();
 
-                if (_messages.TryDequeue(out var message))
-                {
-                    if (lastRenderedInput is not null)
-                        _renderer.ClearInputBlock(lastRenderedInput);
-                    else
-                        _renderer.ClearInputLine();
-
-                    RenderMessage(message);
-                    RenderFullInputBlock(hints, currentCursor, currentHasSelection, currentSelStart, currentSelLength, margin);
-                    lastRenderedInput = _inputHandler.CurrentInput;
-                    previousInputLineCount = currentInputLineCount;
-                }
-                else if (inputChanged && previousInputLineCount == 1 && currentInputLineCount == 1)
+                RenderMessage(message);
+                RenderFullInputBlock(hints, currentCursor, currentHasSelection,
+                    currentSelStart, currentSelLength, margin);
+                lastRenderedInput = _inputHandler.CurrentInput;
+                previousInputLineCount = currentInputLineCount;
+                rendered = true;
+            }
+            else if (inputChanged || cursorChanged)
+            {
+                // Input text or cursor/selection changed — update display
+                if (inputChanged && previousInputLineCount == 1 && currentInputLineCount == 1)
                 {
                     // Single-line → single-line: optimized overwrite
                     ConsoleRenderer.OverwriteInputBlock(
                         _inputHandler.CurrentInput, hints, blockOffset,
-                        currentCursor, currentHasSelection, currentSelStart, currentSelLength, margin);
-                    lastRenderedInput = _inputHandler.CurrentInput;
+                        currentCursor, currentHasSelection,
+                        currentSelStart, currentSelLength, margin);
                 }
                 else
                 {
                     // Multi-line or structural change: full re-render
                     if (lastRenderedInput is not null)
                         _renderer.ClearInputBlock(lastRenderedInput);
-                    RenderFullInputBlock(hints, currentCursor, currentHasSelection, currentSelStart, currentSelLength, margin);
-                    lastRenderedInput = _inputHandler.CurrentInput;
-                    previousInputLineCount = currentInputLineCount;
+                    RenderFullInputBlock(hints, currentCursor, currentHasSelection,
+                        currentSelStart, currentSelLength, margin);
                 }
+                lastRenderedInput = _inputHandler.CurrentInput;
+                previousInputLineCount = currentInputLineCount;
+                rendered = true;
+            }
 
+            if (rendered)
+            {
                 lastCursorPosition = currentCursor;
                 lastHasSelection = currentHasSelection;
-                lastSelectionStart = currentSelStart;
-                lastSelectionLength = currentSelLength;
             }
 
             if (_inputHandler.QuitRequested)
@@ -142,8 +143,6 @@ public class ConsoleAppHost : IDisposable
                 previousInputLineCount = 0;
                 lastCursorPosition = 0;
                 lastHasSelection = false;
-                lastSelectionStart = 0;
-                lastSelectionLength = 0;
             }
 
             await Task.Delay(10, linkedCts.Token);
