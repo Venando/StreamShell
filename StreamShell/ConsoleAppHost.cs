@@ -100,9 +100,7 @@ public class ConsoleAppHost : IDisposable
             int windowWidth = Console.WindowWidth;
             int margin = _inputHandler.RightMargin;
 
-            if (TryDequeueAndRender(state, input, cursor, hasSelection, selStart, selLength, margin)
-                || TryUpdateRender(state, input, cursor, hasSelection, selStart, selLength, margin,
-                    windowWidth))
+            if (TryRender(state, input, cursor, hasSelection, selStart, selLength, margin, windowWidth))
             {
                 state = new RenderSnapshot(input, cursor, hasSelection,
                     _renderer.GetInputLineCount(input), windowWidth);
@@ -114,24 +112,30 @@ public class ConsoleAppHost : IDisposable
                 break;
             }
 
-            if (_inputHandler.ProcessInput() is { } submittedInput)
+            string? submittedInput = _inputHandler.ProcessInput();
+            if (submittedInput != null)
             {
-                _renderer.ClearInputBlock(state.LastInput);
-
-                bool isCommand = IsValidCommand(submittedInput);
-                var inputType = isCommand ? InputType.Command : InputType.PlainText;
-
-                UserInputSubmitted?.Invoke(submittedInput, inputType, _inputHandler.Attachments);
-
-                if (isCommand)
-                    ExecuteCommand(submittedInput);
-
-                _inputHandler.Reset();
+                HandleSubmittedInput(submittedInput, windowWidth);
                 state = new RenderSnapshot(null, 0, false, 0, windowWidth);
             }
 
             await Task.Delay(10, token);
         }
+    }
+
+    /// <summary>Combines dequeue-based rendering and update-based rendering into one check.</summary>
+    private bool TryRender(
+        RenderSnapshot state,
+        string input, int cursor, bool hasSelection, int selStart, int selLength,
+        int margin, int windowWidth)
+    {
+        // Priority 1: queued messages need a full re-render
+        if (TryDequeueAndRender(state, input, cursor, hasSelection, selStart, selLength, margin))
+            return true;
+
+        // Priority 2: input/cursor/resize changes need an update
+        return TryUpdateRender(state, input, cursor, hasSelection, selStart, selLength,
+            margin, windowWidth);
     }
 
     /// <summary>Renders queued messages and re-renders the input block. Returns true if anything was rendered.</summary>
@@ -159,15 +163,12 @@ public class ConsoleAppHost : IDisposable
         string input, int cursor, bool hasSelection, int selStart, int selLength,
         int margin, int windowWidth)
     {
-        bool terminalResized = state.LastWindowWidth != windowWidth;
-        bool inputChanged = state.LastInput != input;
-        bool cursorChanged = state.LastCursor != cursor || state.LastHasSelection != hasSelection;
-
-        if (!inputChanged && !cursorChanged && !terminalResized)
+        if (!HasRenderChanges(state, input, cursor, hasSelection, windowWidth))
             return false;
 
         // Single-line → single-line: use faster overwrite (not on resize)
-        if (inputChanged && !terminalResized
+        bool terminalResized = state.LastWindowWidth != windowWidth;
+        if (state.LastInput != input && !terminalResized
             && state.LastInputLineCount == 1
             && _renderer.GetInputLineCount(input) == 1)
         {
@@ -184,6 +185,34 @@ public class ConsoleAppHost : IDisposable
         }
 
         return true;
+    }
+
+    /// <summary>Returns true when the render snapshot has any meaningful difference from the current state.</summary>
+    private static bool HasRenderChanges(
+        RenderSnapshot state,
+        string input, int cursor, bool hasSelection, int windowWidth)
+    {
+        return state.LastInput != input
+            || state.LastCursor != cursor
+            || state.LastHasSelection != hasSelection
+            || state.LastWindowWidth != windowWidth;
+    }
+
+    private void HandleSubmittedInput(string submittedInput, int windowWidth)
+    {
+        _renderer.ClearInputBlock(submittedInput);
+
+        bool hasAttachments = _inputHandler.Attachments.Count > 0;
+        bool isCommand = !hasAttachments && TryGetCommandName(submittedInput, out string? commandName)
+            && _commands.ContainsKey(commandName!);
+
+        var inputType = isCommand ? InputType.Command : InputType.PlainText;
+        UserInputSubmitted?.Invoke(submittedInput, inputType, _inputHandler.Attachments);
+
+        if (isCommand)
+            ExecuteCommand(submittedInput);
+
+        _inputHandler.Reset();
     }
 
     private void RenderFullBlock(
@@ -210,16 +239,10 @@ public class ConsoleAppHost : IDisposable
 
     private void ExecuteCommand(string input)
     {
-        string query = input.Length > 1 ? input[1..] : string.Empty;
-        var parts = CommandParser.Split(query);
-        if (parts.Count == 0) return;
+        if (!TryGetCommandName(input, out string? commandName, out string? argsString))
+            return;
 
-        string commandName = parts[0];
-        string argsString = query.Length > commandName.Length
-            ? query[(commandName.Length + 1)..]
-            : string.Empty;
-
-        if (!_commands.TryGetValue(commandName, out var command))
+        if (!_commands.TryGetValue(commandName!, out var command))
         {
             AddMessage($"[red]Unknown command: /{commandName}[/]");
             return;
@@ -240,20 +263,27 @@ public class ConsoleAppHost : IDisposable
         });
     }
 
-    private bool IsValidCommand(string input)
+    /// <summary>Extracts the command name and argument string from a /command input.
+    /// Returns false if the input doesn't look like a valid command reference.</summary>
+    private static bool TryGetCommandName(string input, out string? name, out string args)
     {
-        if (_inputHandler.Attachments.Count > 0)
+        name = null;
+        args = string.Empty;
+
+        if (input.Length <= 1 || input[0] != '/')
             return false;
 
-        if (!input.StartsWith('/'))
-            return false;
-
-        string query = input.Length > 1 ? input[1..] : string.Empty;
+        string query = input[1..];
         var parts = CommandParser.Split(query);
         if (parts.Count == 0)
             return false;
 
-        string commandName = parts[0];
-        return _commands.ContainsKey(commandName);
+        name = parts[0];
+        args = query.Length > name.Length ? query[(name.Length + 1)..] : string.Empty;
+        return true;
     }
+
+    /// <summary>Convenience overload when only the command name is needed.</summary>
+    private static bool TryGetCommandName(string input, out string? name)
+        => TryGetCommandName(input, out name, out _);
 }
