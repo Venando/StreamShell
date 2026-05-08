@@ -131,8 +131,14 @@ internal class ConsoleRenderer
 
     /// <summary>
     /// Build the Spectre markup for one visual line, accounting for selection
-    /// and cursor position. The cursor is rendered as [white]|[/] at its column.
-    /// The selection is rendered as [white on gray]...[/].
+    /// and cursor position.
+    ///
+    /// Cursor is displayed as a "virtual" inverted cell — the character at
+    /// the cursor position gets [black on gray] markup. If the cursor is past
+    /// the end of the input, a highlighted space is shown.
+    ///
+    /// Selection is rendered as [white on gray]...[/]. When selection is
+    /// active the cursor is hidden.
     /// </summary>
     private static string BuildLineMarkup(
         string input,
@@ -146,11 +152,16 @@ internal class ConsoleRenderer
         int lineStart = lineOffset;
         int lineEnd = lineOffset + lineText.Length;
 
-        // Determine cursor column within this line (or outside it)
-        bool cursorOnThisLine = cursorPosition >= lineStart && cursorPosition <= lineEnd;
-        int cursorCol = cursorOnThisLine ? cursorPosition - lineStart : -1;
+        // Only show cursor when no selection is active
+        int cursorCol = -1;
+        if (!hasSelection)
+        {
+            bool cursorOnThisLine = cursorPosition >= lineStart && cursorPosition <= lineEnd;
+            if (cursorOnThisLine)
+                cursorCol = cursorPosition - lineStart;
+        }
 
-        // Determine selection range on this line
+        // Determine selection range on this visual line
         bool selectionOnThisLine = false;
         int selStartInLine = 0;
         int selEndInLine = 0;
@@ -168,49 +179,34 @@ internal class ConsoleRenderer
             }
         }
 
-        // Build segments: text is split into runs at selection boundaries and
-        // cursor position. The cursor is rendered inline, selection uses
-        // [white on gray] markup.
         var sb = new System.Text.StringBuilder();
 
         if (selectionOnThisLine)
         {
-            // Segment 1: before selection
-            if (selStartInLine > 0)
-            {
-                string beforeSel = Markup.Escape(lineText[..selStartInLine]);
-                AppendTextWithCursor(sb, beforeSel, ref cursorCol, /*segOffset*/0);
-                cursorCol = -1;
-            }
+            // Render selection segments — no cursor when selection is active
 
-            // Segment 2: selected text (wrapped in markup)
+            // Before selection
+            if (selStartInLine > 0)
+                sb.Append(Markup.Escape(lineText[..selStartInLine]));
+
+            // Selected text
             {
                 string selText = Markup.Escape(lineText[selStartInLine..selEndInLine]);
                 sb.Append("[white on gray]");
-                AppendTextWithCursor(sb, selText, ref cursorCol, /*segOffset*/selStartInLine);
-                cursorCol = -1;
+                sb.Append(selText);
                 sb.Append("[/]");
             }
 
-            // Segment 3: after selection
+            // After selection
             if (selEndInLine < lineText.Length)
-            {
-                string afterSel = Markup.Escape(lineText[selEndInLine..]);
-                AppendTextWithCursor(sb, afterSel, ref cursorCol, /*segOffset*/selEndInLine);
-                cursorCol = -1;
-            }
-
-            // Residual: cursor not yet placed anywhere on this line
-            if (cursorCol >= 0)
-            {
-                sb.Append("[white]|[/]");
-            }
+                sb.Append(Markup.Escape(lineText[selEndInLine..]));
         }
         else
         {
-            // No selection on this line — render full text with cursor
+            // No selection on this visual line — render full text
+            // with cursor highlight if it falls on this line
             string escaped = Markup.Escape(lineText);
-            AppendTextWithCursor(sb, escaped, ref cursorCol, /*segOffset*/0);
+            AppendCursorHighlight(sb, escaped, ref cursorCol, /*segOffset*/0);
             cursorCol = -1;
         }
 
@@ -218,12 +214,12 @@ internal class ConsoleRenderer
     }
 
     /// <summary>
-    /// Appends escaped text to <paramref name="sb"/>, splitting it to insert a
-    /// [white]|[/] cursor marker if <paramref name="cursorCol"/> falls within
-    /// this segment (relative to the visual line start).
+    /// Appends escaped text to <paramref name="sb"/>. If the cursor falls
+    /// within this segment, a single character (or space at end) is wrapped
+    /// in [black on gray]...[/] to show the cursor position.
     /// Sets cursorCol to -1 when the cursor has been placed.
     /// </summary>
-    private static void AppendTextWithCursor(
+    private static void AppendCursorHighlight(
         System.Text.StringBuilder sb,
         string escapedText,
         ref int cursorCol,
@@ -238,15 +234,27 @@ internal class ConsoleRenderer
         int localCol = cursorCol - segmentOffset;
         if (localCol < 0 || localCol > escapedText.Length)
         {
-            // Cursor is outside this segment — render text as-is
             sb.Append(escapedText);
             return;
         }
 
-        // Split at cursor: before + cursor marker + after
+        // Text before cursor
         sb.Append(escapedText[..localCol]);
-        sb.Append("[white]|[/]");
-        sb.Append(escapedText[localCol..]);
+
+        if (localCol < escapedText.Length)
+        {
+            // Highlight the character at cursor position
+            sb.Append("[black on gray]");
+            sb.Append(escapedText[localCol]);
+            sb.Append("[/]");
+            // Remaining text after cursor char
+            sb.Append(escapedText[(localCol + 1)..]);
+        }
+        else
+        {
+            // Cursor past end → highlighted space placeholder
+            sb.Append("[black on gray] [/]");
+        }
 
         cursorCol = -1; // cursor has been placed
     }
