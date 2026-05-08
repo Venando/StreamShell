@@ -389,16 +389,14 @@ internal class ConsoleRenderer
             int cap;
             if (isFirstSegment && isFirstVisualLine && lines.Count == 0)
             {
-                // First visual line has "> " prefix
+                // First visual line has "> " prefix (2 chars)
                 cap = Math.Max(0, width - 4);
-            }
-            else if (isLastSegment && remaining <= width - 2)
-            {
-                cap = Math.Max(1, width - 2);
             }
             else
             {
-                cap = Math.Max(1, width - 1);
+                // All continuation lines get "  " prefix (2 chars)
+                // Same cap as first line for consistent right margin
+                cap = Math.Max(1, width - 4);
             }
 
             int take = Math.Min(remaining, cap);
