@@ -42,6 +42,20 @@ public class StreamShellSettings
     /// </summary>
     public string ContinuationPrefix { get; set; } = "  ";
 
+    /// <summary>
+    /// Visual width of the first-line input prefix (after Spectre processes markup).
+    /// Used by WrapSegment to calculate the available text width.
+    /// Default: 2 (for the default "[blue]> [/]" prefix, which renders as "> ").
+    /// </summary>
+    public int PrefixMargin { get; set; } = 2;
+
+    /// <summary>
+    /// Right-edge buffer in characters, reserved between the wrapped text and
+    /// the console right edge. Used by WrapSegment to calculate wrapping caps.
+    /// Default: 4.
+    /// </summary>
+    public int WrappingRightMargin { get; set; } = 4;
+
     /// <summary>Resolves the effective right edge margin, substituting Console.WindowWidth for -1.</summary>
     public int GetEffectiveRightMargin()
         => RightEdgeMargin > 0 ? RightEdgeMargin : Console.WindowWidth;

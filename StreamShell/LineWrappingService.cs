@@ -54,15 +54,17 @@ public static class LineWrappingService
     }
 
     /// <summary>Number of visual lines the input occupies at the given margin.</summary>
-    public static int GetInputLineCount(string input, int margin)
+    public static int GetInputLineCount(string input, int margin,
+        int prefixMargin = 2, int rightMargin = 4)
     {
-        return GetInputLines(input, margin).Count;
+        return GetInputLines(input, margin, prefixMargin, rightMargin).Count;
     }
 
     /// <summary>Returns the wrapped visual lines for an input string at the given margin.</summary>
-    public static List<string> GetInputLines(string input, int margin)
+    public static List<string> GetInputLines(string input, int margin,
+        int prefixMargin = 2, int rightMargin = 4)
     {
-        var (lines, _) = GetVisualLineData(input, margin);
+        var (lines, _) = GetVisualLineData(input, margin, prefixMargin, rightMargin);
         return lines;
     }
 
@@ -71,7 +73,8 @@ public static class LineWrappingService
     /// in the raw input. Offsets account for newline characters between segments.
     /// Needed for up/down cursor navigation.
     /// </summary>
-    public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin)
+    public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin,
+        int prefixMargin = 2, int rightMargin = 4)
     {
         int width = Math.Max(1, Math.Min(margin, Console.WindowWidth));
         var lines = new List<string>();
@@ -94,7 +97,8 @@ public static class LineWrappingService
             bool isFirstSegment = segIdx == 0;
             bool isLastSegment = segIdx == segments.Length - 1;
 
-            var wrapped = WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced);
+            var wrapped = WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced,
+                prefixMargin, rightMargin);
 
             for (int lineIdx = 0; lineIdx < wrapped.Count; lineIdx++)
             {
@@ -123,9 +127,10 @@ public static class LineWrappingService
     /// (visual line index, visual column) at the given <paramref name="margin"/>.
     /// </summary>
     public static (int line, int column) GetCursorVisualPosition(
-        string input, int cursorPosition, int margin)
+        string input, int cursorPosition, int margin,
+        int prefixMargin = 2, int rightMargin = 4)
     {
-        var visualLines = GetInputLines(input, margin);
+        var visualLines = GetInputLines(input, margin, prefixMargin, rightMargin);
         int accumulated = 0;
 
         for (int i = 0; i < visualLines.Count; i++)

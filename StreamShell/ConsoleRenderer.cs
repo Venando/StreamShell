@@ -33,7 +33,8 @@ internal class ConsoleRenderer : IRenderer
     }
 
     /// <summary>Number of visual lines the input occupies.</summary>
-    public int GetInputLineCount(string input) => LineWrappingService.GetInputLines(input, RightMargin).Count;
+    public int GetInputLineCount(string input) => LineWrappingService.GetInputLines(
+        input, RightMargin, _settings.PrefixMargin, _settings.WrappingRightMargin).Count;
 
     // ── Message Display ──────────────────────────────────────────────
     public void RenderMessage(string markup)
@@ -141,7 +142,8 @@ internal class ConsoleRenderer : IRenderer
         {
             string segment = segments[segIdx];
             var wrappedLines = LineWrappingService.WrapSegment(segment, width, segIdx == 0,
-                segIdx == segments.Length - 1, isFirstOverallLine);
+                segIdx == segments.Length - 1, isFirstOverallLine,
+                _settings.PrefixMargin, _settings.WrappingRightMargin);
 
             for (int lineIdx = 0; lineIdx < wrappedLines.Count; lineIdx++)
             {
@@ -318,24 +320,27 @@ internal class ConsoleRenderer : IRenderer
     }
 
     /// <summary>Gets the wrapped visual lines for the input at the given margin.</summary>
-    internal static List<string> GetInputLines(string input, int margin)
-        => LineWrappingService.GetInputLines(input, margin);
+    internal static List<string> GetInputLines(string input, int margin,
+        int prefixMargin = 2, int rightMargin = 4)
+        => LineWrappingService.GetInputLines(input, margin, prefixMargin, rightMargin);
 
     /// <summary>
     /// Converts a character position in the raw input string to
     /// (visual line index, visual column) at the given <paramref name="margin"/>.
     /// </summary>
     public static (int line, int column) GetCursorVisualPosition(
-        string input, int cursorPosition, int margin)
-        => LineWrappingService.GetCursorVisualPosition(input, cursorPosition, margin);
+        string input, int cursorPosition, int margin,
+        int prefixMargin = 2, int rightMargin = 4)
+        => LineWrappingService.GetCursorVisualPosition(input, cursorPosition, margin, prefixMargin, rightMargin);
 
     /// <summary>
     /// Gets both visual line text and the character offset of each line
     /// in the raw input. Offsets account for newline characters between segments.
     /// Needed for up/down cursor navigation.
     /// </summary>
-    public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin)
-        => LineWrappingService.GetVisualLineData(input, margin);
+    public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin,
+        int prefixMargin = 2, int rightMargin = 4)
+        => LineWrappingService.GetVisualLineData(input, margin, prefixMargin, rightMargin);
 
     // ── Helpers ───────────────────────────────────────────────────────
     private static string TruncateToVisualWidth(string text, int maxWidth)
