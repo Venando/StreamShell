@@ -147,6 +147,46 @@ internal class ClipboardHandler
         _tempInput.Append(c);
     }
 
+    /// <summary>Generates the placeholder text that will be inserted into the buffer for an attachment.</summary>
+    internal static string GeneratePlaceholder(Attachment attachment)
+    {
+        string name = GenerateName(attachment.Content);
+        return $"[paste {attachment.LineCount} lines: {name}]";
+    }
+
+    /// <summary>
+    /// Checks if any attachment's placeholder would be affected by an operation
+    /// at the given buffer range (insertion point with length 0, or deletion range
+    /// with length &gt; 0). If an overlap is found, the placeholder is removed from
+    /// the buffer and its attachment is removed from the list.
+    /// </summary>
+    /// <param name="affectedStart">Start position of the affected buffer range.</param>
+    /// <param name="affectedLength">Length of the affected range (0 for insertions).</param>
+    /// <returns>True if at least one placeholder was preemptively removed.</returns>
+    public bool RemovePlaceholderAffectedBy(int affectedStart, int affectedLength)
+    {
+        bool anyRemoved = false;
+
+        foreach (var attachment in Attachments.ToList())
+        {
+            string placeholder = GeneratePlaceholder(attachment);
+            int placeholderIndex = _buffer.CurrentInput.IndexOf(placeholder, StringComparison.Ordinal);
+            if (placeholderIndex == -1) continue;
+
+            int placeholderEnd = placeholderIndex + placeholder.Length;
+            int affectedEnd = affectedStart + affectedLength;
+
+            if (affectedStart < placeholderEnd && affectedEnd > placeholderIndex)
+            {
+                _buffer.Remove(placeholderIndex, placeholder.Length);
+                Attachments.Remove(attachment);
+                anyRemoved = true;
+            }
+        }
+
+        return anyRemoved;
+    }
+
     private static string GenerateName(string content)
     {
         int newlineIndex = content.IndexOf('\n');

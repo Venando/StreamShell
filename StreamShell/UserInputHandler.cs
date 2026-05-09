@@ -295,7 +295,21 @@ internal class UserInputHandler : IInputHandler
         Snapshot();
 
         if (_selection.IsActiveAt(_buffer.CursorPosition))
-            RemoveSelectedText();
+        {
+            if (!_clipboard.RemovePlaceholderAffectedBy(
+                    _selection.SelectionStart(_buffer.CursorPosition),
+                    _selection.SelectionLength(_buffer.CursorPosition)))
+            {
+                RemoveSelectedText();
+            }
+        }
+        else if (_clipboard.RemovePlaceholderAffectedBy(_buffer.CursorPosition, 0))
+        {
+            // Placeholder was preemptively removed, cursor is at its start position.
+            // Insert the character at this position.
+            _buffer.Insert(c);
+            return;
+        }
 
         if (_buffer.CursorPosition < _buffer.Length || _buffer.Length == 0)
             _buffer.Insert(c);
@@ -309,14 +323,36 @@ internal class UserInputHandler : IInputHandler
 
     private void HandleBackspace()
     {
-        if (!RemoveSelectedText())
+        if (_selection.IsActiveAt(_buffer.CursorPosition))
+        {
+            if (!_clipboard.RemovePlaceholderAffectedBy(
+                    _selection.SelectionStart(_buffer.CursorPosition),
+                    _selection.SelectionLength(_buffer.CursorPosition)))
+            {
+                RemoveSelectedText();
+            }
+        }
+        else if (!_clipboard.RemovePlaceholderAffectedBy(_buffer.CursorPosition - 1, 1))
+        {
             _buffer.Backspace();
+        }
     }
 
     private void HandleDelete()
     {
-        if (!RemoveSelectedText())
+        if (_selection.IsActiveAt(_buffer.CursorPosition))
+        {
+            if (!_clipboard.RemovePlaceholderAffectedBy(
+                    _selection.SelectionStart(_buffer.CursorPosition),
+                    _selection.SelectionLength(_buffer.CursorPosition)))
+            {
+                RemoveSelectedText();
+            }
+        }
+        else if (!_clipboard.RemovePlaceholderAffectedBy(_buffer.CursorPosition, 1))
+        {
             _buffer.Delete();
+        }
     }
 
     /// <summary>If selection is active, removes it and returns true. Otherwise returns false.</summary>
