@@ -112,29 +112,12 @@ public class ConsoleAppHost : IDisposable
         {
             uih.AutoCompleteProvider = input =>
             {
-                // Prefer the panel's dedicated suggestion if available (CommandPalette)
-                if (_bottomPanel is CommandPalette palette)
-                {
-                    palette.GetLines(input); // ensure CurrentSuggestion is computed
-                    return palette.CurrentSuggestion;
-                }
-                // Fallback: read from lines[0] for custom panels
-                var lines = _bottomPanel.GetLines(input);
-                return string.IsNullOrEmpty(lines[0]) ? null : lines[0];
+                _bottomPanel.GetLines(input);
+                return _bottomPanel.CurrentSuggestion;
             };
 
-            // Route Up/Down to CommandPalette hint selection when hints are active
-            uih.KeyInterceptor = key =>
-            {
-                if (_bottomPanel is CommandPalette palette
-                    && palette.CanNavigate
-                    && (key.Key == ConsoleKey.UpArrow || key.Key == ConsoleKey.DownArrow))
-                {
-                    palette.AdjustSelection(key.Key == ConsoleKey.UpArrow ? -1 : 1);
-                    return true; // key consumed
-                }
-                return false;
-            };
+            // Let the active panel intercept keys (e.g. Up/Down for hint selection)
+            uih.KeyInterceptor = key => _bottomPanel.TryHandleKey(key);
         }
     }
 
@@ -262,6 +245,11 @@ public class ConsoleAppHost : IDisposable
 
         _renderer.RenderMessage(message);
         RenderFullInputBlock(input, cursor, hasSelection, selStart, selLength, margin);
+
+        // Consume panel dirty — GetLines was already called via RenderFullInputBlock
+        if (_bottomPanel.IsDirty)
+            _bottomPanel.ClearDirty();
+
         return true;
     }
 
@@ -271,8 +259,13 @@ public class ConsoleAppHost : IDisposable
         string input, int cursor, bool hasSelection, int selStart, int selLength,
         int margin, int windowWidth)
     {
-        if (!StateDiffersFromRender(state, input, cursor, hasSelection, windowWidth))
+        bool panelDirty = _bottomPanel.IsDirty;
+        if (!StateDiffersFromRender(state, input, cursor, hasSelection, windowWidth) && !panelDirty)
             return false;
+
+        // Consume the dirty flag before rendering (GetLines will be called below)
+        if (panelDirty)
+            _bottomPanel.ClearDirty();
 
         // Single-line → single-line: use faster overwrite (not on resize)
         bool terminalResized = state.LastWindowWidth != windowWidth;

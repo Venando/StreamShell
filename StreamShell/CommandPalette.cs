@@ -14,12 +14,41 @@ internal class CommandPalette : IBottomPanel
     /// <summary>Maximum number of actual hint entries.</summary>
     public const int HintCapacity = MaxHeight - HintsStartIndex; // 4
 
+    /// <summary>Backing field for interface IsDirty. Volatile for cross-thread visibility.</summary>
+    private volatile bool _isDirty;
+    bool IBottomPanel.IsDirty => _isDirty;
+    void IBottomPanel.ClearDirty() => _isDirty = false;
+
     /// <summary>
     /// The current autocomplete suggestion (text that Tab would fill).
     /// Null or empty when no suggestion is available.
     /// Populated during <see cref="GetLines"/>.
     /// </summary>
     internal string? CurrentSuggestion { get; private set; }
+    string? IBottomPanel.CurrentSuggestion => CurrentSuggestion;
+
+    /// <summary>
+    /// Intercepts Up/Down arrows to navigate hint selection.
+    /// </summary>
+    bool IBottomPanel.TryHandleKey(ConsoleKeyInfo key)
+    {
+        if (!IsActive(_lastInput ?? string.Empty))
+            return false;
+
+        if (key.Key == ConsoleKey.UpArrow)
+        {
+            AdjustSelection(-1);
+            return true;
+        }
+
+        if (key.Key == ConsoleKey.DownArrow)
+        {
+            AdjustSelection(1);
+            return true;
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Index of the currently selected hint (0 = first hint, -1 = none).
@@ -33,6 +62,7 @@ internal class CommandPalette : IBottomPanel
     /// <summary>
     /// Adjusts the selection by <paramref name="delta"/> and clamps
     /// to the available hint range. Call when the user presses Up/Down.
+    /// Marks the panel as dirty so the host forces a re-render.
     /// </summary>
     internal void AdjustSelection(int delta)
     {
@@ -43,6 +73,8 @@ internal class CommandPalette : IBottomPanel
             return;
         }
 
+        int oldIndex = SelectedIndex;
+
         // On first navigation from -1, start at the closest edge
         if (SelectedIndex < 0)
         {
@@ -52,6 +84,9 @@ internal class CommandPalette : IBottomPanel
         {
             SelectedIndex = Math.Clamp(SelectedIndex + delta, 0, maxVisible - 1);
         }
+
+        if (SelectedIndex != oldIndex)
+            _isDirty = true;
     }
 
     public static bool IsActive(string currentInput) => currentInput.StartsWith('/');
@@ -333,6 +368,10 @@ internal class CommandPalette : IBottomPanel
 
     private void ResetSelection()
     {
-        SelectedIndex = 0;
+        if (SelectedIndex != 0)
+        {
+            SelectedIndex = 0;
+            _isDirty = true;
+        }
     }
 }
