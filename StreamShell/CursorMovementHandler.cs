@@ -36,7 +36,8 @@ internal class CursorMovementHandler
         string currentInput = _buffer.CurrentInput;
         foreach (var attachment in _getAttachments())
         {
-            string placeholder = ClipboardHandler.GeneratePlaceholder(attachment);
+            string placeholder = attachment.Placeholder;
+            if (string.IsNullOrEmpty(placeholder)) continue;
             int start = currentInput.IndexOf(placeholder, StringComparison.Ordinal);
             if (start >= 0)
                 ranges.Add((start, start + placeholder.Length));

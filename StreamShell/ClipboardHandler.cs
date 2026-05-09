@@ -133,9 +133,10 @@ internal class ClipboardHandler
 
         if (text.Length > _getLargePasteThreshold() || lineCount > _getLargePasteLineThreshold())
         {
-            var attachment = new Attachment(text, AttachmentType.PlainText, lineCount, ++_attachmentCounter);
+            string placeholder = GeneratePlaceholder(lineCount, _attachmentCounter + 1);
+            var attachment = new Attachment(text, AttachmentType.PlainText, lineCount, ++_attachmentCounter, placeholder);
             Attachments.Add(attachment);
-            _buffer.Insert(GeneratePlaceholder(attachment));
+            _buffer.Insert(placeholder);
         }
         else
         {
@@ -149,11 +150,11 @@ internal class ClipboardHandler
         _tempInput.Append(c);
     }
 
-    /// <summary>Generates the placeholder text that will be inserted into the buffer for an attachment.</summary>
-    internal static string GeneratePlaceholder(Attachment attachment)
+    /// <summary>Generates the placeholder text for a paste attachment.</summary>
+    internal static string GeneratePlaceholder(int lineCount, int counter)
     {
-        string lines = attachment.LineCount > 1 ? $"{attachment.LineCount} lines" : "1 line";
-        return $"[paste #{attachment.Counter}, {lines}]";
+        string lines = lineCount > 1 ? $"{lineCount} lines" : "1 line";
+        return $"[paste #{counter}, {lines}]";
     }
 
     /// <summary>
@@ -171,7 +172,8 @@ internal class ClipboardHandler
 
         foreach (var attachment in Attachments.ToList())
         {
-            string placeholder = GeneratePlaceholder(attachment);
+            string placeholder = attachment.Placeholder;
+            if (string.IsNullOrEmpty(placeholder)) continue;
             int placeholderIndex = _buffer.CurrentInput.IndexOf(placeholder, StringComparison.Ordinal);
             if (placeholderIndex == -1) continue;
 
