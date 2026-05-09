@@ -91,7 +91,11 @@ public class ConsoleAppHost : IDisposable
     {
         if (_inputHandler is UserInputHandler uih)
         {
-            uih.AutoCompleteProvider = input => _bottomPanel.GetResult(input).TopSuggestion;
+            uih.AutoCompleteProvider = input =>
+            {
+                var lines = _bottomPanel.GetLines(input);
+                return string.IsNullOrEmpty(lines[0]) ? null : lines[0];
+            };
         }
     }
 
@@ -288,7 +292,7 @@ public class ConsoleAppHost : IDisposable
             hasSelection, selStart, selLength, margin);
     }
 
-    private IReadOnlyList<string> GetCommandHints(string input) => _bottomPanel.GetResult(input).Hints;
+    private IReadOnlyList<string> GetCommandHints(string input) => _bottomPanel.GetLines(input);
 
     /// <summary>Signal the host to stop after the current loop iteration.</summary>
     public void Stop() => _cts.Cancel();

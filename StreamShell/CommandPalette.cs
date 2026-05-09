@@ -7,10 +7,12 @@ internal class CommandPalette : IBottomPanel
     /// <summary>Total visible lines in the hints block (status + hints).</summary>
     public const int MaxHeight = 5;
     int IBottomPanel.LineCount => MaxHeight;
+    /// <summary>Index of the suggestion line (Tab autocomplete, may be empty).</summary>
+    public const int SuggestionLineIndex = 0;
     /// <summary>Index of the status line (always populated when hints are visible).</summary>
-    public const int StatusLineIndex = 0;
+    public const int StatusLineIndex = 1;
     /// <summary>Index of the first actual hint line.</summary>
-    public const int HintsStartIndex = 1;
+    public const int HintsStartIndex = 2;
     /// <summary>Maximum number of actual hint entries.</summary>
     public const int HintCapacity = MaxHeight - HintsStartIndex; // 4
 
@@ -28,7 +30,7 @@ internal class CommandPalette : IBottomPanel
 
     private readonly Func<IEnumerable<Command>> _commandProvider;
     private string? _lastInput;
-    private PanelResult? _lastResult;
+    private IReadOnlyList<string>? _lastLines;
 
     /// <summary>Creates a palette that reads from a live command provider.</summary>
     public CommandPalette(Func<IEnumerable<Command>> commandProvider)
@@ -43,18 +45,20 @@ internal class CommandPalette : IBottomPanel
         _commandProvider = () => arr;
     }
 
-    /// <summary>Single method returning both hints and autocomplete suggestion.</summary>
-    public PanelResult GetResult(string currentInput)
+    /// <summary>
+    /// Returns all panel lines. First line (index 0) is the Tab autocomplete
+    /// suggestion (empty when no suggestion). Lines 1..4 are status + hints.
+    /// </summary>
+    public IReadOnlyList<string> GetLines(string currentInput)
     {
-        if (_lastInput == currentInput && _lastResult != null)
-            return _lastResult;
+        if (_lastInput == currentInput && _lastLines != null)
+            return _lastLines;
 
         if (!IsActive(currentInput))
         {
-            var empty = new PanelResult(_cachedEmptyHints, null);
             _lastInput = currentInput;
-            _lastResult = empty;
-            return empty;
+            _lastLines = _cachedEmptyHints;
+            return _cachedEmptyHints;
         }
 
         string query = currentInput.Length > 1 ? currentInput[1..] : string.Empty;
@@ -62,16 +66,19 @@ internal class CommandPalette : IBottomPanel
 
         if (matching.Count == 0)
         {
-            var empty = new PanelResult(_cachedEmptyHints, null);
             _lastInput = currentInput;
-            _lastResult = empty;
-            return empty;
+            _lastLines = _cachedEmptyHints;
+            return _cachedEmptyHints;
         }
 
-        // Build hints and suggestion in one pass
-        List<string> hints = new(MaxHeight);
-        hints.Add("[dim]Tab: autocomplete  \u2191\u2193: select[/]");
-        string? suggestion = null;
+        // Build all lines: [0] = suggestion, [1] = status, [2..4] = hints
+        List<string> lines = new(MaxHeight);
+
+        // Placeholder for suggestion — we'll fill it after computing
+        lines.Add(string.Empty);
+
+        // Status line at index 1
+        lines.Add("[dim]Tab: autocomplete  \u2191\u2193: select[/]");
 
         int spaceIndex = query.IndexOf(' ');
         string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
@@ -87,12 +94,12 @@ internal class CommandPalette : IBottomPanel
 
             if (info.Matches.Length > 0)
             {
-                suggestion = info.CommonNextWord is not null
+                lines[SuggestionLineIndex] = info.CommonNextWord is not null
                     ? fullPrefix + info.CommonNextWord + " "
                     : fullPrefix + info.Matches[0] + " ";
             }
 
-            AddArgumentHints(hints, matching[0], argsPart, suggestions);
+            AddArgumentHints(lines, matching[0], argsPart, suggestions);
         }
         else
         {
@@ -104,7 +111,7 @@ internal class CommandPalette : IBottomPanel
             {
                 if (matching.Count > 1)
                 {
-                    suggestion = "/" + matching[0].Name + " ";
+                    lines[SuggestionLineIndex] = "/" + matching[0].Name + " ";
                 }
                 else
                 {
@@ -115,9 +122,9 @@ internal class CommandPalette : IBottomPanel
                         && command.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase);
 
                     if (nameExact && spaceIndex < 0)
-                        suggestion = "/" + command.Name + " ";
+                        lines[SuggestionLineIndex] = "/" + command.Name + " ";
                     else if (namePartial)
-                        suggestion = "/" + command.Name + " ";
+                        lines[SuggestionLineIndex] = "/" + command.Name + " ";
                 }
             }
 
@@ -125,19 +132,18 @@ internal class CommandPalette : IBottomPanel
             int maxSize = showMatching.MaxBy(val => val.Name.Length)?.Name.Length ?? 12;
             foreach (var cmd in showMatching)
             {
-                hints.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
-                if (hints.Count >= MaxHeight) break;
+                lines.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
+                if (lines.Count >= MaxHeight) break;
             }
         }
 
         // Pad to MaxHeight
-        while (hints.Count < MaxHeight)
-            hints.Add(string.Empty);
+        while (lines.Count < MaxHeight)
+            lines.Add(string.Empty);
 
-        var result = new PanelResult(hints, suggestion);
         _lastInput = currentInput;
-        _lastResult = result;
-        return result;
+        _lastLines = lines;
+        return lines;
     }
 
     /// <summary>Returns all commands matching the given query (command prefix).

@@ -250,20 +250,20 @@ static string TruncatePreview(string text, int maxLen)
 class CharacterCounterPanel : IBottomPanel
 {
     public int LineCount => 3;
-    private readonly List<string> _lines = new(3) { "", "", "" };
+    private readonly string[] _lines = new string[3];
     private string? _lastInput;
 
-    public PanelResult GetResult(string currentInput)
+    public IReadOnlyList<string> GetLines(string currentInput)
     {
         if (currentInput == _lastInput)
-            return new PanelResult(_lines, null);
+            return _lines;
         _lastInput = currentInput;
 
-        _lines[0] = "[bold]Character Counter[/]";
-        _lines[1] = $"[grey]Input length: [green]{currentInput.Length}[/][/]";
+        _lines[0] = "";  // No suggestion
+        _lines[1] = "[bold]Character Counter[/]";
         _lines[2] = string.IsNullOrEmpty(currentInput)
             ? "[dim]Type something...[/]"
-            : $"[grey]Characters: [yellow]{string.Join(" ", currentInput.Select(c => $"{c}"))}[/][/]";
-        return new PanelResult(_lines, null);
+            : $"[grey]Input length: [green]{currentInput.Length}[/][/]";
+        return _lines;
     }
 }
