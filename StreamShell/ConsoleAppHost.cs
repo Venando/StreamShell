@@ -318,6 +318,15 @@ public class ConsoleAppHost : IDisposable
         _renderer.RenderMessage(message);
         RenderFullInputBlock(input, cursor, hasSelection, selStart, selLength, margin);
 
+        // Handle block height change (panel may have been swapped by EnsureProperPanel
+        // but state still has the old panel line count)
+        if (state.LastInput is not null)
+        {
+            int oldBlockOffset = (1 + state.LastPanelLineCount) + _renderer.GetInputLineCount(state.LastInput);
+            int newBlockOffset = _renderer.GetBlockOffset(input);
+            _renderer.HandleBlockHeightChange(oldBlockOffset, newBlockOffset);
+        }
+
         // Consume panel dirty — GetLines was already called via RenderFullInputBlock
         if (_bottomPanel.IsDirty)
             _bottomPanel.ClearDirty();
@@ -339,9 +348,11 @@ public class ConsoleAppHost : IDisposable
         if (panelDirty)
             _bottomPanel.ClearDirty();
 
-        // Single-line → single-line: use faster overwrite (not on resize)
+        // Single-line → single-line: use faster overwrite only when panel hasn't changed
+        // (Panel changes always need the full clear+re-render path)
         bool terminalResized = state.LastWindowWidth != windowWidth;
-        if (state.LastInput != input && !terminalResized
+        bool panelChanged = state.LastPanelLineCount != _bottomPanel.LineCount;
+        if (state.LastInput != input && !terminalResized && !panelChanged
             && state.LastInputLineCount == 1
             && _renderer.GetInputLineCount(input) == 1)
         {
@@ -355,6 +366,15 @@ public class ConsoleAppHost : IDisposable
             if (state.LastInput is not null)
                 _renderer.ClearInputBlockForReRender(state.LastInput, input, state.LastPanelLineCount);
             RenderFullInputBlock(input, cursor, hasSelection, selStart, selLength, margin);
+
+            // Handle block height change (panel may have been swapped by EnsureProperPanel
+            // but state still has the old panel line count — same for panel dirty flows)
+            if (state.LastInput is not null)
+            {
+                int oldBlockOffset = (1 + state.LastPanelLineCount) + _renderer.GetInputLineCount(state.LastInput);
+                int newBlockOffset = _renderer.GetBlockOffset(input);
+                _renderer.HandleBlockHeightChange(oldBlockOffset, newBlockOffset);
+            }
         }
 
         return true;

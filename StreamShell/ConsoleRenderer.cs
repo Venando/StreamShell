@@ -53,6 +53,13 @@ internal class ConsoleRenderer : IRenderer
     public int GetInputLineCount(string input) => LineWrappingService.GetInputLines(
         input, RightMargin, _settings.PrefixMargin, _settings.WrappingRightMargin).Count;
 
+    // ── Message History ──────────────────────────────────────────────
+    private readonly List<string> _messageHistory = new();
+    private const int MessageHistoryCapacity = 50;
+
+    /// <summary>Maximum number of messages to replay when the block grows. Default: 10.</summary>
+    public int MessageBufferReplayCount { get; set; } = 10;
+
     // ── Message Display ──────────────────────────────────────────────
     public void RenderMessage(string markup)
     {
@@ -64,6 +71,10 @@ internal class ConsoleRenderer : IRenderer
         {
             AnsiConsole.MarkupLine(Markup.Escape(markup));
         }
+
+        _messageHistory.Add(markup);
+        if (_messageHistory.Count > MessageHistoryCapacity)
+            _messageHistory.RemoveRange(0, _messageHistory.Count - MessageHistoryCapacity);
     }
 
     // ── Block Clearing ───────────────────────────────────────────────
@@ -539,6 +550,82 @@ internal class ConsoleRenderer : IRenderer
         if (!string.IsNullOrEmpty(right))
             return fillStr + right;
         return fillStr;
+    }
+
+    /// <summary>
+    /// After the input block is re-rendered, handles the scroll effect
+    /// from the block height change. See <see cref="IRenderer.HandleBlockHeightChange"/>.
+    /// </summary>
+    public void HandleBlockHeightChange(int oldBlockOffset, int newBlockOffset)
+    {
+        int delta = newBlockOffset - oldBlockOffset;
+        if (delta == 0)
+            return;
+
+        if (delta > 0)
+        {
+            // Block grew — replay messages to fill the swallowed gap
+            int replayCount = Math.Min(delta, MessageBufferReplayCount);
+            ReplayMessagesFromBuffer(replayCount);
+            // Restore cursor to block bottom so subsequent renders are not offset
+            RestoreCursorPosition(replayCount);
+        }
+        else
+        {
+            // Block shrunk — clear leftover lines above the block
+            ClearLinesAbove(-delta);
+        }
+    }
+
+    /// <summary>Re-renders the last <paramref name="count"/> lines from the message history buffer.</summary>
+    private void ReplayMessagesFromBuffer(int count)
+    {
+        if (count <= 0 || _messageHistory.Count == 0)
+            return;
+
+        int startIndex = Math.Max(0, _messageHistory.Count - count);
+        for (int i = startIndex; i < _messageHistory.Count; i++)
+        {
+            RenderMessageLineNoHistory(_messageHistory[i]);
+        }
+    }
+
+    /// <summary>Renders a markup line to the console without storing in the message history.</summary>
+    private static void RenderMessageLineNoHistory(string markup)
+    {
+        try
+        {
+            AnsiConsole.MarkupLine(markup);
+        }
+        catch (InvalidOperationException)
+        {
+            AnsiConsole.MarkupLine(Markup.Escape(markup));
+        }
+    }
+
+    /// <summary>Moves the cursor back up by <paramref name="lines"/> after replaying messages.</summary>
+    private void RestoreCursorPosition(int lines)
+    {
+        if (lines <= 0)
+            return;
+        int newTop = Console.CursorTop - lines;
+        Console.CursorTop = Math.Max(0, newTop);
+    }
+
+    /// <summary>Clears <paramref name="count"/> lines above the current cursor position.</summary>
+    private void ClearLinesAbove(int count)
+    {
+        int startTop = Console.CursorTop;
+        int bufferHeight = Console.BufferHeight;
+
+        for (int i = 1; i <= count; i++)
+        {
+            int top = startTop - i;
+            if (top < 0)
+                break;
+            Console.SetCursorPosition(0, top);
+            ClearLine();
+        }
     }
 
     private static void ClearLine() => Console.Write("\x1b[K");

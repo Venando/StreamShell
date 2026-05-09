@@ -49,4 +49,13 @@ public interface IRenderer
         int selectionStart,
         int selectionLength,
         int margin);
+
+    /// <summary>
+    /// Called after the input block was re-rendered and its height changed.
+    /// When the block grew, replays messages from the history buffer to fill the swallowed gap.
+    /// When the block shrunk, clears the extra lines above the block.
+    /// </summary>
+    /// <param name="oldBlockOffset">Block offset before the change.</param>
+    /// <param name="newBlockOffset">Block offset after the change.</param>
+    void HandleBlockHeightChange(int oldBlockOffset, int newBlockOffset);
 }
