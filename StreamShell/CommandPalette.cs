@@ -145,16 +145,16 @@ internal class CommandPalette
             string argsPart = query[(spaceIndex + 1)..];
             string fullPrefix = "/" + command.Name + " ";
 
-            // Find matching argument suggestions, preserving original order
-            var matches = command.ArgumentSuggestions
-                .Where(s => s.StartsWith(argsPart, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-
-            if (matches.Length == 0)
+            var info = GetArgMatchInfo(argsPart, command.ArgumentSuggestions);
+            if (info.Matches.Length == 0)
                 return null;
 
-            // Complete with only the remainder of the first matching suggestion
-            return fullPrefix + argsPart + matches[0][argsPart.Length..] + " ";
+            // Mid-word with common next word → complete to the common prefix
+            if (info.CommonNextWord is not null)
+                return fullPrefix + info.CommonNextWord + " ";
+
+            // Complete to the first matching suggestion
+            return fullPrefix + info.Matches[0] + " ";
         }
 
         return null;
@@ -182,26 +182,77 @@ internal class CommandPalette
         return matching;
     }
 
-    /// <summary>Populates hints with unique next-argument completions.</summary>
-    private static void AddArgumentHints(List<string> hints, Command command, string argsPart, string[] suggestions)
-    {
-        string cmdPath = "/" + command.Name + " ";
+    /// <summary>Result of matching argument suggestions against typed args.</summary>
+    private sealed record ArgMatchInfo(
+        string[] Matches,
+        string? CommonNextWord);
 
-        // Find suggestions that match the typed args
+    /// <summary>
+    /// Matches argument suggestions against the typed args part and determines
+    /// whether all matching suggestions share a common next word. Shared by both
+    /// hint display and Tab completion for a single source of truth.
+    /// </summary>
+    private static ArgMatchInfo GetArgMatchInfo(string argsPart, string[] suggestions)
+    {
         var matches = suggestions
             .Where(s => s.StartsWith(argsPart, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
-        if (matches.Length == 0)
+        if (matches.Length <= 1)
+            return new ArgMatchInfo(matches, null);
+
+        // Only relevant mid-word (not at a word boundary)
+        if (argsPart.Length == 0 || argsPart.EndsWith(' '))
+            return new ArgMatchInfo(matches, null);
+
+        // Find the longest common prefix across all matching suggestions
+        string commonPrefix = matches[0];
+        for (int i = 1; i < matches.Length; i++)
+        {
+            int j = 0;
+            while (j < commonPrefix.Length && j < matches[i].Length &&
+                   char.ToLowerInvariant(commonPrefix[j]) == char.ToLowerInvariant(matches[i][j]))
+                j++;
+            commonPrefix = commonPrefix[..j];
+        }
+
+        // Trim to the first space boundary — we only care about completing one word
+        int spaceIdx = commonPrefix.IndexOf(' ');
+        if (spaceIdx >= 0)
+            commonPrefix = commonPrefix[..spaceIdx];
+
+        // Only report a common next word if it actually extends what was typed
+        if (commonPrefix.Length > argsPart.Length)
+            return new ArgMatchInfo(matches, commonPrefix);
+
+        return new ArgMatchInfo(matches, null);
+    }
+
+    /// <summary>
+    /// Populates hints with argument completions. Uses GetArgMatchInfo for unified matching.
+    /// </summary>
+    private static void AddArgumentHints(List<string> hints, Command command, string argsPart, string[] suggestions)
+    {
+        string cmdPath = "/" + command.Name + " ";
+        var info = GetArgMatchInfo(argsPart, suggestions);
+
+        if (info.Matches.Length == 0)
             return;
 
-        // At a word boundary (empty args or ends with space) → show unique next word
+        // Mid-word with a common next word → show just one compressed hint
+        if (info.CommonNextWord is not null)
+        {
+            hints.Add($"  [grey]{Markup.Escape(cmdPath + info.CommonNextWord)}[/]");
+            return;
+        }
+
         bool atWordBoundary = argsPart.Length == 0 || argsPart.EndsWith(' ');
 
         if (atWordBoundary)
         {
+            // At word boundary → show unique next words
             var seenWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var match in matches)
+            foreach (var match in info.Matches)
             {
                 string remaining = argsPart.Length > 0 ? match[argsPart.Length..] : match;
                 string nextWord = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
@@ -214,8 +265,8 @@ internal class CommandPalette
         }
         else
         {
-            // Mid-word — show full matching paths
-            foreach (var match in matches)
+            // Mid-word with divergent matches → show each full path
+            foreach (var match in info.Matches)
             {
                 hints.Add($"  [grey]{Markup.Escape(cmdPath + match)}[/]");
                 if (hints.Count >= MaxHeight) break;
