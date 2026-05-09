@@ -28,7 +28,7 @@ internal class CommandPalette : IBottomPanel
 
     private readonly Func<IEnumerable<Command>> _commandProvider;
     private string? _lastInput;
-    private IReadOnlyList<string>? _lastHints;
+    private PanelResult? _lastResult;
 
     /// <summary>Creates a palette that reads from a live command provider.</summary>
     public CommandPalette(Func<IEnumerable<Command>> commandProvider)
@@ -43,16 +43,18 @@ internal class CommandPalette : IBottomPanel
         _commandProvider = () => arr;
     }
 
-    public IReadOnlyList<string> GetHints(string currentInput)
+    /// <summary>Single method returning both hints and autocomplete suggestion.</summary>
+    public PanelResult GetResult(string currentInput)
     {
-        if (_lastInput == currentInput && _lastHints != null)
-            return _lastHints;
+        if (_lastInput == currentInput && _lastResult != null)
+            return _lastResult;
 
         if (!IsActive(currentInput))
         {
+            var empty = new PanelResult(_cachedEmptyHints, null);
             _lastInput = currentInput;
-            _lastHints = _cachedEmptyHints;
-            return _cachedEmptyHints;
+            _lastResult = empty;
+            return empty;
         }
 
         string query = currentInput.Length > 1 ? currentInput[1..] : string.Empty;
@@ -60,31 +62,67 @@ internal class CommandPalette : IBottomPanel
 
         if (matching.Count == 0)
         {
+            var empty = new PanelResult(_cachedEmptyHints, null);
             _lastInput = currentInput;
-            _lastHints = _cachedEmptyHints;
-            return _cachedEmptyHints;
+            _lastResult = empty;
+            return empty;
         }
 
-        // Build hints — index 0 = status line, 1..4 = actual hints
+        // Build hints and suggestion in one pass
         List<string> hints = new(MaxHeight);
         hints.Add("[dim]Tab: autocomplete  \u2191\u2193: select[/]");
+        string? suggestion = null;
 
         int spaceIndex = query.IndexOf(' ');
+        string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
 
         if (matching.Count == 1
             && matching[0].ArgumentSuggestions is { Length: > 0 } suggestions
             && spaceIndex >= 0)
         {
-            // Exactly one command with argument suggestions → show argument completions
+            // Argument completion mode
             string argsPart = query[(spaceIndex + 1)..];
+            string fullPrefix = "/" + matching[0].Name + " ";
+            var info = GetArgMatchInfo(argsPart, suggestions);
+
+            if (info.Matches.Length > 0)
+            {
+                suggestion = info.CommonNextWord is not null
+                    ? fullPrefix + info.CommonNextWord + " "
+                    : fullPrefix + info.Matches[0] + " ";
+            }
+
             AddArgumentHints(hints, matching[0], argsPart, suggestions);
         }
         else
         {
-            // Show command hints
+            // Command hint mode
             var showMatching = matching.Take(HintCapacity).ToList();
-            int maxSize = showMatching.MaxBy(val => val.Name.Length)?.Name.Length ?? 12;
 
+            // Determine command name suggestion
+            if (showMatching.Count > 0)
+            {
+                if (matching.Count > 1)
+                {
+                    suggestion = "/" + matching[0].Name + " ";
+                }
+                else
+                {
+                    var command = matching[0];
+                    bool nameExact = string.Equals(command.Name, cmdPrefix, StringComparison.OrdinalIgnoreCase);
+                    bool namePartial = !nameExact
+                        && command.Name.Length > cmdPrefix.Length
+                        && command.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase);
+
+                    if (nameExact && spaceIndex < 0)
+                        suggestion = "/" + command.Name + " ";
+                    else if (namePartial)
+                        suggestion = "/" + command.Name + " ";
+                }
+            }
+
+            // Build hint strings
+            int maxSize = showMatching.MaxBy(val => val.Name.Length)?.Name.Length ?? 12;
             foreach (var cmd in showMatching)
             {
                 hints.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
@@ -96,73 +134,10 @@ internal class CommandPalette : IBottomPanel
         while (hints.Count < MaxHeight)
             hints.Add(string.Empty);
 
+        var result = new PanelResult(hints, suggestion);
         _lastInput = currentInput;
-        _lastHints = hints;
-        return hints;
-    }
-
-    /// <summary>
-    /// Returns the best autocomplete suggestion for the given input, or null if no
-    /// completion is possible. Used by the Tab key autocomplete in UserInputHandler.
-    /// Always completes to the first alphabetically-sorted matching entry.
-    /// </summary>
-    public string? GetTopSuggestion(string currentInput)
-    {
-        if (!IsActive(currentInput))
-            return null;
-
-        string query = currentInput.Length > 1 ? currentInput[1..] : string.Empty;
-        List<Command> matching = GetMatchingCommands(query);
-
-        if (matching.Count == 0)
-            return null;
-
-        int spaceIndex = query.IndexOf(' ');
-        string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
-
-        if (matching.Count > 1)
-        {
-            return "/" + matching[0].Name + " ";
-        }
-
-        // Exactly one command matches
-        var command = matching[0];
-
-        // Complete the command name if not fully typed or exact match without space
-        bool nameExact = string.Equals(command.Name, cmdPrefix, StringComparison.OrdinalIgnoreCase);
-        bool namePartial = !nameExact
-            && command.Name.Length > cmdPrefix.Length
-            && command.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase);
-
-        if (nameExact && spaceIndex < 0)
-        {
-            return "/" + command.Name + " ";
-        }
-
-        if (namePartial)
-        {
-            return "/" + command.Name + " ";
-        }
-
-        // Command name is fully typed with space. Check for argument suggestions.
-        if (command.ArgumentSuggestions is { Length: > 0 } && spaceIndex >= 0)
-        {
-            string argsPart = query[(spaceIndex + 1)..];
-            string fullPrefix = "/" + command.Name + " ";
-
-            var info = GetArgMatchInfo(argsPart, command.ArgumentSuggestions);
-            if (info.Matches.Length == 0)
-                return null;
-
-            // Mid-word with common next word → complete to the common prefix
-            if (info.CommonNextWord is not null)
-                return fullPrefix + info.CommonNextWord + " ";
-
-            // Complete to the first matching suggestion
-            return fullPrefix + info.Matches[0] + " ";
-        }
-
-        return null;
+        _lastResult = result;
+        return result;
     }
 
     /// <summary>Returns all commands matching the given query (command prefix).

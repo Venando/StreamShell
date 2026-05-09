@@ -253,10 +253,10 @@ class CharacterCounterPanel : IBottomPanel
     private readonly List<string> _lines = new(3) { "", "", "" };
     private string? _lastInput;
 
-    public IReadOnlyList<string> GetHints(string currentInput)
+    public PanelResult GetResult(string currentInput)
     {
         if (currentInput == _lastInput)
-            return _lines;
+            return new PanelResult(_lines, null);
         _lastInput = currentInput;
 
         _lines[0] = "[bold]Character Counter[/]";
@@ -264,8 +264,6 @@ class CharacterCounterPanel : IBottomPanel
         _lines[2] = string.IsNullOrEmpty(currentInput)
             ? "[dim]Type something...[/]"
             : $"[grey]Characters: [yellow]{string.Join(" ", currentInput.Select(c => $"{c}"))}[/][/]";
-        return _lines;
+        return new PanelResult(_lines, null);
     }
-
-    public string? GetTopSuggestion(string currentInput) => null;
 }
