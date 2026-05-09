@@ -39,11 +39,13 @@ internal class MarkupBuilder
     /// Builds Spectre markup for one visual line, rendering cursor and
     /// selection using the configured markup styles from settings.
     /// When selection is active, the cursor is hidden.
+    /// Accepts <see cref="ReadOnlySpan{T}"/> for <paramref name="lineText"/>
+    /// to avoid substring allocation on the hot render path.
     /// </summary>
     public string BuildLineMarkup(
         string input,
         int lineOffset,
-        string lineText,
+        ReadOnlySpan<char> lineText,
         int cursorPosition,
         bool hasSelection,
         int selectionStart,
@@ -77,21 +79,21 @@ internal class MarkupBuilder
         {
             // Before selection (span-based to avoid substring allocation)
             if (selStartInLine > 0)
-                AppendEscapedChunk(lineText.AsSpan(0, selStartInLine),
+                AppendEscapedChunk(lineText[..selStartInLine],
                     isCommandSlashLine, cmdSlashMarkup);
 
             // Selected text
             _sb.Append('[').Append(_settings.SelectionMarkup).Append(']');
-            AppendMarkupEscaped(lineText.AsSpan(selStartInLine, selEndInLine - selStartInLine));
+            AppendMarkupEscaped(lineText.Slice(selStartInLine, selEndInLine - selStartInLine));
             _sb.Append("[/]");
 
             // After selection (span-based to avoid substring allocation)
             if (selEndInLine < lineText.Length)
-                AppendEscapedChunk(lineText.AsSpan(selEndInLine), isCommandSlashLine, cmdSlashMarkup);
+                AppendEscapedChunk(lineText[selEndInLine..], isCommandSlashLine, cmdSlashMarkup);
         }
         else
         {
-            AppendCursorHighlight(lineText.AsSpan(), ref cursorCol, 0,
+            AppendCursorHighlight(lineText, ref cursorCol, 0,
                 isCommandSlashLine, cmdSlashMarkup);
             cursorCol = -1;
         }
@@ -198,21 +200,6 @@ internal class MarkupBuilder
 
         if (searchFrom < text.Length)
             AppendMarkupEscaped(text[searchFrom..]);
-    }
-
-    /// <summary>
-    /// Escapes text for Spectre markup, rendering known placeholder strings
-    /// with italic underline styling. Returns the string result.
-    /// </summary>
-    private string EscapeWithPlaceholderStyling(string text)
-    {
-        var phStrings = PlaceholderStrings;
-        if (phStrings is null || phStrings.Count == 0)
-            return Markup.Escape(text);
-
-        _sb.Clear();
-        AppendMarkupEscapedWithPlaceholder(text.AsSpan());
-        return _sb.Length > 0 ? _sb.ToString() : Markup.Escape(text);
     }
 
     // ── Spectre markup escaping ──────────────────────────────────────

@@ -112,6 +112,10 @@ internal class CommandPalette : IBottomPanel
     private readonly List<string> _linesBuffer = new(MaxHeight);
     private readonly List<Command> _matchingBuffer = new(HintCapacity + 1);
 
+    // Reusable StringBuilder for building hint lines without per-line
+    // PadRight or string interpolation allocation.
+    private readonly System.Text.StringBuilder _sb = new(capacity: 128);
+
     /// <summary>Creates a palette that reads from a live command provider.</summary>
     public CommandPalette(Func<IEnumerable<Command>> commandProvider)
     {
@@ -214,13 +218,29 @@ internal class CommandPalette : IBottomPanel
                 if (nameLen > maxSize) maxSize = nameLen;
             }
 
+            // Use a reusable StringBuilder for each hint line instead of
+            // string interpolation with PadRight (which allocates per line).
+            _sb.Clear();
             for (int i = 0; i < showCount; i++)
             {
                 var cmd = _matchingBuffer[i];
+                _sb.Clear();
                 if (i == SelectedIndex)
-                    _linesBuffer.Add($"> [white]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
+                {
+                    _sb.Append("> [white]/");
+                    _sb.Append(cmd.Name);
+                    PadTo(_sb, cmd.Name.Length, maxSize);
+                    _sb.Append("[/] ");
+                }
                 else
-                    _linesBuffer.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
+                {
+                    _sb.Append("  [grey]/");
+                    _sb.Append(cmd.Name);
+                    PadTo(_sb, cmd.Name.Length, maxSize);
+                    _sb.Append("[/] ");
+                }
+                _sb.Append(cmd.Description);
+                _linesBuffer.Add(_sb.ToString());
                 if (_linesBuffer.Count >= MaxHeight) break;
             }
         }
@@ -399,20 +419,30 @@ internal class CommandPalette : IBottomPanel
         if (atWordBoundary)
         {
             // At word boundary → show unique next words
-            string contextPrefix = argsPart.Length > 0
-                ? cmdPath + argsPart.ToString()
-                : cmdPath;
+            // Build each entry using the reusable StringBuilder to avoid
+            // intermediate ToString() on argsPart and ExtractFirstWord.
             var seenWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var match in info.Matches)
             {
                 ReadOnlySpan<char> remaining = argsPart.Length > 0
                     ? match.AsSpan(argsPart.Length)
                     : match.AsSpan();
-                // Extract first word manually to avoid Split(' ') allocation
-                string? nextWord = ExtractFirstWord(remaining);
-                if (!string.IsNullOrEmpty(nextWord) && seenWords.Add(nextWord))
+                // Extract first word as span; allocate only when adding to HashSet
+                var firstWord = ExtractFirstWordSpan(remaining);
+                if (firstWord.IsEmpty)
+                    continue;
+
+                // Build full entry: cmdPath + argsPart + firstWord using
+                // the reusable StringBuilder — zero intermediate allocations.
+                _sb.Clear();
+                _sb.Append(cmdPath);
+                _sb.Append(argsPart);
+                _sb.Append(firstWord);
+                string entry = _sb.ToString();
+
+                if (seenWords.Add(entry))
                 {
-                    entries.Add(contextPrefix + nextWord);
+                    entries.Add(entry);
                     if (entries.Count >= HintCapacity) break;
                 }
             }
@@ -450,26 +480,38 @@ internal class CommandPalette : IBottomPanel
         }
     }
 
-    /// <summary>Extracts the first whitespace-delimited word from a span, or null if empty.</summary>
-    private static string? ExtractFirstWord(ReadOnlySpan<char> span)
+    /// <summary>
+    /// Extracts the first whitespace-delimited word as a span, without allocation.
+    /// Returns an empty span if no word is found.
+    /// </summary>
+    private static ReadOnlySpan<char> ExtractFirstWordSpan(ReadOnlySpan<char> span)
     {
         if (span.Length == 0)
-            return null;
+            return ReadOnlySpan<char>.Empty;
 
-        // Skip leading whitespace
         int start = 0;
         while (start < span.Length && char.IsWhiteSpace(span[start]))
             start++;
 
         if (start >= span.Length)
-            return null;
+            return ReadOnlySpan<char>.Empty;
 
-        // Find end of word
         int end = start;
         while (end < span.Length && !char.IsWhiteSpace(span[end]))
             end++;
 
-        return span[start..end].ToString();
+        return span[start..end];
+    }
+
+    /// <summary>
+    /// Appends spaces to <paramref name="sb"/> to pad <paramref name="currentLength"/>
+    /// to <paramref name="targetLength"/>. Avoids string allocation from PadRight().
+    /// </summary>
+    private static void PadTo(System.Text.StringBuilder sb, int currentLength, int targetLength)
+    {
+        int pad = targetLength - currentLength;
+        if (pad > 0)
+            sb.Append(' ', pad);
     }
 
     private void ResetSelection()

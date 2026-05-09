@@ -18,6 +18,11 @@ internal class CursorMovementHandler
     private readonly Func<IReadOnlyList<Attachment>> _getAttachments;
     private int _stickyColumn = -1;
 
+    // Reusable visual-line lists — cleared and repopulated per arrow press
+    // to avoid allocating two List<T> on every up/down movement.
+    private readonly List<string> _visualLinesCache = new();
+    private readonly List<int> _visualOffsetsCache = new();
+
     public CursorMovementHandler(
         TextBuffer buffer,
         SelectionManager selection,
@@ -349,8 +354,9 @@ internal class CursorMovementHandler
 
         string input = _buffer.CurrentInput;
         int width = GetEffectiveWidth();
-        var (visualLines, offsets) = LineWrappingService.GetVisualLineData(input, width);
-        var (visLine, visCol) = GetVisualPosition(input, visualLines, offsets);
+        LineWrappingService.PopulateVisualLineData(input, width,
+            _visualLinesCache, _visualOffsetsCache);
+        var (visLine, visCol) = GetVisualPosition(input, _visualLinesCache, _visualOffsetsCache);
 
         if (visLine == 0)
         {
@@ -361,9 +367,8 @@ internal class CursorMovementHandler
         int targetCol = _stickyColumn >= 0 ? _stickyColumn : visCol;
         _stickyColumn = targetCol;
 
-        string prevLineText = visualLines[visLine - 1];
-        int clampedCol = Math.Min(targetCol, prevLineText.Length);
-        int targetPos = offsets[visLine - 1] + clampedCol;
+        int clampedCol = Math.Min(targetCol, _visualLinesCache[visLine - 1].Length);
+        int targetPos = _visualOffsetsCache[visLine - 1] + clampedCol;
 
         _selection.ForMovement(shift, cursor);
         _buffer.MoveTo(targetPos);
@@ -380,10 +385,11 @@ internal class CursorMovementHandler
 
         string input = _buffer.CurrentInput;
         int width = GetEffectiveWidth();
-        var (visualLines, offsets) = LineWrappingService.GetVisualLineData(input, width);
-        var (visLine, visCol) = GetVisualPosition(input, visualLines, offsets);
+        LineWrappingService.PopulateVisualLineData(input, width,
+            _visualLinesCache, _visualOffsetsCache);
+        var (visLine, visCol) = GetVisualPosition(input, _visualLinesCache, _visualOffsetsCache);
 
-        if (visLine >= visualLines.Count - 1)
+        if (visLine >= _visualLinesCache.Count - 1)
         {
             _selection.ForMovement(shift, cursor);
             _buffer.MoveTo(_buffer.Length);
@@ -393,9 +399,8 @@ internal class CursorMovementHandler
         int targetCol = _stickyColumn >= 0 ? _stickyColumn : visCol;
         _stickyColumn = targetCol;
 
-        string nextLineText = visualLines[visLine + 1];
-        int clampedCol = Math.Min(targetCol, nextLineText.Length);
-        int targetPos = offsets[visLine + 1] + clampedCol;
+        int clampedCol = Math.Min(targetCol, _visualLinesCache[visLine + 1].Length);
+        int targetPos = _visualOffsetsCache[visLine + 1] + clampedCol;
 
         _selection.ForMovement(shift, cursor);
         _buffer.MoveTo(targetPos);

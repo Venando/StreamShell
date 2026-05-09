@@ -193,20 +193,16 @@ internal class ConsoleRenderer : IRenderer
             return;
         }
 
-        // Reusable list for wrapped visual lines — avoids per-segment List allocation.
-        // The list is created once and reused across all segments in this render pass.
-        var wrappedLines = new List<string>();
-
         RenderInputLines(input, cursorPosition, hasSelection, selectionStart, selectionLength,
-            width, wrappedLines);
+            width);
     }
 
     /// <summary>
     /// Enumerates newline-delimited segments using spans and renders each
     /// segment's wrapped visual lines. Extracted from <see cref="RenderInputLine"/>
     /// to keep segment iteration separate from single-line prep (SRP).
-    /// Reuses the caller-provided <paramref name="wrappedLines"/> list across
-    /// segments to minimize allocations.
+    /// Inlines the per-segment wrapping to avoid per-line substring allocation
+    /// (the span slices reference the original input string directly).
     /// </summary>
     private void RenderInputLines(
         string input,
@@ -214,8 +210,7 @@ internal class ConsoleRenderer : IRenderer
         bool hasSelection,
         int selectionStart,
         int selectionLength,
-        int width,
-        List<string> wrappedLines)
+        int width)
     {
         // Enumerate newline-delimited segments using spans to avoid
         // allocating a string array via Split('\n') on every render tick.
@@ -224,6 +219,7 @@ internal class ConsoleRenderer : IRenderer
         int charOffset = 0;
         int segIdx = 0;
         int segStart = 0;
+        int totalMargin = _settings.PrefixMargin + _settings.WrappingRightMargin;
 
         while (segStart <= inputSpan.Length)
         {
@@ -235,46 +231,68 @@ internal class ConsoleRenderer : IRenderer
             int nextSegStart = nl >= 0 ? segEnd + 1 : inputSpan.Length + 1;
 
             bool isLastSegment = nextSegStart > inputSpan.Length;
+            bool isFirstSegment = segIdx == 0;
             ReadOnlySpan<char> segment = inputSpan[segStart..segEnd];
 
-            LineWrappingService.WrapSegment(
-                segment, width, segIdx == 0,
-                isLastSegment, isFirstOverallLine,
-                wrappedLines,
-                _settings.PrefixMargin, _settings.WrappingRightMargin);
-
-            for (int lineIdx = 0; lineIdx < wrappedLines.Count; lineIdx++)
+            // Inline wrapping: render each visual line as a span slice
+            // of the original segment — zero substring allocation.
+            int remaining = segment.Length;
+            int pos = 0;
+            int lineIdx = 0;
+            while (remaining > 0)
             {
+                int takeCap = Math.Max(
+                    isFirstSegment && isFirstOverallLine && lineIdx == 0 ? 0 : 1,
+                    width - totalMargin);
+                int take = Math.Min(remaining, takeCap);
+                ReadOnlySpan<char> visualLine = segment.Slice(pos, take);
+
                 RenderSingleVisualLine(
-                    input, charOffset, wrappedLines[lineIdx],
+                    input, charOffset, visualLine,
                     cursorPosition, hasSelection, selectionStart, selectionLength,
                     isFirstOverallLine);
 
-                // Don't write a newline after the very last visual line
-                if (!(isLastSegment && lineIdx == wrappedLines.Count - 1))
+                if (!(isLastSegment && remaining == take))
                     _terminal.WriteLine();
 
-                charOffset += wrappedLines[lineIdx].Length;
+                charOffset += take;
+                remaining -= take;
+                pos += take;
+                lineIdx++;
+                isFirstOverallLine = false;
+            }
+
+            // Empty segment: render an empty visual line so the cursor
+            // after a newline has somewhere to appear (Shift+Enter case).
+            if (segment.Length == 0)
+            {
+                RenderSingleVisualLine(
+                    input, charOffset, ReadOnlySpan<char>.Empty,
+                    cursorPosition, hasSelection, selectionStart, selectionLength,
+                    isFirstOverallLine);
+
+                if (!isLastSegment)
+                    _terminal.WriteLine();
+
                 isFirstOverallLine = false;
             }
 
             charOffset++; // Account for the \n between segments
             segStart = nextSegStart;
             segIdx++;
-
-            // Clear the reusable list for the next segment
-            wrappedLines.Clear();
         }
     }
 
     /// <summary>
     /// Renders a single visual line of the input block: clears to column 0,
     /// writes the prefix (input or continuation), and the markup for this line.
+    /// Accepts <see cref="ReadOnlySpan{T}"/> for <paramref name="lineText"/>
+    /// to avoid substring allocation on the hot render path.
     /// </summary>
     private void RenderSingleVisualLine(
         string input,
         int charOffset,
-        string lineText,
+        ReadOnlySpan<char> lineText,
         int cursorPosition,
         bool hasSelection,
         int selectionStart,
@@ -296,8 +314,6 @@ internal class ConsoleRenderer : IRenderer
         AnsiConsole.Markup(prefix);
         AnsiConsole.Markup(lineMarkup);
     }
-
-
 
     // ── Hints Block ───────────────────────────────────────────────────
     private void RenderHintsBlock(IReadOnlyList<string> hints)
@@ -330,14 +346,15 @@ internal class ConsoleRenderer : IRenderer
             string hint = hints[i];
             if (!string.IsNullOrEmpty(hint))
             {
-                string safeHint = TruncateToVisualWidth(hint, maxWidth);
+                int truncIdx = GetTruncationIndex(hint, maxWidth);
+                string displayHint = truncIdx < 0 ? hint : hint[..truncIdx];
                 try
                 {
-                    AnsiConsole.Markup(safeHint);
+                    AnsiConsole.Markup(displayHint);
                 }
                 catch (InvalidOperationException)
                 {
-                    AnsiConsole.Markup(Markup.Escape(safeHint));
+                    AnsiConsole.Markup(Markup.Escape(displayHint));
                 }
             }
             if (i < hints.Count - 1)
@@ -369,7 +386,12 @@ internal class ConsoleRenderer : IRenderer
         => LineWrappingService.GetVisualLineData(input, margin, prefixMargin, rightMargin);
 
     // ── Helpers ───────────────────────────────────────────────────────
-    private static string TruncateToVisualWidth(string text, int maxWidth)
+    /// <summary>
+    /// Returns the truncation index at which <paramref name="text"/> first exceeds
+    /// <paramref name="maxWidth"/> visible characters, or <c>-1</c> if it fits.
+    /// Strips Spectre markup tags to compute display length without allocation.
+    /// </summary>
+    private static int GetTruncationIndex(string text, int maxWidth)
     {
         int visualWidth = 0;
         int i = 0;
@@ -388,12 +410,12 @@ internal class ConsoleRenderer : IRenderer
 
             visualWidth++;
             if (visualWidth > maxWidth)
-                return text[..i];
+                return i;
 
             i++;
         }
 
-        return text;
+        return -1; // fits within maxWidth
     }
 
     /// <summary>Renders the top separator (between message feed and input block).</summary>
@@ -410,6 +432,28 @@ internal class ConsoleRenderer : IRenderer
         AnsiConsole.MarkupLine(BuildSeparatorLine(BottomSeparator, width));
     }
 
+    /// <summary>
+    /// Counts visible characters in a markup string without allocating.
+    /// Strips Spectre markup tags ([...]) to compute the display length.
+    /// </summary>
+    private static int GetVisualLength(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+        int len = 0;
+        int i = 0;
+        while (i < text.Length)
+        {
+            if (text[i] == '[')
+            {
+                int close = text.IndexOf(']', i + 1);
+                if (close > i) { i = close + 1; continue; }
+            }
+            len++;
+            i++;
+        }
+        return len;
+    }
+
     /// <summary>Builds the separator string from the given config and available width.</summary>
     private static string BuildSeparatorLine(SeparatorConfig config, int width)
     {
@@ -417,9 +461,9 @@ internal class ConsoleRenderer : IRenderer
         string right = config.RightText ?? string.Empty;
         char fill = config.RepeatedChar;
 
-        // Measure display length (strip markup)
-        int leftLen = string.IsNullOrEmpty(left) ? 0 : Markup.Remove(left).Length;
-        int rightLen = string.IsNullOrEmpty(right) ? 0 : Markup.Remove(right).Length;
+        // Measure display length without allocating (span-based, no Markup.Remove)
+        int leftLen = GetVisualLength(left);
+        int rightLen = GetVisualLength(right);
 
         int fillCount = width - leftLen - rightLen;
         if (fillCount < 0) fillCount = 0;
