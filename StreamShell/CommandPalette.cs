@@ -178,16 +178,7 @@ internal class CommandPalette : IBottomPanel
             // Argument completion mode
             string argsPart = query[(spaceIndex + 1)..];
             string fullPrefix = "/" + matching[0].Name + " ";
-            var info = GetArgMatchInfo(argsPart, suggestions);
-
-            if (info.Matches.Length > 0)
-            {
-                CurrentSuggestion = info.CommonNextWord is not null
-                    ? fullPrefix + info.CommonNextWord + " "
-                    : fullPrefix + info.Matches[0] + " ";
-            }
-
-            AddArgumentHints(lines, matching[0], argsPart, suggestions);
+            CollectArgumentHints(lines, matching[0], fullPrefix, argsPart, suggestions);
         }
         else
         {
@@ -320,24 +311,35 @@ internal class CommandPalette : IBottomPanel
     }
 
     /// <summary>
-    /// Populates hints with argument completions. Uses GetArgMatchInfo for unified matching.
+    /// Collects argument hint entries with selection highlighting.
+    /// Sets <see cref="_lastMatchCount"/> and <see cref="CurrentSuggestion"/>.
     /// </summary>
-    private static void AddArgumentHints(List<string> hints, Command command, string argsPart, string[] suggestions)
+    private void CollectArgumentHints(List<string> lines, Command command,
+        string fullPrefix, string argsPart, string[] suggestions)
     {
-        string cmdPath = "/" + command.Name + " ";
         var info = GetArgMatchInfo(argsPart, suggestions);
 
         if (info.Matches.Length == 0)
+        {
+            _lastMatchCount = 0;
             return;
+        }
 
-        // Mid-word with a common next word → show just one compressed hint
+        // Mid-word with a common next word → show just one compressed entry
         if (info.CommonNextWord is not null)
         {
-            hints.Add($"  [grey]{Markup.Escape(cmdPath + info.CommonNextWord)}[/]");
+            _lastMatchCount = 1;
+            string entry = fullPrefix + info.CommonNextWord + " ";
+            CurrentSuggestion = entry;
+            lines.Add($"  [grey]{Markup.Escape(entry)}[/]");
             return;
         }
 
         bool atWordBoundary = argsPart.Length == 0 || argsPart.EndsWith(' ');
+
+        // Collect unique display entries
+        var entries = new List<string>();
+        string cmdPath = fullPrefix;
 
         if (atWordBoundary)
         {
@@ -350,8 +352,8 @@ internal class CommandPalette : IBottomPanel
                 string nextWord = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
                 if (!string.IsNullOrEmpty(nextWord) && seenWords.Add(nextWord))
                 {
-                    hints.Add($"  [grey]{Markup.Escape(contextPrefix)}{Markup.Escape(nextWord)}[/]");
-                    if (hints.Count >= MaxHeight) break;
+                    entries.Add(contextPrefix + nextWord);
+                    if (entries.Count >= HintCapacity) break;
                 }
             }
         }
@@ -360,9 +362,31 @@ internal class CommandPalette : IBottomPanel
             // Mid-word with divergent matches → show each full path
             foreach (var match in info.Matches)
             {
-                hints.Add($"  [grey]{Markup.Escape(cmdPath + match)}[/]");
-                if (hints.Count >= MaxHeight) break;
+                entries.Add(cmdPath + match);
+                if (entries.Count >= HintCapacity) break;
             }
+        }
+
+        _lastMatchCount = entries.Count;
+
+        if (entries.Count == 0)
+            return;
+
+        // Autocomplete suggestion from selected entry
+        int suggestionIdx = SelectedIndex >= 0 ? SelectedIndex : 0;
+        if (suggestionIdx < entries.Count)
+        {
+            CurrentSuggestion = entries[suggestionIdx] + " ";
+        }
+
+        // Build hint strings with selection highlighting
+        for (int i = 0; i < entries.Count; i++)
+        {
+            if (i == SelectedIndex)
+                lines.Add($"> [white]{Markup.Escape(entries[i])}[/]");
+            else
+                lines.Add($"  [grey]{Markup.Escape(entries[i])}[/]");
+            if (lines.Count >= MaxHeight) break;
         }
     }
 
