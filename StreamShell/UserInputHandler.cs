@@ -296,9 +296,13 @@ internal class UserInputHandler : IInputHandler
 
         if (_selection.IsActiveAt(_buffer.CursorPosition))
         {
-            if (!_clipboard.RemovePlaceholderAffectedBy(
+            if (_clipboard.RemovePlaceholderAffectedBy(
                     _selection.SelectionStart(_buffer.CursorPosition),
                     _selection.SelectionLength(_buffer.CursorPosition)))
+            {
+                _selection.Clear();
+            }
+            else
             {
                 RemoveSelectedText();
             }
@@ -325,9 +329,13 @@ internal class UserInputHandler : IInputHandler
     {
         if (_selection.IsActiveAt(_buffer.CursorPosition))
         {
-            if (!_clipboard.RemovePlaceholderAffectedBy(
+            if (_clipboard.RemovePlaceholderAffectedBy(
                     _selection.SelectionStart(_buffer.CursorPosition),
                     _selection.SelectionLength(_buffer.CursorPosition)))
+            {
+                _selection.Clear();
+            }
+            else
             {
                 RemoveSelectedText();
             }
@@ -342,9 +350,13 @@ internal class UserInputHandler : IInputHandler
     {
         if (_selection.IsActiveAt(_buffer.CursorPosition))
         {
-            if (!_clipboard.RemovePlaceholderAffectedBy(
+            if (_clipboard.RemovePlaceholderAffectedBy(
                     _selection.SelectionStart(_buffer.CursorPosition),
                     _selection.SelectionLength(_buffer.CursorPosition)))
+            {
+                _selection.Clear();
+            }
+            else
             {
                 RemoveSelectedText();
             }
