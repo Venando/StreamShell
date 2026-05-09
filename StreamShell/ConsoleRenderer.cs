@@ -553,39 +553,19 @@ internal class ConsoleRenderer : IRenderer
     }
 
     /// <summary>
-    /// After the input block was re-rendered and its visual height changed,
-    /// cleans up stale content that wasn't cleared by
-    /// <see cref="ClearInputBlockForReRender"/> because the offset excludes
-    /// the separator line at the top of the block:
-    /// - Growing case: clears the old separator line at block_top
-    /// - Shrinking case: also clears excess lines below the new block
+    /// After the input block was re-rendered and the block shrunk
+    /// (<paramref name="newBlockOffset"/> &lt; <paramref name="oldBlockOffset"/>),
+    /// clears excess lines below the new (smaller) block that were
+    /// cleared but not re-filled. The growing case is handled naturally
+    /// since the larger block fills all cleared lines.
     /// </summary>
     public void HandleBlockHeightChange(int oldBlockOffset, int newBlockOffset)
     {
         int delta = newBlockOffset - oldBlockOffset;
-        if (delta == 0)
+        if (delta >= 0)
             return;
 
-        // Cursor is at the last panel line after the full render.
-        // visual = offset + 2, cursor at visual - 1 = offset + 1
-        // So block_top = cursorTop - (offset + 1) = cursorTop - newBlockOffset - 1
-        int cursorBottom = Console.CursorTop;
-        int blockTop = cursorBottom - newBlockOffset - 1;
-
-        // Handle shrinking first so ClearLinesBelow uses the correct cursor
-        if (delta < 0)
-            ClearLinesBelow(-delta);
-
-        // The old separator line at block_top was not cleared by
-        // ClearInputBlockForReRender (starts from block_top+1).
-        if (blockTop >= 0)
-        {
-            Console.SetCursorPosition(0, blockTop);
-            ClearLine();
-        }
-
-        // Restore cursor to block bottom
-        Console.CursorTop = Math.Max(0, Math.Min(cursorBottom, Console.BufferHeight - 1));
+        ClearLinesBelow(-delta);
     }
 
     /// <summary>Clears <paramref name="count"/> lines below the new block that were
