@@ -189,10 +189,15 @@ internal class ClipboardHandler
 
     private static string GenerateName(string content)
     {
-        int newlineIndex = content.IndexOf('\n');
-        string firstLine = newlineIndex > 0 ? content[..newlineIndex] : content;
-        string trimmed = firstLine.TrimEnd();
-        string result = trimmed.Length > 15 ? trimmed[..15] : trimmed;
-        return result + "...";
+        foreach (string line in content.Split('\n'))
+        {
+            string trimmed = line.TrimEnd();
+            if (trimmed.Length > 0)
+            {
+                string result = trimmed.Length > 15 ? trimmed[..15] : trimmed;
+                return result + "...";
+            }
+        }
+        return "...";
     }
 }
