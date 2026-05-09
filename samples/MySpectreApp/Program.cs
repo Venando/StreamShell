@@ -120,6 +120,21 @@ host.AddCommand(new Command("panel", "Toggle bottom panel (CommandPalette / Char
 }));
 
 // ════════════════════════════════════════════════════════════════
+//  Separator test command
+// ════════════════════════════════════════════════════════════════
+
+host.AddCommand(new Command("separator", "Change the separator line. Usage: /separator [left] [right] [char]", (args, named) =>
+{
+    string? left = args.Length > 0 ? args[0] : null;
+    string? right = args.Length > 1 ? args[1] : null;
+    char fill = args.Length > 2 && args[2].Length > 0 ? args[2][0] : '-';
+
+    host.SetSeparator(left, right, fill);
+    host.AddMessage($"[green]Separator updated: [dim]left=[/]{Markup.Escape(left ?? "(none)")}[dim] right=[/]{Markup.Escape(right ?? "(none)")}[dim] fill=[/]'{fill}'[/]");
+    return Task.CompletedTask;
+}));
+
+// ════════════════════════════════════════════════════════════════
 //  Selection test commands (PromptSelection)
 // ════════════════════════════════════════════════════════════════
 
@@ -301,6 +316,7 @@ host.AddMessage("[yellow]Try [bold]/demo[/] [grey]li[/] (Tab for multi-word arg 
 host.AddMessage("[yellow]Try [bold]/pick[/] [grey](single-select PromptSelection)[/][/]");
 host.AddMessage("[yellow]Try [bold]/multi[/] [grey](multi-select 1-3 tools)[/][/]");
 host.AddMessage("[yellow]Try [bold]/colors[/] [grey](multi-select min 2 colors)[/][/]");
+host.AddMessage("[yellow]Try [bold]/separator[/] [grey]<left> <right> <char> (change separator)[/][/]");
 host.AddMessage("");
 host.AddMessage("[yellow]--- Save/Load test ---[/]");
 host.AddMessage("[yellow]/save <text>  — save text as input field state[/]");
