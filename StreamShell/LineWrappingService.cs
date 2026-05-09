@@ -30,11 +30,32 @@ public static class LineWrappingService
         int estimatedLines = segment.Length == 0 ? 1 : (segment.Length + cap - 1) / cap;
         var lines = new List<string>(estimatedLines);
 
+        WrapSegment(segment, width, isFirstSegment, isLastSegment, isFirstVisualLine, lines, prefixMargin, rightMargin);
+        return lines;
+    }
+
+    /// <summary>
+    /// Wraps a single segment into visual lines, appending to a caller-provided
+    /// <paramref name="lines"/> list. Avoids the per-call List&lt;string&gt; allocation
+    /// on hot paths where the same list can be reused across segments.
+    /// </summary>
+    public static void WrapSegment(
+        ReadOnlySpan<char> segment,
+        int width,
+        bool isFirstSegment,
+        bool isLastSegment,
+        bool isFirstVisualLine,
+        List<string> lines,
+        int prefixMargin = 2,
+        int rightMargin = 4)
+    {
+        int totalMargin = prefixMargin + rightMargin;
+
         // Short single segment that fits on one line
         if (isFirstSegment && isLastSegment && segment.Length + totalMargin < width)
         {
             lines.Add(segment.ToString());
-            return lines;
+            return;
         }
 
         int remaining = segment.Length;
@@ -55,8 +76,6 @@ public static class LineWrappingService
         // after a newline has somewhere to render (e.g. Shift+Enter).
         if (segment.Length == 0)
             lines.Add(string.Empty);
-
-        return lines;
     }
 
     /// <summary>
@@ -136,24 +155,39 @@ public static class LineWrappingService
     public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin,
         int prefixMargin = 2, int rightMargin = 4)
     {
+        int estimatedLines = EstimateVisualLineCount(input, margin, prefixMargin, rightMargin);
+        var lines = new List<string>(estimatedLines);
+        var offsets = new List<int>(estimatedLines);
+        PopulateVisualLineData(input, margin, lines, offsets, prefixMargin, rightMargin);
+        return (lines, offsets);
+    }
+
+    /// <summary>
+    /// Populates pre-allocated lists with visual line data.
+    /// Same logic as <see cref="GetVisualLineData"/> but reuses caller-provided lists
+    /// to avoid allocation on hot paths.
+    /// </summary>
+    public static void PopulateVisualLineData(string input, int margin,
+        List<string> lines, List<int> offsets,
+        int prefixMargin = 2, int rightMargin = 4)
+    {
+        lines.Clear();
+        offsets.Clear();
+
         if (input is null)
         {
-            var emptyLines = new List<string> { "" };
-            var emptyOffsets = new List<int> { 0 };
-            return (emptyLines, emptyOffsets);
+            lines.Add("");
+            offsets.Add(0);
+            return;
         }
 
         int width = Math.Max(1, margin);
-        // Estimate: roughly input.Length / (width - margin) newlines + some for hard breaks
-        int estimatedLines = Math.Max(1, input.Length / Math.Max(1, width - prefixMargin - rightMargin - 4) + 4);
-        var lines = new List<string>(estimatedLines);
-        var offsets = new List<int>(estimatedLines);
 
         if (string.IsNullOrEmpty(input))
         {
             lines.Add("");
             offsets.Add(0);
-            return (lines, offsets);
+            return;
         }
 
         // Manual iteration over newline-delimited segments using ReadOnlySpan<char>
@@ -172,18 +206,18 @@ public static class LineWrappingService
             ReadOnlySpan<char> segment = span[segStart..segEnd];
             bool isFirstSegment = segIdx == 0;
             bool isLastSegment = segEnd == span.Length;
+            int linesBefore = lines.Count;
 
-            var wrapped = WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced,
-                prefixMargin, rightMargin);
+            WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced,
+                lines, prefixMargin, rightMargin);
 
-            for (int lineIdx = 0; lineIdx < wrapped.Count; lineIdx++)
+            for (int lineIdx = linesBefore; lineIdx < lines.Count; lineIdx++)
             {
                 offsets.Add(charOffset);
-                lines.Add(wrapped[lineIdx]);
-                charOffset += wrapped[lineIdx].Length;
+                charOffset += lines[lineIdx].Length;
             }
 
-            if (wrapped.Count > 0)
+            if (lines.Count > linesBefore)
                 anyLinesProduced = true;
 
             charOffset++; // Account for \n between segments
@@ -199,8 +233,16 @@ public static class LineWrappingService
             lines.Add("");
             offsets.Add(0);
         }
+    }
 
-        return (lines, offsets);
+    /// <summary>Estimates how many visual lines an input would produce, for capacity pre-allocation.</summary>
+    private static int EstimateVisualLineCount(string input, int margin,
+        int prefixMargin, int rightMargin)
+    {
+        if (string.IsNullOrEmpty(input))
+            return 1;
+        int estimatedLineWidth = Math.Max(1, margin - prefixMargin - rightMargin);
+        return Math.Max(1, input.Length / Math.Max(1, estimatedLineWidth - 4) + input.Length / 80 + 4);
     }
 
     /// <summary>

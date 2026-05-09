@@ -185,7 +185,6 @@ internal class ConsoleRenderer : IRenderer
         if (string.IsNullOrEmpty(input))
         {
             _terminal.CursorLeft = 0;
-            _markupBuilder.Reset();
             string lineMarkup = _markupBuilder.BuildLineMarkup(
                 input, 0, "",
                 cursorPosition, hasSelection, selectionStart, selectionLength);
@@ -194,6 +193,30 @@ internal class ConsoleRenderer : IRenderer
             return;
         }
 
+        // Reusable list for wrapped visual lines — avoids per-segment List allocation.
+        // The list is created once and reused across all segments in this render pass.
+        var wrappedLines = new List<string>();
+
+        RenderInputLines(input, cursorPosition, hasSelection, selectionStart, selectionLength,
+            width, wrappedLines);
+    }
+
+    /// <summary>
+    /// Enumerates newline-delimited segments using spans and renders each
+    /// segment's wrapped visual lines. Extracted from <see cref="RenderInputLine"/>
+    /// to keep segment iteration separate from single-line prep (SRP).
+    /// Reuses the caller-provided <paramref name="wrappedLines"/> list across
+    /// segments to minimize allocations.
+    /// </summary>
+    private void RenderInputLines(
+        string input,
+        int cursorPosition,
+        bool hasSelection,
+        int selectionStart,
+        int selectionLength,
+        int width,
+        List<string> wrappedLines)
+    {
         // Enumerate newline-delimited segments using spans to avoid
         // allocating a string array via Split('\n') on every render tick.
         ReadOnlySpan<char> inputSpan = input.AsSpan();
@@ -214,9 +237,10 @@ internal class ConsoleRenderer : IRenderer
             bool isLastSegment = nextSegStart > inputSpan.Length;
             ReadOnlySpan<char> segment = inputSpan[segStart..segEnd];
 
-            var wrappedLines = LineWrappingService.WrapSegment(
+            LineWrappingService.WrapSegment(
                 segment, width, segIdx == 0,
                 isLastSegment, isFirstOverallLine,
+                wrappedLines,
                 _settings.PrefixMargin, _settings.WrappingRightMargin);
 
             for (int lineIdx = 0; lineIdx < wrappedLines.Count; lineIdx++)
@@ -237,6 +261,9 @@ internal class ConsoleRenderer : IRenderer
             charOffset++; // Account for the \n between segments
             segStart = nextSegStart;
             segIdx++;
+
+            // Clear the reusable list for the next segment
+            wrappedLines.Clear();
         }
     }
 
@@ -260,7 +287,6 @@ internal class ConsoleRenderer : IRenderer
             ? _settings.InputPrefix
             : _settings.ContinuationPrefix;
 
-        _markupBuilder.Reset();
         string lineMarkup = _markupBuilder.BuildLineMarkup(
             input, charOffset, lineText,
             cursorPosition, hasSelection, selectionStart, selectionLength);

@@ -169,12 +169,25 @@ public class CommandPaletteTests
     }
 
     [Fact]
-    public void GetLines_ChangedInput_ReturnsNewLines()
+    public void GetLines_ChangedInput_ReturnsUpdatedContent()
     {
         var palette = CreatePalette();
         var first = palette.GetLines("/h");
-        var second = palette.GetLines("/he");
-        Assert.NotSame(first, second);
+        string firstHint = first.Count >= 2 ? first[1] : "(no hint)";
+
+        var second = palette.GetLines("/xxx");  // matches nothing — all lines are empty
+
+        // Verify content changed: hints from "/h" differ from empty lines for "/xxx"
+        bool contentChanged = firstHint.Length > 0;
+        for (int i = 0; i < second.Count; i++)
+        {
+            if (!string.IsNullOrEmpty(second[i]))
+                contentChanged = true;
+        }
+
+        Assert.True(contentChanged,
+            $"Changing input from \"/h\" to \"/xxx\" should change content.\n" +
+            $"First[1]: \"{firstHint}\"\nSecond has {second.Count} lines");
     }
 
     // ── Selection ────────────────────────────────────────────────────

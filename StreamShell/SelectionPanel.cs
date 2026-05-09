@@ -17,7 +17,7 @@ internal class SelectionPanel : IBottomPanel
     private int _highlightIndex;
     private int _lastRenderHighlight;
     private int _lastToggledVersion;
-    private IReadOnlyList<string>? _cachedLines;
+    private readonly List<string> _cachedLines = new();
 
     private volatile bool _isDirty;
     bool IBottomPanel.IsDirty => _isDirty;
@@ -52,19 +52,20 @@ internal class SelectionPanel : IBottomPanel
     {
         if (_highlightIndex == _lastRenderHighlight
             && _toggledVersion == _lastToggledVersion
-            && _cachedLines is not null)
+            && _cachedLines.Count > 0)
             return _cachedLines;
 
-        var lines = new List<string>(LineCount);
+        // Reuse the cached lines list: clear and repopulate in place
+        _cachedLines.Clear();
 
         // Line 0: control scheme (varies by mode)
         string controls = IsMulti
             ? "[dim]\u2191\u2193: navigate  Enter: toggle  Space: submit  Esc: cancel[/]"
             : "[dim]\u2191\u2193: navigate  Enter/Space: submit  Esc: cancel[/]";
-        lines.Add(controls);
+        _cachedLines.Add(controls);
 
         // Line 1: title
-        lines.Add($"[bold]{_title}[/]");
+        _cachedLines.Add($"[bold]{_title}[/]");
 
         // Variant lines
         for (int i = 0; i < _variants.Length; i++)
@@ -79,13 +80,12 @@ internal class SelectionPanel : IBottomPanel
             string line = IsMulti
                 ? $"{arrow}{checkMark}[{color}]{_variants[i].Name}[/]"
                 : $"{arrow}[{color}]{_variants[i].Name}[/]";
-            lines.Add(line);
+            _cachedLines.Add(line);
         }
 
         _lastRenderHighlight = _highlightIndex;
         _lastToggledVersion = _toggledVersion;
-        _cachedLines = lines;
-        return lines;
+        return _cachedLines;
     }
 
     // ── Interface: TryHandleKey ──────────────────────────────────────

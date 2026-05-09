@@ -107,6 +107,11 @@ internal class CommandPalette : IBottomPanel
     private int _lastSelectedIndex;
     private int _lastMatchCount;
 
+    // Reusable lists for building content on every GetLines call.
+    // Cleared and repopulated on each cache miss to avoid per-call allocation.
+    private readonly List<string> _linesBuffer = new(MaxHeight);
+    private readonly List<Command> _matchingBuffer = new(HintCapacity + 1);
+
     /// <summary>Creates a palette that reads from a live command provider.</summary>
     public CommandPalette(Func<IEnumerable<Command>> commandProvider)
     {
@@ -124,6 +129,8 @@ internal class CommandPalette : IBottomPanel
     /// Returns all panel lines. Line 0 is the status/instruction line.
     /// Lines 1..4 contain command hints. The Tab autocomplete suggestion
     /// is available via <see cref="CurrentSuggestion"/>.
+    /// Uses pre-allocated reusable buffers (<see cref="_linesBuffer"/>,
+    /// <see cref="_matchingBuffer"/>) to avoid per-call list allocation.
     /// </summary>
     public IReadOnlyList<string> GetLines(string currentInput)
     {
@@ -153,9 +160,9 @@ internal class CommandPalette : IBottomPanel
             ? currentInput.AsSpan(1)
             : ReadOnlySpan<char>.Empty;
 
-        List<Command> matching = GetMatchingCommands(query);
+        GetMatchingCommands(query, _matchingBuffer);
 
-        if (matching.Count == 0)
+        if (_matchingBuffer.Count == 0)
         {
             _lastInput = currentInput;
             _lastSelectedIndex = SelectedIndex;
@@ -164,29 +171,29 @@ internal class CommandPalette : IBottomPanel
         }
 
         // Update match count for selection clamping
-        _lastMatchCount = matching.Count;
+        _lastMatchCount = _matchingBuffer.Count;
 
-        // Build all lines: [0] = status, [1..4] = hints
-        List<string> lines = new(MaxHeight);
+        // Reuse the lines buffer: clear and repopulate
+        _linesBuffer.Clear();
 
         // Status line at index 0 (first line)
-        lines.Add("[dim]Tab: autocomplete  \u2191\u2193: selection[/]");
+        _linesBuffer.Add("[dim]Tab: autocomplete  \u2191\u2193: selection[/]");
 
         int spaceIndex = query.IndexOf(' ');
 
-        if (matching.Count == 1
-            && matching[0].ArgumentSuggestions is { Length: > 0 } suggestions
+        if (_matchingBuffer.Count == 1
+            && _matchingBuffer[0].ArgumentSuggestions is { Length: > 0 } suggestions
             && spaceIndex >= 0)
         {
             // Argument completion mode
             ReadOnlySpan<char> argsPart = query[(spaceIndex + 1)..];
-            string fullPrefix = "/" + matching[0].Name + " ";
-            CollectArgumentHints(lines, matching[0], fullPrefix, argsPart, suggestions);
+            string fullPrefix = "/" + _matchingBuffer[0].Name + " ";
+            CollectArgumentHints(_linesBuffer, _matchingBuffer[0], fullPrefix, argsPart, suggestions);
         }
         else
         {
             // Command hint mode — limit to HintCapacity manually to avoid LINQ Take().ToList()
-            int showCount = Math.Min(matching.Count, HintCapacity);
+            int showCount = Math.Min(_matchingBuffer.Count, HintCapacity);
 
             // Determine autocomplete suggestion from the selected command (if any)
             if (showCount > 0)
@@ -194,7 +201,7 @@ internal class CommandPalette : IBottomPanel
                 int suggestionIdx = SelectedIndex >= 0 ? SelectedIndex : 0;
                 if (suggestionIdx < showCount)
                 {
-                    CurrentSuggestion = "/" + matching[suggestionIdx].Name + " ";
+                    CurrentSuggestion = "/" + _matchingBuffer[suggestionIdx].Name + " ";
                 }
             }
 
@@ -203,29 +210,29 @@ internal class CommandPalette : IBottomPanel
             int maxSize = 12;
             for (int i = 0; i < showCount; i++)
             {
-                int nameLen = matching[i].Name.Length;
+                int nameLen = _matchingBuffer[i].Name.Length;
                 if (nameLen > maxSize) maxSize = nameLen;
             }
 
             for (int i = 0; i < showCount; i++)
             {
-                var cmd = matching[i];
+                var cmd = _matchingBuffer[i];
                 if (i == SelectedIndex)
-                    lines.Add($"> [white]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
+                    _linesBuffer.Add($"> [white]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
                 else
-                    lines.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
-                if (lines.Count >= MaxHeight) break;
+                    _linesBuffer.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
+                if (_linesBuffer.Count >= MaxHeight) break;
             }
         }
 
         // Pad to MaxHeight
-        while (lines.Count < MaxHeight)
-            lines.Add(string.Empty);
+        while (_linesBuffer.Count < MaxHeight)
+            _linesBuffer.Add(string.Empty);
 
         _lastInput = currentInput;
         _lastSelectedIndex = SelectedIndex;
-        _lastLines = lines;
-        return lines;
+        _lastLines = _linesBuffer;
+        return _linesBuffer;
     }
 
     /// <summary>
@@ -249,20 +256,32 @@ internal class CommandPalette : IBottomPanel
         }
     }
 
-    /// <summary>Returns all commands matching the given query (command prefix).
-    /// Limit: HintCapacity + 1 so we can detect overflow beyond what's shown.</summary>
-    private List<Command> GetMatchingCommands(ReadOnlySpan<char> query)
+    /// <summary>Populates <paramref name="result"/> with commands matching the given query.
+    /// Limit: HintCapacity + 1 so we can detect overflow beyond what's shown.
+    /// Uses the caller-provided list to avoid per-call allocation.</summary>
+    private void GetMatchingCommands(ReadOnlySpan<char> query, List<Command> result)
     {
+        result.Clear();
+
         var currentCommands = _commandProvider();
         int spaceIndex = query.IndexOf(' ');
         bool isSpacePresent = spaceIndex > 0;
         ReadOnlySpan<char> cmdPrefix = isSpacePresent ? query[..spaceIndex] : query;
+        int limit = HintCapacity + 1;
 
         if (cmdPrefix.Length == 0)
-            return currentCommands is IList<Command> list ? [.. list] : [.. currentCommands];
+        {
+            // No filter — take up to limit directly from the enumerable
+            // Avoids the [.. list] full-copy allocation that would occur
+            // when the provider returns an IList<Command>.
+            foreach (var cmd in currentCommands)
+            {
+                result.Add(cmd);
+                if (result.Count > limit) break;
+            }
+            return;
+        }
 
-        int limit = HintCapacity + 1;
-        List<Command> matching = new(limit);
         foreach (var cmd in currentCommands)
         {
             ReadOnlySpan<char> nameSpan = cmd.Name.AsSpan();
@@ -270,20 +289,19 @@ internal class CommandPalette : IBottomPanel
             {
                 if (nameSpan.Equals(cmdPrefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    matching.Add(cmd);
-                    if (matching.Count > limit) break;
+                    result.Add(cmd);
+                    if (result.Count > limit) break;
                 }
             }
             else
             {
                 if (nameSpan.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    matching.Add(cmd);
-                    if (matching.Count > limit) break;
+                    result.Add(cmd);
+                    if (result.Count > limit) break;
                 }
             }
         }
-        return matching;
     }
 
     /// <summary>Result of matching argument suggestions against typed args.</summary>

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -66,7 +67,10 @@ internal class ClipboardService : IClipboardService
         }
     }
 
-    /// <summary>Write Unicode text to the system clipboard.</summary>
+    /// <summary>Write Unicode text to the system clipboard.
+    /// Uses ArrayPool&lt;byte&gt; for the encoding buffer and avoids the
+    /// <c>text + '\0'</c> concatenation allocation by encoding the
+    /// null terminator directly into the pooled buffer.</summary>
     public void Copy(string text)
     {
         if (!OpenClipboard(0))
@@ -76,38 +80,56 @@ internal class ClipboardService : IClipboardService
         {
             EmptyClipboard();
 
-            // Allocate global memory for the null-terminated Unicode string
-            byte[] bytes = Encoding.Unicode.GetBytes(text + '\0');
-            nint hGlobal = GlobalAlloc(GMEM_MOVABLE, (nint)bytes.Length);
-
-            if (hGlobal == 0)
-                return;
+            // Rent from ArrayPool<byte> to avoid heap-allocating byte[] on every copy.
+            // Compute exact byte count (including null terminator) so we only rent what we need.
+            int textByteCount = Encoding.Unicode.GetByteCount(text);
+            int totalByteCount = textByteCount + 2; // null terminator (\0\0 for UTF-16)
+            byte[] bytes = ArrayPool<byte>.Shared.Rent(totalByteCount);
 
             try
             {
-                nint pointer = GlobalLock(hGlobal);
-                if (pointer == 0)
+                // Encode into the rented buffer
+                int encoded = Encoding.Unicode.GetBytes(text.AsSpan(), bytes.AsSpan());
+
+                // Write null terminator directly (already part of the rented region)
+                bytes[encoded] = 0;
+                bytes[encoded + 1] = 0;
+
+                nint hGlobal = GlobalAlloc(GMEM_MOVABLE, (nint)totalByteCount);
+
+                if (hGlobal == 0)
                     return;
 
                 try
                 {
-                    Marshal.Copy(bytes, 0, pointer, bytes.Length);
+                    nint pointer = GlobalLock(hGlobal);
+                    if (pointer == 0)
+                        return;
+
+                    try
+                    {
+                        Marshal.Copy(bytes, 0, pointer, totalByteCount);
+                    }
+                    finally
+                    {
+                        GlobalUnlock(hGlobal);
+                    }
+
+                    // SetClipboardData takes ownership of hGlobal on success
+                    nint result = SetClipboardData(CF_UNICODETEXT, hGlobal);
+                    if (result != 0)
+                        hGlobal = nint.Zero; // ownership transferred
                 }
                 finally
                 {
-                    GlobalUnlock(hGlobal);
+                    // Only free if ownership was NOT transferred to the clipboard
+                    if (hGlobal != nint.Zero)
+                        GlobalFree(hGlobal);
                 }
-
-                // SetClipboardData takes ownership of hGlobal on success
-                nint result = SetClipboardData(CF_UNICODETEXT, hGlobal);
-                if (result != 0)
-                    hGlobal = nint.Zero; // ownership transferred
             }
             finally
             {
-                // Only free if ownership was NOT transferred to the clipboard
-                if (hGlobal != nint.Zero)
-                    GlobalFree(hGlobal);
+                ArrayPool<byte>.Shared.Return(bytes);
             }
         }
         finally

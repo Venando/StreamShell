@@ -257,6 +257,21 @@ public class ConsoleAppHost : IDisposable
     }
 
     /// <summary>
+    /// Holds render-time state captured from the input handler and terminal.
+    /// Extracted into a struct so <see cref="ProcessOneTick"/> can pass it
+    /// to rendering methods without unpacking individual fields (SRP + readability).
+    /// </summary>
+    private readonly record struct TickState(
+        string Input,
+        int Cursor,
+        bool HasSelection,
+        int SelectionStart,
+        int SelectionLength,
+        int WindowWidth,
+        int Margin
+    );
+
+    /// <summary>
     /// Processes exactly one tick of the render/input loop.
     /// Returns (submittedInput, newState) — submittedInput is null if nothing was submitted,
     /// or "__QUIT__" when Ctrl+D was pressed.
@@ -270,40 +285,13 @@ public class ConsoleAppHost : IDisposable
     {
         EnsureProperPanel();
 
-        string input = _inputHandler.CurrentInput;
-        int cursor = _inputHandler.CursorPosition;
-        bool hasSelection = _inputHandler.HasSelection;
-        _inputHandler.TryGetSelection(out int selStart, out int selLength);
-        int windowWidth = _terminal.WindowWidth;
-        int margin = _inputHandler.RightMargin;
+        var tick = CaptureTickState();
+        SyncPlaceholderCache();
 
-        if (_renderer is ConsoleRenderer cr)
-        {
-            int attachCount = _inputHandler.Attachments.Count;
-            if (attachCount != _lastAttachmentCount)
-            {
-                _lastAttachmentCount = attachCount;
-                _cachedPlaceholders = null;
-            }
-
-            if (_cachedPlaceholders is null)
-            {
-                var placeholders = new List<string>(attachCount);
-                foreach (var a in _inputHandler.Attachments)
-                {
-                    if (!string.IsNullOrEmpty(a.Placeholder))
-                        placeholders.Add(a.Placeholder);
-                }
-                _cachedPlaceholders = placeholders;
-            }
-
-            cr.PlaceholderStrings = _cachedPlaceholders;
-        }
-
-        bool rendered = TryRender(state, input, cursor, hasSelection, selStart, selLength, margin, windowWidth);
+        bool rendered = TryRender(state, tick);
         var newState = rendered
-            ? new RenderSnapshot(input, cursor, hasSelection,
-                _renderer.GetInputLineCount(input), windowWidth, _bottomPanel.LineCount)
+            ? new RenderSnapshot(tick.Input, tick.Cursor, tick.HasSelection,
+                _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount)
             : state;
 
         if (_inputHandler.QuitRequested)
@@ -315,116 +303,157 @@ public class ConsoleAppHost : IDisposable
         string? submittedInput = _inputHandler.ProcessInput();
         if (submittedInput != null)
         {
-            HandleSubmittedInput(submittedInput, windowWidth);
-            newState = new RenderSnapshot(null, 0, false, 0, windowWidth, _bottomPanel.LineCount);
+            HandleSubmittedInput(submittedInput, tick.WindowWidth);
+            newState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount);
         }
 
         return (submittedInput, newState);
     }
 
+    /// <summary>Captures the current input handler state and terminal dimensions into a single struct.</summary>
+    private TickState CaptureTickState()
+    {
+        _inputHandler.TryGetSelection(out int selStart, out int selLength);
+        return new TickState(
+            _inputHandler.CurrentInput,
+            _inputHandler.CursorPosition,
+            _inputHandler.HasSelection,
+            selStart,
+            selLength,
+            _terminal.WindowWidth,
+            _inputHandler.RightMargin
+        );
+    }
+
+    /// <summary>
+    /// Synchronizes the placeholder cache with the current attachment list.
+    /// Avoids recomputing PlaceholderStrings on every tick when attachments
+    /// haven't changed.
+    /// </summary>
+    private void SyncPlaceholderCache()
+    {
+        if (_renderer is not ConsoleRenderer cr)
+            return;
+
+        int attachCount = _inputHandler.Attachments.Count;
+        if (attachCount != _lastAttachmentCount)
+        {
+            _lastAttachmentCount = attachCount;
+            _cachedPlaceholders = null;
+        }
+
+        if (_cachedPlaceholders is null)
+        {
+            var placeholders = new List<string>(attachCount);
+            foreach (var a in _inputHandler.Attachments)
+            {
+                if (!string.IsNullOrEmpty(a.Placeholder))
+                    placeholders.Add(a.Placeholder);
+            }
+            _cachedPlaceholders = placeholders;
+        }
+
+        cr.PlaceholderStrings = _cachedPlaceholders;
+    }
+
     /// <summary>Priority render check: messages first, then input changes. Returns true when the screen was updated.</summary>
-    private bool TryRender(
-        RenderSnapshot state,
-        string input, int cursor, bool hasSelection, int selStart, int selLength,
-        int margin, int windowWidth)
+    private bool TryRender(RenderSnapshot state, TickState tick)
     {
         // Priority 1: queued messages need a full re-render
-        if (RenderQueuedMessages(state, input, cursor, hasSelection, selStart, selLength, margin))
+        if (RenderQueuedMessages(state, tick))
             return true;
 
         // Priority 2: input/cursor/resize changes need an update
-        return RenderInputChanges(state, input, cursor, hasSelection, selStart, selLength,
-            margin, windowWidth);
+        return RenderInputChanges(state, tick);
     }
 
     /// <summary>Renders a queued message then re-renders the input block. Returns true if a message was rendered.</summary>
-    private bool RenderQueuedMessages(
-        RenderSnapshot state,
-        string input, int cursor, bool hasSelection, int selStart, int selLength,
-        int margin)
+    private bool RenderQueuedMessages(RenderSnapshot state, TickState tick)
     {
         if (!_messages.TryDequeue(out var message))
             return false;
 
         if (state.LastInput is not null)
-            _renderer.ClearInputBlockForReRender(state.LastInput, input, state.LastPanelLineCount);
+            _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
         else
             _renderer.ClearInputLine();
 
         _renderer.RenderMessage(message);
-        RenderFullInputBlock(input, cursor, hasSelection, selStart, selLength, margin);
+        RenderFullInputBlock(tick);
 
-        // Handle block height change (panel may have been swapped by EnsureProperPanel
-        // but state still has the old panel line count)
         if (state.LastInput is not null)
         {
             int oldBlockOffset = (1 + state.LastPanelLineCount) + _renderer.GetInputLineCount(state.LastInput);
-            int newBlockOffset = _renderer.GetBlockOffset(input);
+            int newBlockOffset = _renderer.GetBlockOffset(tick.Input);
             _renderer.HandleBlockHeightChange(oldBlockOffset, newBlockOffset);
         }
 
-        // Consume panel dirty — GetLines was already called via RenderFullInputBlock
         if (_bottomPanel.IsDirty)
             _bottomPanel.ClearDirty();
 
         return true;
     }
 
-    /// <summary>Applies input/cursor/resize changes to the display. Returns true when the screen was updated.</summary>
-    private bool RenderInputChanges(
-        RenderSnapshot state,
-        string input, int cursor, bool hasSelection, int selStart, int selLength,
-        int margin, int windowWidth)
+    /// <summary>Applies input/cursor/resize changes. Returns true when the screen was updated.</summary>
+    private bool RenderInputChanges(RenderSnapshot state, TickState tick)
     {
         bool panelDirty = _bottomPanel.IsDirty;
-        if (!StateDiffersFromRender(state, input, cursor, hasSelection, windowWidth) && !panelDirty)
+        if (!StateDiffersFromRender(state, tick) && !panelDirty)
             return false;
 
-        // Consume the dirty flag before rendering (GetLines will be called below)
         if (panelDirty)
             _bottomPanel.ClearDirty();
 
-        // Single-line → single-line: use faster overwrite only when panel hasn't changed
-        // (Panel changes always need the full clear+re-render path)
-        bool terminalResized = state.LastWindowWidth != windowWidth;
+        bool terminalResized = state.LastWindowWidth != tick.WindowWidth;
         bool panelChanged = state.LastPanelLineCount != _bottomPanel.LineCount;
-        if (state.LastInput != input && !terminalResized && !panelChanged
-            && state.LastInputLineCount == 1
-            && _renderer.GetInputLineCount(input) == 1)
+
+        // Single-line → single-line: fast overwrite when panel hasn't changed
+        if (UseFastOverwrite(state, tick, terminalResized, panelChanged))
         {
-            int blockOffset = _renderer.GetBlockOffset(input);
-            _renderer.OverwriteInputBlock(
-                input, GetCommandHints(input), blockOffset,
-                cursor, hasSelection, selStart, selLength, margin);
+            int blockOffset = _renderer.GetBlockOffset(tick.Input);
+            _renderer.OverwriteInputBlock(tick.Input, GetCommandHints(tick.Input), blockOffset,
+                tick.Cursor, tick.HasSelection, tick.SelectionStart, tick.SelectionLength, tick.Margin);
         }
         else
         {
-            if (state.LastInput is not null)
-                _renderer.ClearInputBlockForReRender(state.LastInput, input, state.LastPanelLineCount);
-            RenderFullInputBlock(input, cursor, hasSelection, selStart, selLength, margin);
-
-            // Handle block height change (panel may have been swapped by EnsureProperPanel
-            // but state still has the old panel line count — same for panel dirty flows)
-            if (state.LastInput is not null)
-            {
-                int oldBlockOffset = (1 + state.LastPanelLineCount) + _renderer.GetInputLineCount(state.LastInput);
-                int newBlockOffset = _renderer.GetBlockOffset(input);
-                _renderer.HandleBlockHeightChange(oldBlockOffset, newBlockOffset);
-            }
+            FullReRenderInputBlock(state, tick);
         }
 
         return true;
     }
 
-    /// <summary>Returns true when any tracked state has changed from the last render.</summary>
-    private static bool StateDiffersFromRender(
-        RenderSnapshot state,
-        string input, int cursor, bool hasSelection, int windowWidth)
+    /// <summary>True when both old and new input fit on one line and terminal/panel haven't changed.</summary>
+    private bool UseFastOverwrite(RenderSnapshot state, TickState tick, bool terminalResized, bool panelChanged)
     {
-        return state.LastInput != input
-            || state.LastCursor != cursor
-            || state.LastHasSelection != hasSelection
-            || state.LastWindowWidth != windowWidth;
+        return state.LastInput != tick.Input
+            && !terminalResized
+            && !panelChanged
+            && state.LastInputLineCount == 1
+            && _renderer.GetInputLineCount(tick.Input) == 1;
+    }
+
+    /// <summary>Full clear + re-render of the input block, handling block height changes.</summary>
+    private void FullReRenderInputBlock(RenderSnapshot state, TickState tick)
+    {
+        if (state.LastInput is not null)
+            _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
+        RenderFullInputBlock(tick);
+
+        if (state.LastInput is not null)
+        {
+            int oldBlockOffset = (1 + state.LastPanelLineCount) + _renderer.GetInputLineCount(state.LastInput);
+            int newBlockOffset = _renderer.GetBlockOffset(tick.Input);
+            _renderer.HandleBlockHeightChange(oldBlockOffset, newBlockOffset);
+        }
+    }
+
+    /// <summary>Returns true when any tracked state has changed from the last render.</summary>
+    private static bool StateDiffersFromRender(RenderSnapshot state, TickState tick)
+    {
+        return state.LastInput != tick.Input
+            || state.LastCursor != tick.Cursor
+            || state.LastHasSelection != tick.HasSelection
+            || state.LastWindowWidth != tick.WindowWidth;
     }
 
     private void HandleSubmittedInput(string submittedInput, int windowWidth)
@@ -450,12 +479,10 @@ public class ConsoleAppHost : IDisposable
         _inputHandler.Reset();
     }
 
-    private void RenderFullInputBlock(
-        string input, int cursor, bool hasSelection,
-        int selStart, int selLength, int margin)
+    private void RenderFullInputBlock(TickState tick)
     {
-        _renderer.RenderInputBlock(input, GetCommandHints(input), cursor,
-            hasSelection, selStart, selLength, margin);
+        _renderer.RenderInputBlock(tick.Input, GetCommandHints(tick.Input),
+            tick.Cursor, tick.HasSelection, tick.SelectionStart, tick.SelectionLength, tick.Margin);
     }
 
     private IReadOnlyList<string> GetCommandHints(string input) => _bottomPanel.GetLines(input);
