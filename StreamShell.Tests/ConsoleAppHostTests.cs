@@ -158,6 +158,14 @@ internal sealed class MockRenderer : IRenderer
         RenderedInputs.Add($"OW:{input}");
     }
 
+    public void OverwriteFullBlock(
+        string input, IReadOnlyList<string> hints,
+        int oldBlockOffset, int cursorPosition, bool hasSelection,
+        int selectionStart, int selectionLength, int margin)
+    {
+        RenderedInputs.Add($"FULL:{input}");
+    }
+
     public void HandleBlockHeightChange(int oldBlockOffset, int newBlockOffset)
     {
         LastBlockOffset = newBlockOffset;

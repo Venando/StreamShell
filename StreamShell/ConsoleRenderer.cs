@@ -169,6 +169,36 @@ internal class ConsoleRenderer : IRenderer
         RenderHintsBlock(hints);
     }
 
+    // ── Full-Block Overwrite (no clear-first — eliminates flicker) ────
+    /// <summary>
+    /// Overwrites the entire input block in-place without clearing first.
+    /// Positions the cursor at the top of the old block then renders the
+    /// full block (top separator, input lines, hints).
+    /// Each visual line has \x1b[K appended to clear stale content, so no
+    /// separate clear-before-render step is needed — this eliminates the
+    /// visible flicker that occurred when rendering 2+ lines.
+    /// </summary>
+    public void OverwriteFullBlock(
+        string input,
+        IReadOnlyList<string> hints,
+        int oldBlockOffset,
+        int cursorPosition,
+        bool hasSelection,
+        int selectionStart,
+        int selectionLength,
+        int margin)
+    {
+        int bufferHeight = _terminal.BufferHeight;
+        int newTop = _terminal.CursorTop - oldBlockOffset;
+        _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+
+        RenderTopSeparator();
+        RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
+        _terminal.Write("\x1b[K");
+        _terminal.WriteLine();
+        RenderHintsBlock(hints);
+    }
+
     // ── Input Line Rendering ─────────────────────────────────────────
     internal void RenderInputLine(
         string input,
@@ -313,6 +343,9 @@ internal class ConsoleRenderer : IRenderer
         // concatenation (one allocation per visual line per render tick).
         AnsiConsole.Markup(prefix);
         AnsiConsole.Markup(lineMarkup);
+        // Clear remainder of this line for overwrite-in-place rendering.
+        // This eliminates flicker by avoiding a separate clear-before-render step.
+        _terminal.Write("\x1b[K");
     }
 
     // ── Hints Block ───────────────────────────────────────────────────
@@ -422,14 +455,20 @@ internal class ConsoleRenderer : IRenderer
     private void RenderTopSeparator()
     {
         int width = _terminal.WindowWidth - 1;
-        AnsiConsole.MarkupLine(BuildSeparatorLine(TopSeparator, width));
+        string line = BuildSeparatorLine(TopSeparator, width);
+        AnsiConsole.Markup(line);
+        _terminal.Write("\x1b[K");
+        _terminal.WriteLine();
     }
 
     /// <summary>Renders the bottom separator (between input line and hints block).</summary>
     private void RenderBottomSeparator()
     {
         int width = _terminal.WindowWidth - 1;
-        AnsiConsole.MarkupLine(BuildSeparatorLine(BottomSeparator, width));
+        string line = BuildSeparatorLine(BottomSeparator, width);
+        AnsiConsole.Markup(line);
+        _terminal.Write("\x1b[K");
+        _terminal.WriteLine();
     }
 
     /// <summary>

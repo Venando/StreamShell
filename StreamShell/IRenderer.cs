@@ -50,6 +50,19 @@ public interface IRenderer
         int selectionLength,
         int margin);
 
+    /// <summary>Full-block overwrite without clearing first. Positions at old block top
+    /// and renders the entire block (separator + input + hints) in place.
+    /// Eliminates flicker by avoiding a separate clear-before-render step.</summary>
+    void OverwriteFullBlock(
+        string input,
+        IReadOnlyList<string> hints,
+        int oldBlockOffset,
+        int cursorPosition,
+        bool hasSelection,
+        int selectionStart,
+        int selectionLength,
+        int margin);
+
     /// <summary>
     /// Called after the input block was re-rendered and the block shrunk.
     /// Clears excess lines below the new (smaller) block that were

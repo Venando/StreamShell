@@ -404,47 +404,33 @@ public class ConsoleAppHost : IDisposable
         if (panelDirty)
             _bottomPanel.ClearDirty();
 
-        bool terminalResized = state.LastWindowWidth != tick.WindowWidth;
-        bool panelChanged = state.LastPanelLineCount != _bottomPanel.LineCount;
-
-        // Single-line → single-line: fast overwrite when panel hasn't changed
-        if (UseFastOverwrite(state, tick, terminalResized, panelChanged))
-        {
-            int blockOffset = _renderer.GetBlockOffset(tick.Input);
-            _renderer.OverwriteInputBlock(tick.Input, GetCommandHints(tick.Input), blockOffset,
-                tick.Cursor, tick.HasSelection, tick.SelectionStart, tick.SelectionLength, tick.Margin);
-        }
-        else
-        {
-            FullReRenderInputBlock(state, tick);
-        }
-
+        // Always use the flicker-free overwrite approach:
+        // position at old block top and render over existing content.
+        // Each visual line now has \x1b[K emitted at end, so stale trailing
+        // characters are cleared without a separate clear-before-render step.
+        OverwriteInputBlockInPlace(state, tick);
         return true;
     }
 
-    /// <summary>True when both old and new input fit on one line and terminal/panel haven't changed.</summary>
-    private bool UseFastOverwrite(RenderSnapshot state, TickState tick, bool terminalResized, bool panelChanged)
+    /// <summary>
+    /// Overwrites the input block in place without clearing first.
+    /// Positions the cursor at the top of the old rendered block, then
+    /// renders the full block (separator + input + hints) over existing
+    /// content. Handles height changes after rendering to clear excess
+    /// lines when the block shrinks.
+    /// </summary>
+    private void OverwriteInputBlockInPlace(RenderSnapshot state, TickState tick)
     {
-        return state.LastInput != tick.Input
-            && !terminalResized
-            && !panelChanged
-            && state.LastInputLineCount == 1
-            && _renderer.GetInputLineCount(tick.Input) == 1;
-    }
+        int oldBlockOffset = state.LastInput is not null
+            ? (1 + state.LastPanelLineCount) + _renderer.GetInputLineCount(state.LastInput)
+            : 0;
+        int newBlockOffset = _renderer.GetBlockOffset(tick.Input);
 
-    /// <summary>Full clear + re-render of the input block, handling block height changes.</summary>
-    private void FullReRenderInputBlock(RenderSnapshot state, TickState tick)
-    {
-        if (state.LastInput is not null)
-            _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
-        RenderFullInputBlock(tick);
+        _renderer.OverwriteFullBlock(tick.Input, GetCommandHints(tick.Input), oldBlockOffset,
+            tick.Cursor, tick.HasSelection, tick.SelectionStart, tick.SelectionLength, tick.Margin);
 
         if (state.LastInput is not null)
-        {
-            int oldBlockOffset = (1 + state.LastPanelLineCount) + _renderer.GetInputLineCount(state.LastInput);
-            int newBlockOffset = _renderer.GetBlockOffset(tick.Input);
             _renderer.HandleBlockHeightChange(oldBlockOffset, newBlockOffset);
-        }
     }
 
     /// <summary>Returns true when any tracked state has changed from the last render.</summary>

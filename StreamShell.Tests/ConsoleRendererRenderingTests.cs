@@ -178,14 +178,18 @@ public class ConsoleRendererRenderingTests
     // ── RenderInputLine (internal method) ────────────────────────────
 
     [Fact]
-    public void RenderInputLine_SingleLine_SetsCursorColumn()
+    public void RenderInputLine_SingleLine_EmitsClearToEol()
     {
         _terminal.WindowWidth = 80;
 
         var renderer = CreateRenderer();
         renderer.RenderInputLine("hello", 5, false, 0, 0, 80);
 
-        Assert.Equal(0, _terminal.CursorLeft);
+        // Each visual line now emits \x1b[K (clear to end of line) to
+        // overwrite stale content without a separate clear-before-render step.
+        Assert.Contains("\x1b[K", _terminal.WrittenTexts);
+        // CursorLeft reflects the escape sequence appended after markup.
+        Assert.True(_terminal.CursorLeft > 0);
     }
 
     [Fact]
