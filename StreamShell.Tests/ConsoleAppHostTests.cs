@@ -181,7 +181,7 @@ public class ConsoleAppHostTests : IDisposable
 
     public void Dispose()
     {
-        _host.Dispose();
+        _host?.Dispose();
     }
 
     // ── Constructor ──────────────────────────────────────────────────

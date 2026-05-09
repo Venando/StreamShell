@@ -470,8 +470,17 @@ public class ConsoleAppHost : IDisposable
         try { _panelCts.Cancel(); } catch (ObjectDisposedException) { }
         _panelCts.Dispose();
         _cts.Dispose();
-        Console.CursorVisible = true;
-        Console.Write("\u001b[?2004l");
+
+        // Restore terminal state — may fail in test/headless environments
+        try
+        {
+            Console.CursorVisible = true;
+            Console.Write("\u001b[?2004l");
+        }
+        catch (IOException)
+        {
+            // No console handle available (e.g. test runner, CI)
+        }
     }
 
     private void ExecuteCommand(string input)
