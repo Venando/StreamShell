@@ -13,8 +13,10 @@ internal class SelectionPanel : IBottomPanel
     private readonly Action _onCancel;
 
     private readonly bool[] _toggled;
+    private int _toggledVersion;
     private int _highlightIndex;
     private int _lastRenderHighlight;
+    private int _lastToggledVersion;
     private IReadOnlyList<string>? _cachedLines;
 
     private volatile bool _isDirty;
@@ -48,13 +50,18 @@ internal class SelectionPanel : IBottomPanel
     /// </summary>
     public IReadOnlyList<string> GetLines(string currentInput)
     {
-        if (_highlightIndex == _lastRenderHighlight && _cachedLines is not null)
+        if (_highlightIndex == _lastRenderHighlight
+            && _toggledVersion == _lastToggledVersion
+            && _cachedLines is not null)
             return _cachedLines;
 
         var lines = new List<string>(LineCount);
 
-        // Line 0: control scheme
-        lines.Add("[dim]\u2191\u2193: navigate  Enter: select  Space: submit  Esc: cancel[/]");
+        // Line 0: control scheme (varies by mode)
+        string controls = IsMulti
+            ? "[dim]\u2191\u2193: navigate  Enter: toggle  Space: submit  Esc: cancel[/]"
+            : "[dim]\u2191\u2193: navigate  Enter/Space: submit  Esc: cancel[/]";
+        lines.Add(controls);
 
         // Line 1: title
         lines.Add($"[bold]{_title}[/]");
@@ -65,24 +72,18 @@ internal class SelectionPanel : IBottomPanel
             bool highlighted = i == _highlightIndex;
             bool selected = IsMulti && _toggled[i];
 
-            string prefix;
-            string color;
+            string checkMark = selected ? "\u25a3 " : "\u2610 ";
+            string arrow = highlighted ? "> " : "  ";
+            string color = highlighted ? "white" : "grey";
 
-            if (IsMulti)
-            {
-                prefix = selected ? "\u25a3 " : "\u2610 ";
-                color = highlighted ? "white" : "grey";
-            }
-            else
-            {
-                prefix = highlighted ? "> " : "  ";
-                color = highlighted ? "white" : "grey";
-            }
-
-            lines.Add($"{prefix}[{color}]{_variants[i].Name}[/]");
+            string line = IsMulti
+                ? $"{arrow}{checkMark}[{color}]{_variants[i].Name}[/]"
+                : $"{arrow}[{color}]{_variants[i].Name}[/]";
+            lines.Add(line);
         }
 
         _lastRenderHighlight = _highlightIndex;
+        _lastToggledVersion = _toggledVersion;
         _cachedLines = lines;
         return lines;
     }
@@ -141,6 +142,7 @@ internal class SelectionPanel : IBottomPanel
             }
 
             _toggled[idx] = !_toggled[idx];
+            _toggledVersion++;
             _isDirty = true;
 
             // If max is 1, selecting also submits immediately
