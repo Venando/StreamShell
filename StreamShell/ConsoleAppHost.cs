@@ -112,6 +112,13 @@ public class ConsoleAppHost : IDisposable
         {
             uih.AutoCompleteProvider = input =>
             {
+                // Prefer the panel's dedicated suggestion if available (CommandPalette)
+                if (_bottomPanel is CommandPalette palette)
+                {
+                    palette.GetLines(input); // ensure CurrentSuggestion is computed
+                    return palette.CurrentSuggestion;
+                }
+                // Fallback: read from lines[0] for custom panels
                 var lines = _bottomPanel.GetLines(input);
                 return string.IsNullOrEmpty(lines[0]) ? null : lines[0];
             };
