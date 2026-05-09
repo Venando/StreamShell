@@ -38,7 +38,14 @@ internal class UserInputHandler : IInputHandler
 
         LargePasteThreshold = 300;
         LargePasteLineThreshold = 4;
-        RightMargin = Console.WindowWidth;
+        try
+        {
+            RightMargin = Console.WindowWidth;
+        }
+        catch (IOException)
+        {
+            RightMargin = 80; // fallback for test/headless environments
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
