@@ -148,6 +148,28 @@ host.AddCommand(new Command("bot-sep", Markup.Escape("Set bottom separator. Usag
 }));
 
 // ════════════════════════════════════════════════════════════════
+//  Default panel test — toggle between EmptyBottomPanel and CharacterCounterPanel
+// ════════════════════════════════════════════════════════════════
+
+bool useCounterAsDefault = false;
+
+host.AddCommand(new Command("default", Markup.Escape("Toggle default panel (EmptyBottomPanel / CharacterCounterPanel)"), (_, _) =>
+{
+    useCounterAsDefault = !useCounterAsDefault;
+    if (useCounterAsDefault)
+    {
+        host.SetDefaultPanel(new CharacterCounterPanel());
+        host.AddMessage("[green]Default panel: CharacterCounterPanel[/]");
+    }
+    else
+    {
+        host.SetDefaultPanel(new EmptyBottomPanel());
+        host.AddMessage("[green]Default panel: EmptyBottomPanel[/]");
+    }
+    return Task.CompletedTask;
+}));
+
+// ════════════════════════════════════════════════════════════════
 //  Selection test commands (PromptSelection)
 // ════════════════════════════════════════════════════════════════
 
@@ -331,6 +353,7 @@ host.AddMessage("[yellow]Try [bold]/multi[/] [grey](multi-select 1-3 tools)[/][/
 host.AddMessage("[yellow]Try [bold]/colors[/] [grey](multi-select min 2 colors)[/][/]");
 host.AddMessage("[yellow]Try [bold]/top-sep[/] [grey]<left> <right> <char> <markup> (top separator)[/][/]");
 host.AddMessage("[yellow]Try [bold]/bot-sep[/] [grey]<left> <right> <char> <markup> (bottom separator)[/][/]");
+host.AddMessage("[yellow]Try [bold]/default[/] [grey](toggle default bottom panel)[/][/]");
 host.AddMessage("");
 host.AddMessage("[yellow]--- Save/Load test ---[/]");
 host.AddMessage("[yellow]/save <text>  — save text as input field state[/]");

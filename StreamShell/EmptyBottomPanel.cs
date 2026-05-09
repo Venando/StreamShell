@@ -6,7 +6,7 @@ namespace StreamShell;
 /// LineCount matches <see cref="CommandPalette.MaxHeight"/> to keep the
 /// same vertical space allocation.
 /// </summary>
-internal class EmptyBottomPanel : IBottomPanel
+public class EmptyBottomPanel : IBottomPanel
 {
     int IBottomPanel.LineCount => CommandPalette.MaxHeight;
 
