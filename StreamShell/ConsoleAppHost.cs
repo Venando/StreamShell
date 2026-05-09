@@ -457,11 +457,17 @@ public class ConsoleAppHost : IDisposable
     /// <summary>Signal the host to stop after the current loop iteration.</summary>
     public void Stop() => _cts.Cancel();
 
+    private bool _disposed;
+
     /// <summary>Dispose the host, cancelling the run loop and restoring terminal state.</summary>
     public void Dispose()
     {
-        _cts.Cancel();
-        _panelCts.Cancel();
+        if (_disposed)
+            return;
+        _disposed = true;
+
+        try { _cts.Cancel(); } catch (ObjectDisposedException) { }
+        try { _panelCts.Cancel(); } catch (ObjectDisposedException) { }
         _panelCts.Dispose();
         _cts.Dispose();
         Console.CursorVisible = true;
