@@ -179,16 +179,29 @@ internal class ConsoleRenderer : IRenderer
             return;
         }
 
-        // Split into newline-delimited segments and render each wrapped visual line
-        var segments = input.Split('\n');
+        // Enumerate newline-delimited segments using spans to avoid
+        // allocating a string array via Split('\n') on every render tick.
+        ReadOnlySpan<char> inputSpan = input.AsSpan();
         bool isFirstOverallLine = true;
         int charOffset = 0;
+        int segIdx = 0;
+        int segStart = 0;
 
-        for (int segIdx = 0; segIdx < segments.Length; segIdx++)
+        while (segStart <= inputSpan.Length)
         {
-            string segment = segments[segIdx];
-            var wrappedLines = LineWrappingService.WrapSegment(segment, width, segIdx == 0,
-                segIdx == segments.Length - 1, isFirstOverallLine,
+            // Find the next newline (or end of string for the last segment)
+            int nl = segStart < inputSpan.Length
+                ? inputSpan[segStart..].IndexOf('\n')
+                : -1;
+            int segEnd = nl >= 0 ? segStart + nl : inputSpan.Length;
+            int nextSegStart = nl >= 0 ? segEnd + 1 : inputSpan.Length + 1;
+
+            bool isLastSegment = nextSegStart > inputSpan.Length;
+            ReadOnlySpan<char> segment = inputSpan[segStart..segEnd];
+
+            var wrappedLines = LineWrappingService.WrapSegment(
+                segment, width, segIdx == 0,
+                isLastSegment, isFirstOverallLine,
                 _settings.PrefixMargin, _settings.WrappingRightMargin);
 
             for (int lineIdx = 0; lineIdx < wrappedLines.Count; lineIdx++)
@@ -199,7 +212,7 @@ internal class ConsoleRenderer : IRenderer
                     isFirstOverallLine);
 
                 // Don't write a newline after the very last visual line
-                if (!(segIdx == segments.Length - 1 && lineIdx == wrappedLines.Count - 1))
+                if (!(isLastSegment && lineIdx == wrappedLines.Count - 1))
                     _terminal.WriteLine();
 
                 charOffset += wrappedLines[lineIdx].Length;
@@ -207,6 +220,8 @@ internal class ConsoleRenderer : IRenderer
             }
 
             charOffset++; // Account for the \n between segments
+            segStart = nextSegStart;
+            segIdx++;
         }
     }
 
@@ -647,7 +662,7 @@ internal class ConsoleRenderer : IRenderer
         var sb = new System.Text.StringBuilder(capacity: left.Length + fillCount + right.Length);
         sb.Append(left);
 
-        string fillMarkup = config.RepeatedCharMarkup;
+        string? fillMarkup = config.RepeatedCharMarkup;
         if (string.IsNullOrEmpty(fillMarkup))
         {
             sb.Append(fill, fillCount);

@@ -12,20 +12,39 @@ internal class TextBuffer
     private readonly StringBuilder _buffer = new();
     private int _cursor;
 
-    public string CurrentInput => _buffer.ToString();
+    /// <summary>
+    /// Cached string snapshot of the buffer contents.
+    /// Invalidated on every mutation to avoid allocating a new string
+    /// each time <see cref="CurrentInput"/> is read (called many times
+    /// per render tick by ProcessOneTick, EnsureProperPanel,
+    /// CursorMovementHandler, StateDiffersFromRender, etc.).
+    /// </summary>
+    private string? _cached;
+
+    /// <summary>
+    /// Returns the current buffer content as a string.
+    /// The result is cached until the next mutation, avoiding repeated
+    /// <c>StringBuilder.ToString()</c> allocations.
+    /// </summary>
+    public string CurrentInput => _cached ??= _buffer.ToString();
+
     public int CursorPosition => _cursor;
     public int Length => _buffer.Length;
 
     public char this[int index] => _buffer[index];
 
+    private void InvalidateCache() => _cached = null;
+
     public void Insert(char c)
     {
+        InvalidateCache();
         _buffer.Insert(_cursor, c);
         _cursor++;
     }
 
     public void Insert(string text)
     {
+        InvalidateCache();
         _buffer.Insert(_cursor, text);
         _cursor += text.Length;
     }
@@ -33,6 +52,7 @@ internal class TextBuffer
     /// <summary>Removes <paramref name="length"/> chars starting at <paramref name="start"/> and moves cursor to <paramref name="start"/>.</summary>
     public void Remove(int start, int length)
     {
+        InvalidateCache();
         _buffer.Remove(start, length);
         _cursor = start;
     }
@@ -41,6 +61,7 @@ internal class TextBuffer
     {
         if (_cursor > 0)
         {
+            InvalidateCache();
             _buffer.Remove(_cursor - 1, 1);
             _cursor--;
         }
@@ -50,6 +71,7 @@ internal class TextBuffer
     {
         if (_cursor < _buffer.Length)
         {
+            InvalidateCache();
             _buffer.Remove(_cursor, 1);
         }
     }
@@ -62,6 +84,7 @@ internal class TextBuffer
     /// <summary>Replaces the entire buffer content and cursor position atomically.</summary>
     public void SetContent(string text, int cursor)
     {
+        InvalidateCache();
         _buffer.Clear();
         _buffer.Append(text);
         _cursor = Math.Clamp(cursor, 0, _buffer.Length);
@@ -69,6 +92,7 @@ internal class TextBuffer
 
     public void Clear()
     {
+        InvalidateCache();
         _buffer.Clear();
         _cursor = 0;
     }

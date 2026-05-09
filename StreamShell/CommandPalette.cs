@@ -104,7 +104,7 @@ internal class CommandPalette : IBottomPanel
     private readonly Func<IEnumerable<Command>> _commandProvider;
     private string? _lastInput;
     private IReadOnlyList<string>? _lastLines;
-    private int _lastSelectedIndex = 0;
+    private int _lastSelectedIndex;
     private int _lastMatchCount;
 
     /// <summary>Creates a palette that reads from a live command provider.</summary>
@@ -148,7 +148,11 @@ internal class CommandPalette : IBottomPanel
             return _cachedEmptyHints;
         }
 
-        string query = currentInput.Length > 1 ? currentInput[1..] : string.Empty;
+        // Use spans for query slicing to avoid substring allocations
+        ReadOnlySpan<char> query = currentInput.Length > 1
+            ? currentInput.AsSpan(1)
+            : ReadOnlySpan<char>.Empty;
+
         List<Command> matching = GetMatchingCommands(query);
 
         if (matching.Count == 0)
@@ -169,38 +173,43 @@ internal class CommandPalette : IBottomPanel
         lines.Add("[dim]Tab: autocomplete  \u2191\u2193: selection[/]");
 
         int spaceIndex = query.IndexOf(' ');
-        string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
 
         if (matching.Count == 1
             && matching[0].ArgumentSuggestions is { Length: > 0 } suggestions
             && spaceIndex >= 0)
         {
             // Argument completion mode
-            string argsPart = query[(spaceIndex + 1)..];
+            ReadOnlySpan<char> argsPart = query[(spaceIndex + 1)..];
             string fullPrefix = "/" + matching[0].Name + " ";
             CollectArgumentHints(lines, matching[0], fullPrefix, argsPart, suggestions);
         }
         else
         {
-            // Command hint mode
-            var showMatching = matching.Take(HintCapacity).ToList();
+            // Command hint mode — limit to HintCapacity manually to avoid LINQ Take().ToList()
+            int showCount = Math.Min(matching.Count, HintCapacity);
 
             // Determine autocomplete suggestion from the selected command (if any)
-            if (showMatching.Count > 0)
+            if (showCount > 0)
             {
                 int suggestionIdx = SelectedIndex >= 0 ? SelectedIndex : 0;
-                if (suggestionIdx < showMatching.Count)
+                if (suggestionIdx < showCount)
                 {
-                    CurrentSuggestion = "/" + showMatching[suggestionIdx].Name + " ";
+                    CurrentSuggestion = "/" + matching[suggestionIdx].Name + " ";
                 }
             }
 
             // Build hint strings with selection highlighting
-            int maxSize = showMatching.MaxBy(val => val.Name.Length)?.Name.Length ?? 12;
-
-            for (int i = 0; i < showMatching.Count; i++)
+            // Find max name length manually to avoid LINQ MaxBy allocation
+            int maxSize = 12;
+            for (int i = 0; i < showCount; i++)
             {
-                var cmd = showMatching[i];
+                int nameLen = matching[i].Name.Length;
+                if (nameLen > maxSize) maxSize = nameLen;
+            }
+
+            for (int i = 0; i < showCount; i++)
+            {
+                var cmd = matching[i];
                 if (i == SelectedIndex)
                     lines.Add($"> [white]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
                 else
@@ -242,23 +251,24 @@ internal class CommandPalette : IBottomPanel
 
     /// <summary>Returns all commands matching the given query (command prefix).
     /// Limit: HintCapacity + 1 so we can detect overflow beyond what's shown.</summary>
-    private List<Command> GetMatchingCommands(string query)
+    private List<Command> GetMatchingCommands(ReadOnlySpan<char> query)
     {
         var currentCommands = _commandProvider();
         int spaceIndex = query.IndexOf(' ');
         bool isSpacePresent = spaceIndex > 0;
-        string cmdPrefix = isSpacePresent ? query[..spaceIndex] : query;
+        ReadOnlySpan<char> cmdPrefix = isSpacePresent ? query[..spaceIndex] : query;
 
         if (cmdPrefix.Length == 0)
-            return currentCommands.ToList();
+            return currentCommands is IList<Command> list ? [.. list] : [.. currentCommands];
 
         int limit = HintCapacity + 1;
         List<Command> matching = new(limit);
         foreach (var cmd in currentCommands)
         {
+            ReadOnlySpan<char> nameSpan = cmd.Name.AsSpan();
             if (isSpacePresent)
             {
-                if (cmd.Name.Equals(cmdPrefix, StringComparison.OrdinalIgnoreCase))
+                if (nameSpan.Equals(cmdPrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     matching.Add(cmd);
                     if (matching.Count > limit) break;
@@ -266,7 +276,7 @@ internal class CommandPalette : IBottomPanel
             }
             else
             {
-                if (cmd.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
+                if (nameSpan.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     matching.Add(cmd);
                     if (matching.Count > limit) break;
@@ -286,11 +296,16 @@ internal class CommandPalette : IBottomPanel
     /// whether all matching suggestions share a common next word. Shared by both
     /// hint display and Tab completion for a single source of truth.
     /// </summary>
-    private static ArgMatchInfo GetArgMatchInfo(string argsPart, string[] suggestions)
+    private static ArgMatchInfo GetArgMatchInfo(ReadOnlySpan<char> argsPart, string[] suggestions)
     {
-        var matches = suggestions
-            .Where(s => s.StartsWith(argsPart, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        // Manual matching to avoid capturing a ref-like span in a lambda
+        var matchList = new List<string>(suggestions.Length);
+        foreach (var s in suggestions)
+        {
+            if (s.AsSpan().StartsWith(argsPart, StringComparison.OrdinalIgnoreCase))
+                matchList.Add(s);
+        }
+        var matches = matchList.ToArray();
 
         if (matches.Length <= 1)
             return new ArgMatchInfo(matches, null);
@@ -300,12 +315,14 @@ internal class CommandPalette : IBottomPanel
             return new ArgMatchInfo(matches, null);
 
         // Find the longest common prefix across all matching suggestions
-        string commonPrefix = matches[0];
+        // using spans to avoid substring allocations during comparison
+        ReadOnlySpan<char> commonPrefix = matches[0].AsSpan();
         for (int i = 1; i < matches.Length; i++)
         {
             int j = 0;
-            while (j < commonPrefix.Length && j < matches[i].Length &&
-                   char.ToLowerInvariant(commonPrefix[j]) == char.ToLowerInvariant(matches[i][j]))
+            ReadOnlySpan<char> mi = matches[i].AsSpan();
+            while (j < commonPrefix.Length && j < mi.Length &&
+                   char.ToLowerInvariant(commonPrefix[j]) == char.ToLowerInvariant(mi[j]))
                 j++;
             commonPrefix = commonPrefix[..j];
         }
@@ -317,7 +334,7 @@ internal class CommandPalette : IBottomPanel
 
         // Only report a common next word if it actually extends what was typed
         if (commonPrefix.Length > argsPart.Length)
-            return new ArgMatchInfo(matches, commonPrefix);
+            return new ArgMatchInfo(matches, commonPrefix.ToString());
 
         return new ArgMatchInfo(matches, null);
     }
@@ -327,7 +344,7 @@ internal class CommandPalette : IBottomPanel
     /// Sets <see cref="_lastMatchCount"/> and <see cref="CurrentSuggestion"/>.
     /// </summary>
     private void CollectArgumentHints(List<string> lines, Command command,
-        string fullPrefix, string argsPart, string[] suggestions)
+        string fullPrefix, ReadOnlySpan<char> argsPart, string[] suggestions)
     {
         var info = GetArgMatchInfo(argsPart, suggestions);
 
@@ -356,12 +373,17 @@ internal class CommandPalette : IBottomPanel
         if (atWordBoundary)
         {
             // At word boundary → show unique next words
-            string contextPrefix = argsPart.Length > 0 ? cmdPath + argsPart : cmdPath;
+            string contextPrefix = argsPart.Length > 0
+                ? cmdPath + argsPart.ToString()
+                : cmdPath;
             var seenWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var match in info.Matches)
             {
-                string remaining = argsPart.Length > 0 ? match[argsPart.Length..] : match;
-                string nextWord = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+                ReadOnlySpan<char> remaining = argsPart.Length > 0
+                    ? match.AsSpan(argsPart.Length)
+                    : match.AsSpan();
+                // Extract first word manually to avoid Split(' ') allocation
+                string? nextWord = ExtractFirstWord(remaining);
                 if (!string.IsNullOrEmpty(nextWord) && seenWords.Add(nextWord))
                 {
                     entries.Add(contextPrefix + nextWord);
@@ -400,6 +422,28 @@ internal class CommandPalette : IBottomPanel
                 lines.Add($"  [grey]{Markup.Escape(entries[i])}[/]");
             if (lines.Count >= MaxHeight) break;
         }
+    }
+
+    /// <summary>Extracts the first whitespace-delimited word from a span, or null if empty.</summary>
+    private static string? ExtractFirstWord(ReadOnlySpan<char> span)
+    {
+        if (span.Length == 0)
+            return null;
+
+        // Skip leading whitespace
+        int start = 0;
+        while (start < span.Length && char.IsWhiteSpace(span[start]))
+            start++;
+
+        if (start >= span.Length)
+            return null;
+
+        // Find end of word
+        int end = start;
+        while (end < span.Length && !char.IsWhiteSpace(span[end]))
+            end++;
+
+        return span[start..end].ToString();
     }
 
     private void ResetSelection()

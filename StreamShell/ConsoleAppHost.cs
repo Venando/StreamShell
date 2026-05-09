@@ -262,6 +262,10 @@ public class ConsoleAppHost : IDisposable
     /// or "__QUIT__" when Ctrl+D was pressed.
     /// For testing: allows controlled single-iteration execution without the infinite loop.
     /// </summary>
+    // Tracks attachment count to avoid recomputing PlaceholderStrings on every tick
+    private int _lastAttachmentCount = -1;
+    private List<string>? _cachedPlaceholders;
+
     internal (string? SubmittedInput, RenderSnapshot NewState) ProcessOneTick(RenderSnapshot state)
     {
         EnsureProperPanel();
@@ -275,10 +279,25 @@ public class ConsoleAppHost : IDisposable
 
         if (_renderer is ConsoleRenderer cr)
         {
-            cr.PlaceholderStrings = _inputHandler.Attachments
-                .Select(a => a.Placeholder)
-                .Where(p => !string.IsNullOrEmpty(p))
-                .ToList();
+            int attachCount = _inputHandler.Attachments.Count;
+            if (attachCount != _lastAttachmentCount)
+            {
+                _lastAttachmentCount = attachCount;
+                _cachedPlaceholders = null;
+            }
+
+            if (_cachedPlaceholders is null)
+            {
+                var placeholders = new List<string>(attachCount);
+                foreach (var a in _inputHandler.Attachments)
+                {
+                    if (!string.IsNullOrEmpty(a.Placeholder))
+                        placeholders.Add(a.Placeholder);
+                }
+                _cachedPlaceholders = placeholders;
+            }
+
+            cr.PlaceholderStrings = _cachedPlaceholders;
         }
 
         bool rendered = TryRender(state, input, cursor, hasSelection, selStart, selLength, margin, windowWidth);
