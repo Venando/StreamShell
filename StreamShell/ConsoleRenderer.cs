@@ -22,14 +22,18 @@ internal class ConsoleRenderer : IRenderer
 
     public int RightMargin { get; set; } = Console.WindowWidth;
 
-    // Offset = 1 (separator) + BlankAfterInput + HintsSep + MaxHeight.
-    // The +N from input happens in GetBlockOffset.
-    private const int BlockOffsetBase = 1 + CommandPalette.MaxHeight; // 6 for MaxHeight=5
+    // Line count of the current bottom panel (set by host). Defaults to CommandPalette's size.
+    private int _panelLineCount = CommandPalette.MaxHeight;
+
+    /// <summary>Updates the panel line count used for block offset calculation.</summary>
+    public void SetPanelLineCount(int count) => _panelLineCount = count;
 
     /// <summary>Total vertical space taken by the input block.</summary>
     public int GetBlockOffset(string input)
     {
-        return BlockOffsetBase + GetInputLineCount(input);
+        // 1 (separator) + BlankAfterInput + HintsSep + _panelLineCount = 1 + 1 + 1 + _panelLineCount = 3 + _panelLineCount
+        // Plus input line count
+        return (1 + _panelLineCount) + GetInputLineCount(input);
     }
 
     /// <summary>Number of visual lines the input occupies.</summary>
@@ -297,7 +301,7 @@ internal class ConsoleRenderer : IRenderer
             Console.WriteLine();
 
         int maxWidth = Console.WindowWidth - 1;
-        for (int i = 0; i < CommandPalette.MaxHeight; i++)
+        for (int i = 0; i < hints.Count; i++)
         {
             Console.CursorLeft = 0;
             ClearLine();
@@ -314,7 +318,7 @@ internal class ConsoleRenderer : IRenderer
                     AnsiConsole.Markup(Markup.Escape(safeHint));
                 }
             }
-            if (i < CommandPalette.MaxHeight - 1)
+            if (i < hints.Count - 1)
                 Console.WriteLine();
         }
     }

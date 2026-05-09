@@ -3,6 +3,8 @@ namespace StreamShell;
 /// <summary>Abstraction for rendering the StreamShell UI block (input, hints, messages).</summary>
 public interface IRenderer
 {
+    /// <summary>Sets the number of lines the bottom panel renders. Used for block offset calculation.</summary>
+    void SetPanelLineCount(int count);
     /// <summary>Total vertical space taken by the input block (separator + input + hints).</summary>
     int GetBlockOffset(string input);
 

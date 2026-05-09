@@ -2,6 +2,13 @@ using System.Collections.Concurrent;
 
 namespace StreamShell;
 
+/// <summary>Event args for custom bottom panel changes.</summary>
+public class BottomPanelChangedEventArgs : EventArgs
+{
+    public IBottomPanel Panel { get; }
+    public BottomPanelChangedEventArgs(IBottomPanel panel) => Panel = panel;
+}
+
 /// <summary>Distinguishes user-submitted input as plain text or a command.</summary>
 public enum InputType
 {
@@ -22,8 +29,11 @@ public class ConsoleAppHost : IDisposable
     private readonly ConcurrentDictionary<string, Command> _commands = new(StringComparer.OrdinalIgnoreCase);
     private readonly IInputHandler _inputHandler;
     private readonly IRenderer _renderer;
-    private readonly CommandPalette _commandPalette;
+    private IBottomPanel _bottomPanel;
     private readonly CancellationTokenSource _cts = new();
+
+    /// <summary>Raised when the bottom panel is swapped. Lets the renderer update its line count.</summary>
+    public event EventHandler<BottomPanelChangedEventArgs>? BottomPanelChanged;
 
     /// <summary>Current settings that control paste thresholds and other behavior.</summary>
     public StreamShellSettings Settings { get; } = new();
@@ -38,12 +48,15 @@ public class ConsoleAppHost : IDisposable
     /// </summary>
     public event Action<string, InputType, IReadOnlyList<Attachment>>? UserInputSubmitted;
 
-    /// <summary>Creates a host wired to the real console renderer and input handler.</summary>
+    /// <summary>Creates a host wired to the real console renderer and input handler.
+    /// Default bottom panel is CommandPalette.</summary>
     public ConsoleAppHost()
     {
         _renderer = new ConsoleRenderer(Settings);
         _inputHandler = new UserInputHandler();
-        _commandPalette = new CommandPalette(() => _commands.Values);
+        _bottomPanel = new CommandPalette(() => _commands.Values);
+        _renderer.SetPanelLineCount(_bottomPanel.LineCount);
+        BottomPanelChanged += (_, e) => _renderer.SetPanelLineCount(e.Panel.LineCount);
         ApplySettings();
         WireUpAutoComplete();
     }
@@ -53,16 +66,32 @@ public class ConsoleAppHost : IDisposable
     {
         _renderer = renderer;
         _inputHandler = inputHandler;
-        _commandPalette = new CommandPalette(() => _commands.Values);
+        _bottomPanel = new CommandPalette(() => _commands.Values);
+        _renderer.SetPanelLineCount(_bottomPanel.LineCount);
+        BottomPanelChanged += (_, e) => _renderer.SetPanelLineCount(e.Panel.LineCount);
         ApplySettings();
         WireUpAutoComplete();
+    }
+
+    /// <summary>Swaps the bottom panel. Raises BottomPanelChanged so the renderer adjusts.</summary>
+    public void SetBottomPanel(IBottomPanel panel)
+    {
+        _bottomPanel = panel;
+        WireUpAutoComplete();
+        BottomPanelChanged?.Invoke(this, new BottomPanelChangedEventArgs(panel));
+    }
+
+    /// <summary>Restores the default CommandPalette bottom panel.</summary>
+    public void ResetBottomPanel()
+    {
+        SetBottomPanel(new CommandPalette(() => _commands.Values));
     }
 
     private void WireUpAutoComplete()
     {
         if (_inputHandler is UserInputHandler uih)
         {
-            uih.AutoCompleteProvider = input => _commandPalette.GetTopSuggestion(input);
+            uih.AutoCompleteProvider = input => _bottomPanel.GetTopSuggestion(input);
         }
     }
 
@@ -259,7 +288,7 @@ public class ConsoleAppHost : IDisposable
             hasSelection, selStart, selLength, margin);
     }
 
-    private IReadOnlyList<string> GetCommandHints(string input) => _commandPalette.GetHints(input);
+    private IReadOnlyList<string> GetCommandHints(string input) => _bottomPanel.GetHints(input);
 
     /// <summary>Signal the host to stop after the current loop iteration.</summary>
     public void Stop() => _cts.Cancel();

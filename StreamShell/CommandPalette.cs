@@ -2,10 +2,11 @@ using Spectre.Console;
 
 namespace StreamShell;
 
-internal class CommandPalette
+internal class CommandPalette : IBottomPanel
 {
     /// <summary>Total visible lines in the hints block (status + hints).</summary>
     public const int MaxHeight = 5;
+    int IBottomPanel.LineCount => MaxHeight;
     /// <summary>Index of the status line (always populated when hints are visible).</summary>
     public const int StatusLineIndex = 0;
     /// <summary>Index of the first actual hint line.</summary>

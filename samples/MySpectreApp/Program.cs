@@ -97,6 +97,29 @@ host.AddCommand("demo", "Demo command with argument completions",
     ]);
 
 // ════════════════════════════════════════════════════════════════
+//  Panel swap command — toggle between CommandPalette and CharacterCounterPanel
+// ════════════════════════════════════════════════════════════════
+
+var counterPanel = new CharacterCounterPanel();
+bool useCounterPanel = false;
+
+host.AddCommand(new Command("panel", "Toggle bottom panel (CommandPalette / CharacterCounter)", (_, _) =>
+{
+    useCounterPanel = !useCounterPanel;
+    if (useCounterPanel)
+    {
+        host.SetBottomPanel(counterPanel);
+        host.AddMessage($"[green]Panel: CharacterCounterPanel ({counterPanel.LineCount} lines)[/]");
+    }
+    else
+    {
+        host.ResetBottomPanel();
+        host.AddMessage($"[green]Panel: CommandPalette restored[/]");
+    }
+    return Task.CompletedTask;
+}));
+
+// ════════════════════════════════════════════════════════════════
 //  Input Field Save / Load test commands
 // ════════════════════════════════════════════════════════════════
 
@@ -222,3 +245,27 @@ await host.Run();
 // ── helpers ──
 static string TruncatePreview(string text, int maxLen)
     => text.Length <= maxLen ? text : text[..maxLen] + "...";
+
+// ── Custom bottom panel ──
+class CharacterCounterPanel : IBottomPanel
+{
+    public int LineCount => 3;
+    private readonly List<string> _lines = new(3) { "", "", "" };
+    private string? _lastInput;
+
+    public IReadOnlyList<string> GetHints(string currentInput)
+    {
+        if (currentInput == _lastInput)
+            return _lines;
+        _lastInput = currentInput;
+
+        _lines[0] = "[bold]Character Counter[/]";
+        _lines[1] = $"[grey]Input length: [green]{currentInput.Length}[/][/]";
+        _lines[2] = string.IsNullOrEmpty(currentInput)
+            ? "[dim]Type something...[/]"
+            : $"[grey]Characters: [yellow]{string.Join(" ", currentInput.Select(c => $"{c}"))}[/][/]";
+        return _lines;
+    }
+
+    public string? GetTopSuggestion(string currentInput) => null;
+}
