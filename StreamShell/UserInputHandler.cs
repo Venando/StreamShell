@@ -133,7 +133,7 @@ internal class UserInputHandler : IInputHandler
             while (Console.KeyAvailable)
             {
                 _tempInput.Append('\n');
-                return true; // keep processing buffered keys
+                return false; // keep processing buffered keys
             }
 
             if (_tempInput.Length == 0 && _buffer.Length > 0)
