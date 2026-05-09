@@ -296,16 +296,8 @@ internal class UserInputHandler : IInputHandler
 
         if (_selection.IsActiveAt(_buffer.CursorPosition))
         {
-            if (_clipboard.RemovePlaceholderAffectedBy(
-                    _selection.SelectionStart(_buffer.CursorPosition),
-                    _selection.SelectionLength(_buffer.CursorPosition)))
-            {
-                _selection.Clear();
-            }
-            else
-            {
-                RemoveSelectedText();
-            }
+            RemoveSelectedText();
+            _clipboard.CleanupOrphanedAttachments();
         }
         else if (_clipboard.RemovePlaceholderAffectedBy(_buffer.CursorPosition, 0))
         {

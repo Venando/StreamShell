@@ -71,6 +71,8 @@ internal class ClipboardHandler
         {
             _buffer.Clear();
         }
+
+        CleanupOrphanedAttachments();
     }
 
     /// <summary>Attempts clipboard copy. Silently ignores platform errors (e.g. WSL).</summary>
@@ -155,6 +157,27 @@ internal class ClipboardHandler
     {
         string lines = lineCount > 1 ? $"{lineCount} lines" : "1 line";
         return $"[paste #{counter}, {lines}]";
+    }
+
+    /// <summary>
+    /// Checks if any attachment's placeholder would be affected by an operation
+    /// at the given buffer range (insertion point with length 0, or deletion range
+    /// with length &gt; 0). If an overlap is found, the placeholder is removed from
+    /// the buffer and its attachment is removed from the list.
+    /// </summary>
+    /// <param name="affectedStart">Start position of the affected buffer range.</param>
+    /// <param name="affectedLength">Length of the affected range (0 for insertions).</param>
+    /// <returns>True if at least one placeholder was preemptively removed.</returns>
+    /// <summary>Removes attachments whose placeholders no longer exist intact in the buffer.</summary>
+    public void CleanupOrphanedAttachments()
+    {
+        string currentInput = _buffer.CurrentInput;
+        foreach (var attachment in Attachments.ToList())
+        {
+            string placeholder = attachment.Placeholder;
+            if (string.IsNullOrEmpty(placeholder) || !currentInput.Contains(placeholder))
+                Attachments.Remove(attachment);
+        }
     }
 
     /// <summary>
