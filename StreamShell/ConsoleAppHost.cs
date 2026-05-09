@@ -122,6 +122,19 @@ public class ConsoleAppHost : IDisposable
                 var lines = _bottomPanel.GetLines(input);
                 return string.IsNullOrEmpty(lines[0]) ? null : lines[0];
             };
+
+            // Route Up/Down to CommandPalette hint selection when hints are active
+            uih.KeyInterceptor = key =>
+            {
+                if (_bottomPanel is CommandPalette palette
+                    && palette.CanNavigate
+                    && (key.Key == ConsoleKey.UpArrow || key.Key == ConsoleKey.DownArrow))
+                {
+                    palette.AdjustSelection(key.Key == ConsoleKey.UpArrow ? -1 : 1);
+                    return true; // key consumed
+                }
+                return false;
+            };
         }
     }
 

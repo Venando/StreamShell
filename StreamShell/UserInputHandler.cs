@@ -68,6 +68,13 @@ internal class UserInputHandler : IInputHandler
     /// and returns the completed input, or null/empty if no completion is possible.</summary>
     public Func<string, string?>? AutoCompleteProvider { get; set; }
 
+    /// <summary>
+    /// If set, called for each key before normal processing begins.
+    /// Return true to mark the key as handled and skip further processing.
+    /// Used by ConsoleAppHost to route Up/Down to panel hint selection.
+    /// </summary>
+    public Func<ConsoleKeyInfo, bool>? KeyInterceptor { get; set; }
+
     // ══════════════════════════════════════════════════════════════════
     //  Main Processing Loop
     // ══════════════════════════════════════════════════════════════════
@@ -79,6 +86,10 @@ internal class UserInputHandler : IInputHandler
         while (Console.KeyAvailable)
         {
             var key = Console.ReadKey(intercept: true);
+
+            // Give the interceptor first crack at the key (e.g. hint navigation)
+            if (KeyInterceptor?.Invoke(key) == true)
+                continue;
             bool ctrl = key.Modifiers.HasFlag(ConsoleModifiers.Control);
             bool shift = key.Modifiers.HasFlag(ConsoleModifiers.Shift);
             bool alt = key.Modifiers.HasFlag(ConsoleModifiers.Alt);

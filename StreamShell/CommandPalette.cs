@@ -21,6 +21,39 @@ internal class CommandPalette : IBottomPanel
     /// </summary>
     internal string? CurrentSuggestion { get; private set; }
 
+    /// <summary>
+    /// Index of the currently selected hint (0 = first hint, -1 = none).
+    /// Only valid while hints are shown (command mode with matches).
+    /// </summary>
+    internal int SelectedIndex { get; set; } = -1;
+
+    /// <summary>True when there are hints to navigate.</summary>
+    internal bool CanNavigate => SelectedIndex >= 0;
+
+    /// <summary>
+    /// Adjusts the selection by <paramref name="delta"/> and clamps
+    /// to the available hint range. Call when the user presses Up/Down.
+    /// </summary>
+    internal void AdjustSelection(int delta)
+    {
+        int maxVisible = Math.Min(HintCapacity, _lastMatchCount);
+        if (maxVisible <= 0)
+        {
+            SelectedIndex = -1;
+            return;
+        }
+
+        // On first navigation from -1, start at the closest edge
+        if (SelectedIndex < 0)
+        {
+            SelectedIndex = delta > 0 ? 0 : maxVisible - 1;
+        }
+        else
+        {
+            SelectedIndex = Math.Clamp(SelectedIndex + delta, 0, maxVisible - 1);
+        }
+    }
+
     public static bool IsActive(string currentInput) => currentInput.StartsWith('/');
 
     private static readonly string[] _emptyHints = BuildEmptyHints();
@@ -36,6 +69,8 @@ internal class CommandPalette : IBottomPanel
     private readonly Func<IEnumerable<Command>> _commandProvider;
     private string? _lastInput;
     private IReadOnlyList<string>? _lastLines;
+    private int _lastSelectedIndex = -1;
+    private int _lastMatchCount;
 
     /// <summary>Creates a palette that reads from a live command provider.</summary>
     public CommandPalette(Func<IEnumerable<Command>> commandProvider)
@@ -57,14 +92,23 @@ internal class CommandPalette : IBottomPanel
     /// </summary>
     public IReadOnlyList<string> GetLines(string currentInput)
     {
-        if (_lastInput == currentInput && _lastLines != null)
+        bool inputChanged = currentInput != _lastInput;
+        bool selectionChanged = _lastSelectedIndex != SelectedIndex;
+
+        // Cache hit: nothing changed
+        if (!inputChanged && !selectionChanged && _lastLines != null)
             return _lastLines;
 
         CurrentSuggestion = null;
 
+        // Input changed — reset selection
+        if (inputChanged)
+            SelectedIndex = -1;
+
         if (!IsActive(currentInput))
         {
             _lastInput = currentInput;
+            _lastSelectedIndex = SelectedIndex;
             _lastLines = _cachedEmptyHints;
             return _cachedEmptyHints;
         }
@@ -75,15 +119,19 @@ internal class CommandPalette : IBottomPanel
         if (matching.Count == 0)
         {
             _lastInput = currentInput;
+            _lastSelectedIndex = SelectedIndex;
             _lastLines = _cachedEmptyHints;
             return _cachedEmptyHints;
         }
+
+        // Update match count for selection clamping
+        _lastMatchCount = matching.Count;
 
         // Build all lines: [0] = status, [1..4] = hints
         List<string> lines = new(MaxHeight);
 
         // Status line at index 0 (first line)
-        lines.Add("[dim]Tab: autocomplete  ↑↓: selection[/]");
+        lines.Add("[dim]Tab: autocomplete  \u2191\u2193: selection[/]");
 
         int spaceIndex = query.IndexOf(' ');
         string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
@@ -111,33 +159,26 @@ internal class CommandPalette : IBottomPanel
             // Command hint mode
             var showMatching = matching.Take(HintCapacity).ToList();
 
-            // Determine command name suggestion
+            // Determine autocomplete suggestion from the selected command (if any)
             if (showMatching.Count > 0)
             {
-                if (matching.Count > 1)
+                int suggestionIdx = SelectedIndex >= 0 ? SelectedIndex : 0;
+                if (suggestionIdx < showMatching.Count)
                 {
-                    CurrentSuggestion = "/" + matching[0].Name + " ";
-                }
-                else
-                {
-                    var command = matching[0];
-                    bool nameExact = string.Equals(command.Name, cmdPrefix, StringComparison.OrdinalIgnoreCase);
-                    bool namePartial = !nameExact
-                        && command.Name.Length > cmdPrefix.Length
-                        && command.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase);
-
-                    if (nameExact && spaceIndex < 0)
-                        CurrentSuggestion = "/" + command.Name + " ";
-                    else if (namePartial)
-                        CurrentSuggestion = "/" + command.Name + " ";
+                    CurrentSuggestion = "/" + showMatching[suggestionIdx].Name + " ";
                 }
             }
 
-            // Build hint strings
+            // Build hint strings with selection highlighting
             int maxSize = showMatching.MaxBy(val => val.Name.Length)?.Name.Length ?? 12;
-            foreach (var cmd in showMatching)
+
+            for (int i = 0; i < showMatching.Count; i++)
             {
-                lines.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
+                var cmd = showMatching[i];
+                if (i == SelectedIndex)
+                    lines.Add($"> [white]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
+                else
+                    lines.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
                 if (lines.Count >= MaxHeight) break;
             }
         }
@@ -147,8 +188,30 @@ internal class CommandPalette : IBottomPanel
             lines.Add(string.Empty);
 
         _lastInput = currentInput;
+        _lastSelectedIndex = SelectedIndex;
         _lastLines = lines;
         return lines;
+    }
+
+    /// <summary>
+    /// Runs the panel's background loop. Monitors input changes and clamps
+    /// selection when the matching hint count shrinks below the current index.
+    /// </summary>
+    public async Task RunAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            // Clamp selection when matching count shrinks below current index
+            if (SelectedIndex >= 0 && _lastMatchCount > 0)
+            {
+                int maxVisible = Math.Min(HintCapacity, _lastMatchCount);
+                if (SelectedIndex >= maxVisible)
+                    SelectedIndex = maxVisible - 1;
+            }
+
+            try { await Task.Delay(100, cancellationToken); }
+            catch (OperationCanceledException) { break; }
+        }
     }
 
     /// <summary>Returns all commands matching the given query (command prefix).
