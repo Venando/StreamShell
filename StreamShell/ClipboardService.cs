@@ -3,7 +3,7 @@ using System.Text;
 
 namespace StreamShell;
 
-internal static class ClipboardService
+internal class ClipboardService : IClipboardService
 {
     private const uint CF_UNICODETEXT = 13;
     private const uint GMEM_MOVABLE = 0x0002;
@@ -36,7 +36,7 @@ internal static class ClipboardService
     private static extern bool EmptyClipboard();
 
     /// <summary>Read Unicode text from the system clipboard.</summary>
-    public static string? Paste()
+    public string? Paste()
     {
         if (!OpenClipboard(0))
             return null;
@@ -67,7 +67,7 @@ internal static class ClipboardService
     }
 
     /// <summary>Write Unicode text to the system clipboard.</summary>
-    public static void Copy(string text)
+    public void Copy(string text)
     {
         if (!OpenClipboard(0))
             return;

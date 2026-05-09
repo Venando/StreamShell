@@ -16,6 +16,7 @@ internal class ClipboardHandler
     private readonly Action _snapshot;
     private readonly Func<int> _getLargePasteThreshold;
     private readonly Func<int> _getLargePasteLineThreshold;
+    private readonly IClipboardService _clipboard;
 
     /// <summary>Attachments collected during input (e.g. large pastes). Shared with the owner.</summary>
     public List<Attachment> Attachments { get; set; } = new();
@@ -37,6 +38,21 @@ internal class ClipboardHandler
         _snapshot = snapshot;
         _getLargePasteThreshold = getLargePasteThreshold;
         _getLargePasteLineThreshold = getLargePasteLineThreshold;
+        _clipboard = new ClipboardService();
+    }
+
+    /// <summary>Creates the handler with an explicit clipboard service (for testing).</summary>
+    internal ClipboardHandler(
+        TextBuffer buffer,
+        SelectionManager selection,
+        StringBuilder tempInput,
+        Action snapshot,
+        Func<int> getLargePasteThreshold,
+        Func<int> getLargePasteLineThreshold,
+        IClipboardService clipboard)
+        : this(buffer, selection, tempInput, snapshot, getLargePasteThreshold, getLargePasteLineThreshold)
+    {
+        _clipboard = clipboard;
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -76,11 +92,11 @@ internal class ClipboardHandler
     }
 
     /// <summary>Attempts clipboard copy. Silently ignores platform errors (e.g. WSL).</summary>
-    private static void TryClipboardCopy(string text)
+    private void TryClipboardCopy(string text)
     {
         try
         {
-            ClipboardService.Copy(text);
+            _clipboard.Copy(text);
         }
         catch
         {
@@ -93,7 +109,7 @@ internal class ClipboardHandler
         string? text;
         try
         {
-            text = ClipboardService.Paste();
+            text = _clipboard.Paste();
         }
         catch
         {
