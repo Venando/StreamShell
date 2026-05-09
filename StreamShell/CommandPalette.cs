@@ -83,7 +83,7 @@ internal class CommandPalette : IBottomPanel
         List<string> lines = new(MaxHeight);
 
         // Status line at index 0 (first line)
-        lines.Add("[dim]Tab: autocomplete  \u2191\u2193: selection[/]");
+        lines.Add("[dim]Tab: autocomplete  ↑↓: selection[/]");
 
         int spaceIndex = query.IndexOf(' ');
         string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
