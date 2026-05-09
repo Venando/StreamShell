@@ -30,6 +30,7 @@ public class ConsoleAppHost : IDisposable
     private readonly ConcurrentDictionary<string, Command> _commands = new(StringComparer.OrdinalIgnoreCase);
     private readonly IInputHandler _inputHandler;
     private readonly IRenderer _renderer;
+    private IBottomPanel _defaultPanel;
     private IBottomPanel _bottomPanel;
     private CancellationTokenSource _panelCts = new();
     private readonly CancellationTokenSource _cts = new();
@@ -51,12 +52,13 @@ public class ConsoleAppHost : IDisposable
     public event Action<string, InputType, IReadOnlyList<Attachment>>? UserInputSubmitted;
 
     /// <summary>Creates a host wired to the real console renderer and input handler.
-    /// Default bottom panel is CommandPalette.</summary>
+    /// Default bottom panel is EmptyBottomPanel; CommandPalette activates on "/".</summary>
     public ConsoleAppHost()
     {
         _renderer = new ConsoleRenderer(Settings);
         _inputHandler = new UserInputHandler();
-        _bottomPanel = new CommandPalette(() => _commands.Values);
+        _defaultPanel = new EmptyBottomPanel();
+        _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
         BottomPanelChanged += (_, e) => _renderer.SetPanelLineCount(e.Panel.LineCount);
         ApplySettings();
@@ -71,7 +73,8 @@ public class ConsoleAppHost : IDisposable
     {
         _renderer = renderer;
         _inputHandler = inputHandler;
-        _bottomPanel = new CommandPalette(() => _commands.Values);
+        _defaultPanel = new EmptyBottomPanel();
+        _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
         BottomPanelChanged += (_, e) => _renderer.SetPanelLineCount(e.Panel.LineCount);
         ApplySettings();
@@ -101,10 +104,19 @@ public class ConsoleAppHost : IDisposable
         _ = panel.RunAsync(_panelCts.Token);
     }
 
-    /// <summary>Restores the default CommandPalette bottom panel.</summary>
+    /// <summary>Restores the default bottom panel (EmptyBottomPanel by default).</summary>
     public void ResetBottomPanel()
     {
-        SetBottomPanel(new CommandPalette(() => _commands.Values));
+        SetBottomPanel(_defaultPanel);
+    }
+
+    /// <summary>Replaces the default bottom panel with a custom one. Used when no command is active.</summary>
+    public void SetDefaultPanel(IBottomPanel panel)
+    {
+        _defaultPanel = panel;
+        // If we're currently on the old default, swap to the new one
+        if (_bottomPanel is not CommandPalette && _bottomPanel is not SelectionPanel)
+            ResetBottomPanel();
     }
 
     private void WireUpAutoComplete()
@@ -120,6 +132,27 @@ public class ConsoleAppHost : IDisposable
             // Let the active panel intercept keys (e.g. Up/Down for hint selection)
             uih.KeyInterceptor = key => _bottomPanel.TryHandleKey(key);
         }
+    }
+
+    /// <summary>
+    /// Swaps between the default panel and CommandPalette based on whether the
+    /// current input starts with "/". Skips if already on the correct panel.
+    /// Does nothing when a non-standard panel (e.g. SelectionPanel) is active.
+    /// </summary>
+    private void EnsureProperPanel()
+    {
+        string input = _inputHandler.CurrentInput;
+        bool isCommand = input.Length > 0 && input[0] == '/';
+
+        if (isCommand && _bottomPanel is CommandPalette)
+            return;
+        if (!isCommand && !(_bottomPanel is CommandPalette))
+            return;
+
+        if (isCommand)
+            SetBottomPanel(new CommandPalette(() => _commands.Values));
+        else
+            SetBottomPanel(_defaultPanel);
     }
 
     /// <summary>Applies the current Settings values to the renderer and input handler.</summary>
@@ -212,6 +245,9 @@ public class ConsoleAppHost : IDisposable
 
         while (!token.IsCancellationRequested)
         {
+            // Auto-swap panels based on command mode
+            EnsureProperPanel();
+
             string input = _inputHandler.CurrentInput;
             int cursor = _inputHandler.CursorPosition;
             bool hasSelection = _inputHandler.HasSelection;
