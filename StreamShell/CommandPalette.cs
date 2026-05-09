@@ -48,29 +48,7 @@ internal class CommandPalette
         }
 
         string query = currentInput.Length > 1 ? currentInput[1..] : string.Empty;
-
-        // No query text (just "/") — nothing to match
-        if (query.Length == 0)
-        {
-            _lastInput = currentInput;
-            _lastHints = _cachedEmptyHints;
-            return _cachedEmptyHints;
-        }
-
-        int spaceIndex = query.IndexOf(' ');
-        string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
-
-        // Find matching commands
-        var currentCommands = _commandProvider();
-        List<Command> matching = new(MaxHeight);
-        foreach (var cmd in currentCommands)
-        {
-            if (cmd.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                matching.Add(cmd);
-                if (matching.Count > MaxHeight) break;
-            }
-        }
+        List<Command> matching = GetMatchingCommands(query);
 
         if (matching.Count == 0)
         {
@@ -80,6 +58,8 @@ internal class CommandPalette
         }
 
         List<string> hints = new(MaxHeight);
+
+        int spaceIndex = query.IndexOf(' ');
 
         if (matching.Count == 1
             && matching[0].ArgumentSuggestions is { Length: > 0 } suggestions
@@ -92,9 +72,12 @@ internal class CommandPalette
         else
         {
             // Show command hints (existing behavior)
-            foreach (var cmd in matching)
+            var showMatching = matching.Take(MaxHeight).ToList();
+            int maxSize = showMatching.MaxBy(val => val.Name.Length)?.Name.Length ?? 12;
+
+            foreach (var cmd in showMatching)
             {
-                hints.Add($"  [grey]{cmd.Name,-10}[/] {cmd.Description}");
+                hints.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
                 if (hints.Count >= MaxHeight) break;
             }
         }
@@ -122,32 +105,17 @@ internal class CommandPalette
             return null;
 
         string query = currentInput.Length > 1 ? currentInput[1..] : string.Empty;
+        List<Command> matching = GetMatchingCommands(query);
 
-        if (query.Length == 0)
+        if (matching.Count == 0)
             return null;
 
         int spaceIndex = query.IndexOf(' ');
         string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
 
-        // Find matching commands
-        var currentCommands = _commandProvider();
-        List<Command> matching = new();
-        foreach (var cmd in currentCommands)
-        {
-            if (cmd.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
-                matching.Add(cmd);
-        }
-
-        if (matching.Count == 0)
-            return null;
-
         if (matching.Count > 1)
         {
-            // Multiple commands match → complete to common prefix only if it advances
-            string commonPrefix = FindCommonPrefix(matching.Select(c => c.Name));
-            if (commonPrefix.Length > cmdPrefix.Length)
-                return "/" + commonPrefix;
-            return null;
+            return "/" + matching[0].Name + " ";
         }
 
         // Exactly one command matches
@@ -177,20 +145,41 @@ internal class CommandPalette
             string argsPart = query[(spaceIndex + 1)..];
             string fullPrefix = "/" + command.Name + " ";
 
-            // Find matching argument suggestions, sorted alphabetically
+            // Find matching argument suggestions, preserving original order
             var matches = command.ArgumentSuggestions
                 .Where(s => s.StartsWith(argsPart, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
             if (matches.Length == 0)
                 return null;
 
-            // Complete to the first (top) matching suggestion
-            return fullPrefix + matches[0] + " ";
+            // Complete with only the remainder of the first matching suggestion
+            return fullPrefix + argsPart + matches[0][argsPart.Length..] + " ";
         }
 
         return null;
+    }
+
+    /// <summary>Returns all commands matching the given query (command prefix).</summary>
+    private List<Command> GetMatchingCommands(string query)
+    {
+        var currentCommands = _commandProvider();
+        int spaceIndex = query.IndexOf(' ');
+        string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
+
+        if (cmdPrefix.Length == 0)
+            return currentCommands.ToList();
+
+        List<Command> matching = new(MaxHeight);
+        foreach (var cmd in currentCommands)
+        {
+            if (cmd.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                matching.Add(cmd);
+                if (matching.Count > MaxHeight) break;
+            }
+        }
+        return matching;
     }
 
     /// <summary>Populates hints with unique next-argument completions.</summary>
@@ -206,7 +195,7 @@ internal class CommandPalette
         if (matches.Length == 0)
             return;
 
-        // At a word boundary (empty args or ends with space) → show unique next words
+        // At a word boundary (empty args or ends with space) → show unique next word
         bool atWordBoundary = argsPart.Length == 0 || argsPart.EndsWith(' ');
 
         if (atWordBoundary)
@@ -218,7 +207,7 @@ internal class CommandPalette
                 string nextWord = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
                 if (!string.IsNullOrEmpty(nextWord) && seenWords.Add(nextWord))
                 {
-                    hints.Add($"  [grey]{Markup.Escape(nextWord)}[/]");
+                    hints.Add($"  [grey]{Markup.Escape(cmdPath)} {Markup.Escape(nextWord)}[/]");
                     if (hints.Count >= MaxHeight) break;
                 }
             }
@@ -232,25 +221,5 @@ internal class CommandPalette
                 if (hints.Count >= MaxHeight) break;
             }
         }
-    }
-
-    /// <summary>Finds the longest case-insensitive common prefix across strings.</summary>
-    private static string FindCommonPrefix(IEnumerable<string> strings)
-    {
-        var arr = strings.ToArray();
-        if (arr.Length == 0) return string.Empty;
-        if (arr.Length == 1) return arr[0];
-
-        string prefix = arr[0];
-        for (int i = 1; i < arr.Length; i++)
-        {
-            int j = 0;
-            while (j < prefix.Length && j < arr[i].Length &&
-                   char.ToLowerInvariant(prefix[j]) == char.ToLowerInvariant(arr[i][j]))
-                j++;
-            prefix = prefix[..j];
-            if (prefix.Length == 0) break;
-        }
-        return prefix;
     }
 }
