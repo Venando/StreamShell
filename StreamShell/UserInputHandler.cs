@@ -40,7 +40,8 @@ internal class UserInputHandler : IInputHandler
         LargePasteLineThreshold = 4;
         try
         {
-            RightMargin = Console.WindowWidth;
+            int width = Console.WindowWidth;
+            RightMargin = width > 0 ? width : 80;
         }
         catch (IOException)
         {
