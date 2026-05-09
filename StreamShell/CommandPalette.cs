@@ -25,10 +25,10 @@ internal class CommandPalette : IBottomPanel
     /// Index of the currently selected hint (0 = first hint, -1 = none).
     /// Only valid while hints are shown (command mode with matches).
     /// </summary>
-    internal int SelectedIndex { get; set; } = -1;
+    internal int SelectedIndex { get; set; }
 
     /// <summary>True when there are hints to navigate.</summary>
-    internal bool CanNavigate => SelectedIndex >= 0;
+    internal bool CanNavigate => _lastLines?.Count > 0;
 
     /// <summary>
     /// Adjusts the selection by <paramref name="delta"/> and clamps
@@ -39,7 +39,7 @@ internal class CommandPalette : IBottomPanel
         int maxVisible = Math.Min(HintCapacity, _lastMatchCount);
         if (maxVisible <= 0)
         {
-            SelectedIndex = -1;
+            ResetSelection();
             return;
         }
 
@@ -69,7 +69,7 @@ internal class CommandPalette : IBottomPanel
     private readonly Func<IEnumerable<Command>> _commandProvider;
     private string? _lastInput;
     private IReadOnlyList<string>? _lastLines;
-    private int _lastSelectedIndex = -1;
+    private int _lastSelectedIndex = 0;
     private int _lastMatchCount;
 
     /// <summary>Creates a palette that reads from a live command provider.</summary>
@@ -103,7 +103,7 @@ internal class CommandPalette : IBottomPanel
 
         // Input changed — reset selection
         if (inputChanged)
-            SelectedIndex = -1;
+            ResetSelection();
 
         if (!IsActive(currentInput))
         {
@@ -329,5 +329,10 @@ internal class CommandPalette : IBottomPanel
                 if (hints.Count >= MaxHeight) break;
             }
         }
+    }
+
+    private void ResetSelection()
+    {
+        SelectedIndex = 0;
     }
 }
