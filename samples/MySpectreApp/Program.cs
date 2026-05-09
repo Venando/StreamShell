@@ -120,6 +120,59 @@ host.AddCommand(new Command("panel", "Toggle bottom panel (CommandPalette / Char
 }));
 
 // ════════════════════════════════════════════════════════════════
+//  Selection test commands (PromptSelection)
+// ════════════════════════════════════════════════════════════════
+
+var osVariants = new IVariant[]
+{
+    new Variant("[bold]Windows[/] 11"),
+    new Variant("[bold][green]Linux[/][/] Ubuntu"),
+    new Variant("macOS [blue]Ventura[/]"),
+    new Variant("[grey]FreeBSD[/]"),
+};
+
+var toolVariants = new IVariant[]
+{
+    new Variant("Sword"),
+    new Variant("Shield"),
+    new Variant("Bow"),
+    new Variant("Axe"),
+    new Variant("Staff"),
+};
+
+var colorVariants = new IVariant[]
+{
+    new Variant("[red]Red[/]"),
+    new Variant("[green]Green[/]"),
+    new Variant("[blue]Blue[/]"),
+    new Variant("[yellow]Yellow[/]"),
+    new Variant("[magenta]Magenta[/]"),
+    new Variant("[cyan]Cyan[/]"),
+};
+
+host.AddCommand(new Command("pick", "Single-select an OS via PromptSelection", async (_, _) =>
+{
+    var selected = await host.PromptSelection("Pick an OS", osVariants);
+    host.AddMessage($"[green]You picked: [bold]{Markup.Escape(selected[0].Name)}[/][/]");
+}));
+
+host.AddCommand(new Command("multi", "Multi-select tools (min 1, max 3) via PromptSelection", async (_, _) =>
+{
+    var selected = await host.PromptSelection("Select your tools [dim](1-3)[/]", toolVariants,
+        new SelectionInfo { SubmitTitle = "Ready for battle!", Min = 1, Max = 3 });
+    var names = string.Join(", ", selected.Select(v => Markup.Escape(v.Name)));
+    host.AddMessage($"[green]Equipped: [bold]{names}[/][/]");
+}));
+
+host.AddCommand(new Command("colors", "Multi-select colors (min 2) via PromptSelection", async (_, _) =>
+{
+    var selected = await host.PromptSelection("Choose at least 2 colors", colorVariants,
+        new SelectionInfo { SubmitTitle = "Apply", Min = 2 });
+    var names = string.Join(", ", selected.Select(v => Markup.Escape(v.Name)));
+    host.AddMessage($"[green]Colors chosen: [bold]{names}[/][/]");
+}));
+
+// ════════════════════════════════════════════════════════════════
 //  Input Field Save / Load test commands
 // ════════════════════════════════════════════════════════════════
 
@@ -232,6 +285,9 @@ host.AddMessage("[yellow]StreamShell demo started. Type text or commands like /c
 host.AddMessage("[yellow]Large paste (>200 chars) will be attached as file[/]");
 host.AddMessage("[yellow]Try [bold]/config[/] [grey]Large[/] (Tab autocomplete for config names)[/]");
 host.AddMessage("[yellow]Try [bold]/demo[/] [grey]li[/] (Tab for multi-word arg completions)[/]");
+host.AddMessage("[yellow]Try [bold]/pick[/] [grey](single-select PromptSelection)[/][/]");
+host.AddMessage("[yellow]Try [bold]/multi[/] [grey](multi-select 1-3 tools)[/][/]");
+host.AddMessage("[yellow]Try [bold]/colors[/] [grey](multi-select min 2 colors)[/][/]");
 host.AddMessage("");
 host.AddMessage("[yellow]--- Save/Load test ---[/]");
 host.AddMessage("[yellow]/save <text>  — save text as input field state[/]");
@@ -245,6 +301,13 @@ await host.Run();
 // ── helpers ──
 static string TruncatePreview(string text, int maxLen)
     => text.Length <= maxLen ? text : text[..maxLen] + "...";
+
+// ── Variant helper ──
+class Variant : IVariant
+{
+    public string Name { get; }
+    public Variant(string name) => Name = name;
+}
 
 // ── Custom bottom panel ──
 class CharacterCounterPanel : IBottomPanel
