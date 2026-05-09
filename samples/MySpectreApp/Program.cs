@@ -123,15 +123,27 @@ host.AddCommand(new Command("panel", "Toggle bottom panel (CommandPalette / Char
 //  Separator test command
 // ════════════════════════════════════════════════════════════════
 
-host.AddCommand(new Command("separator", "Change the separator line. Usage: /separator [left] [right] [char] [markup]", (args, named) =>
+host.AddCommand(new Command("top-sep", "Set top separator. Usage: /top-sep [left] [right] [char] [markup]", (args, named) =>
 {
     string? left = args.Length > 0 ? args[0] : null;
     string? right = args.Length > 1 ? args[1] : null;
     char fill = args.Length > 2 && args[2].Length > 0 ? args[2][0] : '-';
     string? markup = args.Length > 3 ? args[3] : null;
 
-    host.SetSeparator(left, right, fill, markup);
-    host.AddMessage($"[green]Separator updated: [dim]left=[/]{Markup.Escape(left ?? "(none)")}[dim] right=[/]{Markup.Escape(right ?? "(none)")}[dim] fill=[/]'{fill}'[dim] markup=[/]{Markup.Escape(markup ?? "(none)")}[/]");
+    host.SetTopSeparator(left, right, fill, markup);
+    host.AddMessage($"[green]Top separator updated: [dim]left=[/]{Markup.Escape(left ?? "(none)")}[dim] right=[/]{Markup.Escape(right ?? "(none)")}[dim] fill=[/]'{fill}'[dim] markup=[/]{Markup.Escape(markup ?? "(none)")}[/]");
+    return Task.CompletedTask;
+}));
+
+host.AddCommand(new Command("bot-sep", "Set bottom separator. Usage: /bot-sep [left] [right] [char] [markup]", (args, named) =>
+{
+    string? left = args.Length > 0 ? args[0] : null;
+    string? right = args.Length > 1 ? args[1] : null;
+    char fill = args.Length > 2 && args[2].Length > 0 ? args[2][0] : '-';
+    string? markup = args.Length > 3 ? args[3] : null;
+
+    host.SetBottomSeparator(left, right, fill, markup);
+    host.AddMessage($"[green]Bottom separator updated: [dim]left=[/]{Markup.Escape(left ?? "(none)")}[dim] right=[/]{Markup.Escape(right ?? "(none)")}[dim] fill=[/]'{fill}'[dim] markup=[/]{Markup.Escape(markup ?? "(none)")}[/]");
     return Task.CompletedTask;
 }));
 
@@ -317,7 +329,8 @@ host.AddMessage("[yellow]Try [bold]/demo[/] [grey]li[/] (Tab for multi-word arg 
 host.AddMessage("[yellow]Try [bold]/pick[/] [grey](single-select PromptSelection)[/][/]");
 host.AddMessage("[yellow]Try [bold]/multi[/] [grey](multi-select 1-3 tools)[/][/]");
 host.AddMessage("[yellow]Try [bold]/colors[/] [grey](multi-select min 2 colors)[/][/]");
-host.AddMessage("[yellow]Try [bold]/separator[/] [grey]<left> <right> <char> <markup> (change separator)[/][/]");
+host.AddMessage("[yellow]Try [bold]/top-sep[/] [grey]<left> <right> <char> <markup> (top separator)[/][/]");
+host.AddMessage("[yellow]Try [bold]/bot-sep[/] [grey]<left> <right> <char> <markup> (bottom separator)[/][/]");
 host.AddMessage("");
 host.AddMessage("[yellow]--- Save/Load test ---[/]");
 host.AddMessage("[yellow]/save <text>  — save text as input field state[/]");

@@ -25,8 +25,11 @@ internal class ConsoleRenderer : IRenderer
     // Line count of the current bottom panel (set by host). Defaults to CommandPalette's size.
     private int _panelLineCount = CommandPalette.MaxHeight;
 
-    /// <summary>Current separator configuration.</summary>
-    public SeparatorConfig Separator { get; set; } = SeparatorConfig.Default;
+    /// <summary>Top separator configuration (between message feed and input block).</summary>
+    public SeparatorConfig TopSeparator { get; set; } = SeparatorConfig.Default;
+
+    /// <summary>Bottom separator configuration (between input line and hints block).</summary>
+    public SeparatorConfig BottomSeparator { get; set; } = SeparatorConfig.Default;
 
     /// <summary>Updates the panel line count used for block offset calculation.</summary>
     public void SetPanelLineCount(int count) => _panelLineCount = count;
@@ -391,16 +394,17 @@ internal class ConsoleRenderer : IRenderer
 
     /// <summary>Renders the separator line using the current config.</summary>
     /// <summary>Renders the top separator (between message feed and input block).</summary>
-    private void RenderTopSeparator() => RenderSeparatorLine();
-
-    /// <summary>Renders the bottom separator (between input line and hints block).</summary>
-    private void RenderBottomSeparator() => RenderSeparatorLine();
-
-    /// <summary>Renders a separator line using the current config.</summary>
-    private void RenderSeparatorLine()
+    private void RenderTopSeparator()
     {
         int width = Console.WindowWidth - 1;
-        AnsiConsole.MarkupLine(BuildSeparatorLine(Separator, width));
+        AnsiConsole.MarkupLine(BuildSeparatorLine(TopSeparator, width));
+    }
+
+    /// <summary>Renders the bottom separator (between input line and hints block).</summary>
+    private void RenderBottomSeparator()
+    {
+        int width = Console.WindowWidth - 1;
+        AnsiConsole.MarkupLine(BuildSeparatorLine(BottomSeparator, width));
     }
 
     /// <summary>Builds the separator string from the given config and available width.</summary>

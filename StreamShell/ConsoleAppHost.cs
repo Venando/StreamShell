@@ -132,10 +132,24 @@ public class ConsoleAppHost : IDisposable
     /// <summary>Queue a markup message to be displayed.</summary>
     public void AddMessage(string markup) => _messages.Enqueue(markup);
 
-    /// <summary>Sets the separator line rendered between the message feed and the input block.</summary>
-    public void SetSeparator(string? leftText = null, string? rightText = null, char repeatedCharacter = '-', string? repeatedCharMarkup = null)
+    /// <summary>Sets the top separator (between message feed and input block).</summary>
+    public void SetTopSeparator(string? leftText = null, string? rightText = null,
+        char repeatedCharacter = '-', string? repeatedCharMarkup = null)
     {
-        _renderer.Separator = new SeparatorConfig
+        _renderer.TopSeparator = new SeparatorConfig
+        {
+            LeftText = leftText,
+            RightText = rightText,
+            RepeatedChar = repeatedCharacter,
+            RepeatedCharMarkup = repeatedCharMarkup
+        };
+    }
+
+    /// <summary>Sets the bottom separator (between input line and hints block).</summary>
+    public void SetBottomSeparator(string? leftText = null, string? rightText = null,
+        char repeatedCharacter = '-', string? repeatedCharMarkup = null)
+    {
+        _renderer.BottomSeparator = new SeparatorConfig
         {
             LeftText = leftText,
             RightText = rightText,
