@@ -293,19 +293,26 @@ internal class ConsoleRenderer : IRenderer
 
         while (true)
         {
-            int idx = text.IndexOf("[paste ", searchFrom, StringComparison.Ordinal);
+            int nextFull = text.IndexOf("[paste ", searchFrom, StringComparison.Ordinal);
 
-            // Cursor-split fragment: if [paste wasn't found but current
-            // position starts with "paste #", the opening [ was consumed
-            // by the cursor character highlight.
-            if (idx < 0 && text.Length - searchFrom >= 7 &&
+            // Check for cursor-split fragment at current position (missing [)
+            int nextFragment = -1;
+            if (text.Length - searchFrom >= 7 &&
                 text[searchFrom] == 'p' &&
                 text.AsSpan(searchFrom, 7).Equals("paste #", StringComparison.Ordinal))
             {
-                idx = searchFrom;
+                nextFragment = searchFrom;
             }
 
-            if (idx < 0)
+            // Use whichever match (full or fragment) comes first
+            int idx;
+            if (nextFull >= 0 && nextFragment >= 0)
+                idx = Math.Min(nextFull, nextFragment);
+            else if (nextFull >= 0)
+                idx = nextFull;
+            else if (nextFragment >= 0)
+                idx = nextFragment;
+            else
                 break;
 
             // Escape text before the placeholder
