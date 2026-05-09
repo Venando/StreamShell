@@ -26,6 +26,7 @@ public enum InputType
 /// </summary>
 public class ConsoleAppHost : IDisposable
 {
+    private readonly ITerminal _terminal;
     private readonly ConcurrentQueue<string> _messages = new();
     private readonly ConcurrentDictionary<string, Command> _commands = new(StringComparer.OrdinalIgnoreCase);
     private readonly IInputHandler _inputHandler;
@@ -55,6 +56,7 @@ public class ConsoleAppHost : IDisposable
     /// Default bottom panel is EmptyBottomPanel; CommandPalette activates on "/".</summary>
     public ConsoleAppHost()
     {
+        _terminal = new SystemTerminal();
         _renderer = new ConsoleRenderer(Settings);
         _inputHandler = new UserInputHandler();
         _defaultPanel = new EmptyBottomPanel();
@@ -69,10 +71,11 @@ public class ConsoleAppHost : IDisposable
     }
 
     /// <summary>Creates a host with explicit renderer and input handler (for testing).</summary>
-    internal ConsoleAppHost(IRenderer renderer, IInputHandler inputHandler)
+    internal ConsoleAppHost(IRenderer renderer, IInputHandler inputHandler, ITerminal? terminal = null)
     {
         _renderer = renderer;
         _inputHandler = inputHandler;
+        _terminal = terminal ?? new SystemTerminal();
         _defaultPanel = new EmptyBottomPanel();
         _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
@@ -230,7 +233,7 @@ public class ConsoleAppHost : IDisposable
     }
 
     // ── Tracks render state between loop iterations ───────────────────
-    private sealed record RenderSnapshot(
+    internal sealed record RenderSnapshot(
         string? LastInput,
         int LastCursor,
         bool LastHasSelection,
@@ -241,49 +244,63 @@ public class ConsoleAppHost : IDisposable
 
     private async Task RunLoop(CancellationToken token)
     {
-        var state = new RenderSnapshot(null, 0, false, 0, Console.WindowWidth, _bottomPanel.LineCount);
+        var state = new RenderSnapshot(null, 0, false, 0, _terminal.WindowWidth, _bottomPanel.LineCount);
 
         while (!token.IsCancellationRequested)
         {
-            // Auto-swap panels based on command mode
-            EnsureProperPanel();
-
-            string input = _inputHandler.CurrentInput;
-            int cursor = _inputHandler.CursorPosition;
-            bool hasSelection = _inputHandler.HasSelection;
-            _inputHandler.TryGetSelection(out int selStart, out int selLength);
-            int windowWidth = Console.WindowWidth;
-            int margin = _inputHandler.RightMargin;
-
-            if (_renderer is ConsoleRenderer cr)
-            {
-                cr.PlaceholderStrings = _inputHandler.Attachments
-                    .Select(a => a.Placeholder)
-                    .Where(p => !string.IsNullOrEmpty(p))
-                    .ToList();
-            }
-
-            if (TryRender(state, input, cursor, hasSelection, selStart, selLength, margin, windowWidth))
-            {
-                state = new RenderSnapshot(input, cursor, hasSelection,
-                    _renderer.GetInputLineCount(input), windowWidth, _bottomPanel.LineCount);
-            }
-
-            if (_inputHandler.QuitRequested)
-            {
-                _inputHandler.QuitRequested = false;
+            (string? submittedInput, state) = ProcessOneTick(state);
+            if (submittedInput == "__QUIT__")
                 break;
-            }
-
-            string? submittedInput = _inputHandler.ProcessInput();
-            if (submittedInput != null)
-            {
-                HandleSubmittedInput(submittedInput, windowWidth);
-                state = new RenderSnapshot(null, 0, false, 0, windowWidth, _bottomPanel.LineCount);
-            }
 
             await Task.Delay(10, token);
         }
+    }
+
+    /// <summary>
+    /// Processes exactly one tick of the render/input loop.
+    /// Returns (submittedInput, newState) — submittedInput is null if nothing was submitted,
+    /// or "__QUIT__" when Ctrl+D was pressed.
+    /// For testing: allows controlled single-iteration execution without the infinite loop.
+    /// </summary>
+    internal (string? SubmittedInput, RenderSnapshot NewState) ProcessOneTick(RenderSnapshot state)
+    {
+        EnsureProperPanel();
+
+        string input = _inputHandler.CurrentInput;
+        int cursor = _inputHandler.CursorPosition;
+        bool hasSelection = _inputHandler.HasSelection;
+        _inputHandler.TryGetSelection(out int selStart, out int selLength);
+        int windowWidth = _terminal.WindowWidth;
+        int margin = _inputHandler.RightMargin;
+
+        if (_renderer is ConsoleRenderer cr)
+        {
+            cr.PlaceholderStrings = _inputHandler.Attachments
+                .Select(a => a.Placeholder)
+                .Where(p => !string.IsNullOrEmpty(p))
+                .ToList();
+        }
+
+        bool rendered = TryRender(state, input, cursor, hasSelection, selStart, selLength, margin, windowWidth);
+        var newState = rendered
+            ? new RenderSnapshot(input, cursor, hasSelection,
+                _renderer.GetInputLineCount(input), windowWidth, _bottomPanel.LineCount)
+            : state;
+
+        if (_inputHandler.QuitRequested)
+        {
+            _inputHandler.QuitRequested = false;
+            return ("__QUIT__", newState);
+        }
+
+        string? submittedInput = _inputHandler.ProcessInput();
+        if (submittedInput != null)
+        {
+            HandleSubmittedInput(submittedInput, windowWidth);
+            newState = new RenderSnapshot(null, 0, false, 0, windowWidth, _bottomPanel.LineCount);
+        }
+
+        return (submittedInput, newState);
     }
 
     /// <summary>Priority render check: messages first, then input changes. Returns true when the screen was updated.</summary>

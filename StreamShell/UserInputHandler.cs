@@ -10,6 +10,7 @@ namespace StreamShell;
 /// </summary>
 internal class UserInputHandler : IInputHandler
 {
+    private readonly ITerminal _terminal;
     private readonly TextBuffer _buffer = new();
     private readonly SelectionManager _selection = new();
     private readonly UndoManager _undo = new();
@@ -25,8 +26,12 @@ internal class UserInputHandler : IInputHandler
         int CursorPosition,
         List<Attachment> Attachments);
 
-    public UserInputHandler()
+    public UserInputHandler() : this(new SystemTerminal()) { }
+
+    internal UserInputHandler(ITerminal terminal)
     {
+        _terminal = terminal;
+
         _clipboard = new ClipboardHandler(
             _buffer, _selection, _tempInput,
             () => Snapshot(),
@@ -38,15 +43,9 @@ internal class UserInputHandler : IInputHandler
 
         LargePasteThreshold = 300;
         LargePasteLineThreshold = 4;
-        try
-        {
-            int width = Console.WindowWidth;
-            RightMargin = width > 0 ? width : 80;
-        }
-        catch (IOException)
-        {
-            RightMargin = 80; // fallback for test/headless environments
-        }
+
+        int width = terminal.WindowWidth;
+        RightMargin = width > 0 ? width : 80;
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -91,9 +90,9 @@ internal class UserInputHandler : IInputHandler
     {
         string? submitted = null;
 
-        while (Console.KeyAvailable)
+        while (_terminal.KeyAvailable)
         {
-            var key = Console.ReadKey(intercept: true);
+            var key = _terminal.ReadKey(intercept: true);
 
             // Give the interceptor first crack at the key (e.g. hint navigation)
             if (KeyInterceptor?.Invoke(key) == true)
@@ -138,7 +137,7 @@ internal class UserInputHandler : IInputHandler
 
         if (!shift && !ctrl && !alt)
         {
-            while (Console.KeyAvailable)
+            while (_terminal.KeyAvailable)
             {
                 _tempInput.Append('\n');
                 return false; // keep processing buffered keys

@@ -9,18 +9,24 @@ using Spectre.Console;
 /// </summary>
 internal class ConsoleRenderer : IRenderer
 {
+    private readonly ITerminal _terminal;
     private readonly StreamShellSettings _settings;
 
-    /// <summary>Creates a renderer with default settings.</summary>
-    public ConsoleRenderer() : this(new StreamShellSettings()) { }
+    /// <summary>Creates a renderer with default settings and the real terminal.</summary>
+    public ConsoleRenderer() : this(new StreamShellSettings(), new SystemTerminal()) { }
 
-    /// <summary>Creates a renderer with the specified settings.</summary>
-    public ConsoleRenderer(StreamShellSettings settings)
+    /// <summary>Creates a renderer with the specified settings and the real terminal.</summary>
+    public ConsoleRenderer(StreamShellSettings settings) : this(settings, new SystemTerminal()) { }
+
+    /// <summary>Creates a renderer with explicit settings and terminal (for testing).</summary>
+    internal ConsoleRenderer(StreamShellSettings settings, ITerminal terminal)
     {
         _settings = settings;
+        _terminal = terminal;
+        RightMargin = terminal.WindowWidth;
     }
 
-    public int RightMargin { get; set; } = Console.WindowWidth;
+    public int RightMargin { get; set; }
 
     // Line count of the current bottom panel (set by host). Defaults to CommandPalette's size.
     private int _panelLineCount = CommandPalette.MaxHeight;
@@ -43,10 +49,10 @@ internal class ConsoleRenderer : IRenderer
     }
 
     /// <summary>Total vertical space taken by the input block with a given panel line count.</summary>
-    private static int GetBlockOffset(string input, int panelLineCount)
+    private int GetBlockOffset(string input, int panelLineCount)
     {
         return (1 + panelLineCount) + LineWrappingService.GetInputLines(
-            input, Console.WindowWidth, 2, 4).Count;
+            input, _terminal.WindowWidth, 2, 4).Count;
     }
 
     /// <summary>Number of visual lines the input occupies.</summary>
@@ -80,7 +86,7 @@ internal class ConsoleRenderer : IRenderer
     // ── Block Clearing ───────────────────────────────────────────────
     public void ClearInputLine()
     {
-        Console.CursorLeft = 0;
+        _terminal.CursorLeft = 0;
         ClearLine();
     }
 
@@ -90,9 +96,9 @@ internal class ConsoleRenderer : IRenderer
             return;
 
         int blockOffset = GetBlockOffset(lastInput);
-        int bufferHeight = Console.BufferHeight;
-        int newTop = Console.CursorTop - blockOffset;
-        Console.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+        int bufferHeight = _terminal.BufferHeight;
+        int newTop = _terminal.CursorTop - blockOffset;
+        _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
         ClearBlock(blockOffset);
     }
 
@@ -106,10 +112,10 @@ internal class ConsoleRenderer : IRenderer
         int oldOffset = GetBlockOffset(oldInput, oldPanelLineCount);
         int newOffset = GetBlockOffset(newInput);
         int clearOffset = Math.Max(oldOffset, newOffset);
-        int bufferHeight = Console.BufferHeight;
+        int bufferHeight = _terminal.BufferHeight;
 
-        int newTop = Console.CursorTop - oldOffset;
-        Console.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+        int newTop = _terminal.CursorTop - oldOffset;
+        _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
         ClearBlock(clearOffset);
     }
 
@@ -125,7 +131,7 @@ internal class ConsoleRenderer : IRenderer
     {
         RenderTopSeparator();
         RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
-        Console.WriteLine();
+        _terminal.WriteLine();
         RenderHintsBlock(hints);
     }
 
@@ -140,13 +146,13 @@ internal class ConsoleRenderer : IRenderer
         int selectionLength,
         int margin)
     {
-        int bufferHeight = Console.BufferHeight;
-        int newTop = Console.CursorTop - (blockOffset - 1);
-        Console.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+        int bufferHeight = _terminal.BufferHeight;
+        int newTop = _terminal.CursorTop - (blockOffset - 1);
+        _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
 
         RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
-        Console.Write("\x1b[K");
-        Console.WriteLine();
+        _terminal.Write("\x1b[K");
+        _terminal.WriteLine();
         RenderHintsBlock(hints);
     }
 
@@ -160,7 +166,7 @@ internal class ConsoleRenderer : IRenderer
         int margin)
     {
         int effectiveMargin = Math.Max(10, margin);
-        int width = Math.Max(1, Math.Min(effectiveMargin, Console.WindowWidth));
+        int width = Math.Max(1, Math.Min(effectiveMargin, _terminal.WindowWidth));
 
         var segments = input.Split('\n');
         bool isFirstOverallLine = true;
@@ -180,7 +186,7 @@ internal class ConsoleRenderer : IRenderer
                     input, charOffset, lineText,
                     cursorPosition, hasSelection, selectionStart, selectionLength);
 
-                Console.CursorLeft = 0;
+                _terminal.CursorLeft = 0;
 
                 string prefix = isFirstOverallLine
                     ? _settings.InputPrefix
@@ -188,7 +194,7 @@ internal class ConsoleRenderer : IRenderer
                 AnsiConsole.Markup(prefix + lineMarkup);
 
                 if (!(segIdx == segments.Length - 1 && lineIdx == wrappedLines.Count - 1))
-                    Console.WriteLine();
+                    _terminal.WriteLine();
 
                 charOffset += lineText.Length;
                 isFirstOverallLine = false;
@@ -200,7 +206,7 @@ internal class ConsoleRenderer : IRenderer
         // Handle entirely empty input (single empty segment)
         if (segments.Length == 1 && segments[0].Length == 0 && string.IsNullOrEmpty(input))
         {
-            Console.CursorLeft = 0;
+            _terminal.CursorLeft = 0;
             string lineMarkup = BuildLineMarkup(
                 input, 0, "",
                 cursorPosition, hasSelection, selectionStart, selectionLength);
@@ -292,11 +298,6 @@ internal class ConsoleRenderer : IRenderer
         }
     }
 
-    /// <summary>
-    /// Escapes text for Spectre markup, but renders known placeholder patterns
-    /// (<c>[paste N lines: name...]</c>) with underline styling instead of
-    /// escaping them as plain text.
-    /// </summary>
     /// <summary>
     /// Placeholder strings from current attachments, used to render them as
     /// underlined markup instead of plain escaped text.
@@ -431,15 +432,15 @@ internal class ConsoleRenderer : IRenderer
         else
         {
             // Clear the old bottom separator line first, then advance
-            Console.CursorLeft = 0;
+            _terminal.CursorLeft = 0;
             ClearLine();
-            Console.WriteLine();
+            _terminal.WriteLine();
         }
 
-        int maxWidth = Console.WindowWidth - 1;
+        int maxWidth = _terminal.WindowWidth - 1;
         for (int i = 0; i < hints.Count; i++)
         {
-            Console.CursorLeft = 0;
+            _terminal.CursorLeft = 0;
             ClearLine();
             string hint = hints[i];
             if (!string.IsNullOrEmpty(hint))
@@ -455,7 +456,7 @@ internal class ConsoleRenderer : IRenderer
                 }
             }
             if (i < hints.Count - 1)
-                Console.WriteLine();
+                _terminal.WriteLine();
         }
     }
 
@@ -510,18 +511,17 @@ internal class ConsoleRenderer : IRenderer
         return text;
     }
 
-    /// <summary>Renders the separator line using the current config.</summary>
     /// <summary>Renders the top separator (between message feed and input block).</summary>
     private void RenderTopSeparator()
     {
-        int width = Console.WindowWidth - 1;
+        int width = _terminal.WindowWidth - 1;
         AnsiConsole.MarkupLine(BuildSeparatorLine(TopSeparator, width));
     }
 
     /// <summary>Renders the bottom separator (between input line and hints block).</summary>
     private void RenderBottomSeparator()
     {
-        int width = Console.WindowWidth - 1;
+        int width = _terminal.WindowWidth - 1;
         AnsiConsole.MarkupLine(BuildSeparatorLine(BottomSeparator, width));
     }
 
@@ -577,39 +577,39 @@ internal class ConsoleRenderer : IRenderer
             return;
 
         // Save cursor position first — SetCursorPosition + ClearLine moves the cursor
-        int savedTop = Console.CursorTop;
-        int bufferHeight = Console.BufferHeight;
+        int savedTop = _terminal.CursorTop;
+        int bufferHeight = _terminal.BufferHeight;
 
         for (int i = 1; i <= count; i++)
         {
             int top = savedTop + i;
             if (top >= bufferHeight)
                 break;
-            Console.SetCursorPosition(0, top);
+            _terminal.SetCursorPosition(0, top);
             ClearLine();
         }
 
         // Restore cursor to saved position (block bottom)
-        Console.CursorTop = Math.Max(0, Math.Min(savedTop, bufferHeight - 1));
+        _terminal.CursorTop = Math.Max(0, Math.Min(savedTop, bufferHeight - 1));
     }
 
-    private static void ClearLine() => Console.Write("\x1b[K");
+    private void ClearLine() => _terminal.Write("\x1b[K");
 
-    private static void ClearBlock(int linesBelowSeparator)
+    private void ClearBlock(int linesBelowSeparator)
     {
-        int startTop = Console.CursorTop;
-        int bufferHeight = Console.BufferHeight;
+        int startTop = _terminal.CursorTop;
+        int bufferHeight = _terminal.BufferHeight;
 
         for (int i = 0; i <= linesBelowSeparator; i++)
         {
             int top = startTop + i;
             if (top < 0 || top >= bufferHeight)
                 continue;
-            Console.SetCursorPosition(0, top);
+            _terminal.SetCursorPosition(0, top);
             ClearLine();
         }
 
         startTop = Math.Max(0, Math.Min(startTop, bufferHeight - 1));
-        Console.SetCursorPosition(0, startTop);
+        _terminal.SetCursorPosition(0, startTop);
     }
 }
