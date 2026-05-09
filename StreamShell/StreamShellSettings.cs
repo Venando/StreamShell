@@ -28,9 +28,9 @@ public class StreamShellSettings
     /// <summary>
     /// Spectre.Console markup style string for the command slash character (/)
     /// displayed as the first character of the input field.
-    /// Default: "cyan".
+    /// Default: "Red1".
     /// </summary>
-    public string CommandSlashMarkup { get; set; } = "cyan";
+    public string CommandSlashMarkup { get; set; } = "Red1";
 
     /// <summary>
     /// Spectre.Console markup for the first-line input field prefix.
