@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace StreamShell;
 
 /// <summary>
@@ -5,6 +7,8 @@ namespace StreamShell;
 /// word-boundary, and vertical (visual line) navigation with sticky column tracking.
 /// All methods operate on the shared <see cref="TextBuffer"/> and
 /// <see cref="SelectionManager"/> but are independent of clipboard or undo logic.
+/// Uses <see cref="ArrayPool{T}"/> for placeholder range computation to avoid
+/// heap allocation on every cursor movement.
 /// </summary>
 internal class CursorMovementHandler
 {
@@ -29,20 +33,42 @@ internal class CursorMovementHandler
     /// <summary>Resets sticky column tracking (e.g. when the user presses left/right or home/end).</summary>
     public void ResetStickyColumn() => _stickyColumn = -1;
 
-    /// <summary>Returns the (start, end) range of each attachment's placeholder in the buffer.</summary>
-    private List<(int start, int end)> GetPlaceholderRanges()
+    /// <summary>
+    /// Computes placeholder ranges into a caller-provided buffer.
+    /// Returns a span of populated ranges. Uses ArrayPool internally to avoid
+    /// heap allocation — the caller MUST wrap the call in a try/finally that
+    /// returns the pool buffer.
+    /// </summary>
+    private (int count, (int start, int end)[] poolBuffer) GetPlaceholderRanges()
     {
-        var ranges = new List<(int start, int end)>();
+        var attachments = _getAttachments();
+        int count = attachments.Count;
+        if (count == 0)
+            return (0, Array.Empty<(int, int)>());
+
         string currentInput = _buffer.CurrentInput;
-        foreach (var attachment in _getAttachments())
+        var buffer = ArrayPool<(int start, int end)>.Shared.Rent(count);
+        int written = 0;
+
+        foreach (var attachment in attachments)
         {
             string placeholder = attachment.Placeholder;
             if (string.IsNullOrEmpty(placeholder)) continue;
             int start = currentInput.IndexOf(placeholder, StringComparison.Ordinal);
             if (start >= 0)
-                ranges.Add((start, start + placeholder.Length));
+            {
+                buffer[written] = (start, start + placeholder.Length);
+                written++;
+            }
         }
-        return ranges;
+
+        return (written, buffer);
+    }
+
+    private static void ReturnPlaceholderRanges((int start, int end)[] buffer)
+    {
+        if (buffer.Length > 0)
+            ArrayPool<(int start, int end)>.Shared.Return(buffer);
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -61,13 +87,22 @@ internal class CursorMovementHandler
         int target = cursor - 1;
 
         // Skip over placeholder if cursor is right after or inside it
-        foreach (var (start, end) in GetPlaceholderRanges())
+        var (phCount, phBuffer) = GetPlaceholderRanges();
+        try
         {
-            if (cursor > start && cursor <= end)
+            for (int i = 0; i < phCount; i++)
             {
-                target = start;
-                break;
+                var (start, end) = phBuffer[i];
+                if (cursor > start && cursor <= end)
+                {
+                    target = start;
+                    break;
+                }
             }
+        }
+        finally
+        {
+            ReturnPlaceholderRanges(phBuffer);
         }
 
         _selection.ForMovement(shift, cursor);
@@ -94,13 +129,22 @@ internal class CursorMovementHandler
         int target = cursor + 1;
 
         // Skip over placeholder if cursor is at or inside it
-        foreach (var (start, end) in GetPlaceholderRanges())
+        var (phCount, phBuffer) = GetPlaceholderRanges();
+        try
         {
-            if (cursor >= start && cursor < end)
+            for (int i = 0; i < phCount; i++)
             {
-                target = end;
-                break;
+                var (start, end) = phBuffer[i];
+                if (cursor >= start && cursor < end)
+                {
+                    target = end;
+                    break;
+                }
             }
+        }
+        finally
+        {
+            ReturnPlaceholderRanges(phBuffer);
         }
 
         int originalPos = cursor;
@@ -183,20 +227,29 @@ internal class CursorMovementHandler
             int target = FindPreviousWordStart(_buffer.CurrentInput, cursor);
 
             // Skip over placeholder if cursor or target lands inside it
-            foreach (var (start, end) in GetPlaceholderRanges())
+            var (phCount, phBuffer) = GetPlaceholderRanges();
+            try
             {
-                // Cursor is inside or right after placeholder → jump to start
-                if (cursor > start && cursor <= end)
+                for (int i = 0; i < phCount; i++)
                 {
-                    target = start;
-                    break;
+                    var (start, end) = phBuffer[i];
+                    // Cursor is inside or right after placeholder → jump to start
+                    if (cursor > start && cursor <= end)
+                    {
+                        target = start;
+                        break;
+                    }
+                    // Target landed inside placeholder → jump to its start
+                    if (target > start && target < end)
+                    {
+                        target = start;
+                        break;
+                    }
                 }
-                // Target landed inside placeholder → jump to its start
-                if (target > start && target < end)
-                {
-                    target = start;
-                    break;
-                }
+            }
+            finally
+            {
+                ReturnPlaceholderRanges(phBuffer);
             }
 
             _buffer.MoveTo(target);
@@ -213,20 +266,29 @@ internal class CursorMovementHandler
             int target = FindNextWordStart(_buffer.CurrentInput, cursor);
 
             // Skip over placeholder if cursor or target lands inside it
-            foreach (var (start, end) in GetPlaceholderRanges())
+            var (phCount, phBuffer) = GetPlaceholderRanges();
+            try
             {
-                // Cursor is at or inside placeholder → jump to end
-                if (cursor >= start && cursor < end)
+                for (int i = 0; i < phCount; i++)
                 {
-                    target = end;
-                    break;
+                    var (start, end) = phBuffer[i];
+                    // Cursor is at or inside placeholder → jump to end
+                    if (cursor >= start && cursor < end)
+                    {
+                        target = end;
+                        break;
+                    }
+                    // Target landed inside placeholder → jump past its end
+                    if (target > start && target < end)
+                    {
+                        target = end;
+                        break;
+                    }
                 }
-                // Target landed inside placeholder → jump past its end
-                if (target > start && target < end)
-                {
-                    target = end;
-                    break;
-                }
+            }
+            finally
+            {
+                ReturnPlaceholderRanges(phBuffer);
             }
 
             _buffer.MoveTo(target);

@@ -697,10 +697,10 @@ public class ConsoleAppHostAdditionalTests
         string input, bool expectedResult,
         string? expectedName = null, string expectedArgs = "")
     {
-        // Access the private static method via reflection
-        var method = typeof(ConsoleAppHost).GetMethod(
+        // Access the public static method via reflection
+        var method = typeof(CommandManager).GetMethod(
             "TryGetCommandName",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
             null,
             [typeof(string), typeof(string).MakeByRefType(), typeof(string).MakeByRefType()],
             null)!;
@@ -722,9 +722,9 @@ public class ConsoleAppHostAdditionalTests
     [Fact]
     public void TryGetCommandName_ConvenienceOverload_ExtractsName()
     {
-        var method = typeof(ConsoleAppHost).GetMethod(
+        var method = typeof(CommandManager).GetMethod(
             "TryGetCommandName",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
             null,
             [typeof(string), typeof(string).MakeByRefType()],
             null)!;

@@ -136,7 +136,7 @@ internal class SelectionPanel : IBottomPanel
             // Check max limit unless unlimited
             if (!_toggled[idx] && _info!.Max > 0)
             {
-                int currentSelected = _toggled.Count(t => t);
+                int currentSelected = CountSelected(_toggled);
                 if (currentSelected >= _info.Max)
                     return true; // block toggle, already at max
             }
@@ -162,16 +162,41 @@ internal class SelectionPanel : IBottomPanel
         // Check minimum constraint
         if (IsMulti && _info!.Min > 0)
         {
-            int selected = _toggled.Count(t => t);
+            int selected = CountSelected(_toggled);
             if (selected < _info.Min)
                 return true; // block submit, below minimum
         }
 
         var result = IsMulti
-            ? _variants.Where((v, i) => _toggled[i]).ToArray()
+            ? BuildSelectedArray(_variants, _toggled)
             : [_variants[_highlightIndex]];
 
         _onSubmit(result);
         return true;
+    }
+
+    /// <summary>Counts selected toggles without LINQ allocation.</summary>
+    private static int CountSelected(bool[] toggled)
+    {
+        int count = 0;
+        for (int i = 0; i < toggled.Length; i++)
+        {
+            if (toggled[i]) count++;
+        }
+        return count;
+    }
+
+    /// <summary>Builds a result array from toggled variants without LINQ allocation.</summary>
+    private static IVariant[] BuildSelectedArray(IVariant[] variants, bool[] toggled)
+    {
+        int count = CountSelected(toggled);
+        var result = new IVariant[count];
+        int idx = 0;
+        for (int i = 0; i < toggled.Length; i++)
+        {
+            if (toggled[i])
+                result[idx++] = variants[i];
+        }
+        return result;
     }
 }

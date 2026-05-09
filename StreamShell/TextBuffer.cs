@@ -6,64 +6,66 @@ namespace StreamShell;
 /// Manages a mutable text buffer with a cursor position.
 /// Provides insert, delete, backspace, and cursor movement operations
 /// without selection or undo awareness.
+/// Caches <see cref="CurrentInput"/> to avoid repeated <c>StringBuilder.ToString()</c>
+/// allocations (called dozens of times per render tick across the codebase).
 /// </summary>
 internal class TextBuffer
 {
     private readonly StringBuilder _buffer = new();
     private int _cursor;
+    private string? _cachedInput;
+    private bool _dirty = true;
 
-    /// <summary>
-    /// Cached string snapshot of the buffer contents.
-    /// Invalidated on every mutation to avoid allocating a new string
-    /// each time <see cref="CurrentInput"/> is read (called many times
-    /// per render tick by ProcessOneTick, EnsureProperPanel,
-    /// CursorMovementHandler, StateDiffersFromRender, etc.).
-    /// </summary>
-    private string? _cached;
-
-    /// <summary>
-    /// Returns the current buffer content as a string.
-    /// The result is cached until the next mutation, avoiding repeated
-    /// <c>StringBuilder.ToString()</c> allocations.
-    /// </summary>
-    public string CurrentInput => _cached ??= _buffer.ToString();
+    /// <summary>Gets the current buffer content. Cached to avoid repeated StringBuilder.ToString().</summary>
+    public string CurrentInput
+    {
+        get
+        {
+            if (_dirty)
+            {
+                _cachedInput = _buffer.ToString();
+                _dirty = false;
+            }
+            return _cachedInput!;
+        }
+    }
 
     public int CursorPosition => _cursor;
     public int Length => _buffer.Length;
 
     public char this[int index] => _buffer[index];
 
-    private void InvalidateCache() => _cached = null;
+    private void MarkDirty() => _dirty = true;
 
     public void Insert(char c)
     {
-        InvalidateCache();
         _buffer.Insert(_cursor, c);
         _cursor++;
+        MarkDirty();
     }
 
     public void Insert(string text)
     {
-        InvalidateCache();
         _buffer.Insert(_cursor, text);
         _cursor += text.Length;
+        MarkDirty();
     }
 
     /// <summary>Removes <paramref name="length"/> chars starting at <paramref name="start"/> and moves cursor to <paramref name="start"/>.</summary>
     public void Remove(int start, int length)
     {
-        InvalidateCache();
         _buffer.Remove(start, length);
         _cursor = start;
+        MarkDirty();
     }
 
     public void Backspace()
     {
         if (_cursor > 0)
         {
-            InvalidateCache();
             _buffer.Remove(_cursor - 1, 1);
             _cursor--;
+            MarkDirty();
         }
     }
 
@@ -71,8 +73,8 @@ internal class TextBuffer
     {
         if (_cursor < _buffer.Length)
         {
-            InvalidateCache();
             _buffer.Remove(_cursor, 1);
+            MarkDirty();
         }
     }
 
@@ -84,16 +86,18 @@ internal class TextBuffer
     /// <summary>Replaces the entire buffer content and cursor position atomically.</summary>
     public void SetContent(string text, int cursor)
     {
-        InvalidateCache();
         _buffer.Clear();
         _buffer.Append(text);
         _cursor = Math.Clamp(cursor, 0, _buffer.Length);
+        _cachedInput = text;
+        _dirty = false;
     }
 
     public void Clear()
     {
-        InvalidateCache();
         _buffer.Clear();
         _cursor = 0;
+        _cachedInput = string.Empty;
+        _dirty = false;
     }
 }

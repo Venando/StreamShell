@@ -539,7 +539,17 @@ internal class ConsoleRenderer : IRenderer
     // ── Hints Block ───────────────────────────────────────────────────
     private void RenderHintsBlock(IReadOnlyList<string> hints)
     {
-        if (hints.Any(h => !string.IsNullOrEmpty(h)))
+        bool hasNonEmptyHint = false;
+        for (int h = 0; h < hints.Count; h++)
+        {
+            if (!string.IsNullOrEmpty(hints[h]))
+            {
+                hasNonEmptyHint = true;
+                break;
+            }
+        }
+
+        if (hasNonEmptyHint)
             RenderBottomSeparator();
         else
         {

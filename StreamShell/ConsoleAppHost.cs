@@ -28,7 +28,7 @@ public class ConsoleAppHost : IDisposable
 {
     private readonly ITerminal _terminal;
     private readonly ConcurrentQueue<string> _messages = new();
-    private readonly ConcurrentDictionary<string, Command> _commands = new(StringComparer.OrdinalIgnoreCase);
+    private readonly CommandManager _commandManager = new();
     private readonly IInputHandler _inputHandler;
     private readonly IRenderer _renderer;
     private IBottomPanel _defaultPanel;
@@ -153,7 +153,7 @@ public class ConsoleAppHost : IDisposable
             return;
 
         if (isCommand)
-            SetBottomPanel(new CommandPalette(() => _commands.Values));
+            SetBottomPanel(new CommandPalette(() => _commandManager.AllCommands));
         else
             SetBottomPanel(_defaultPanel);
     }
@@ -195,7 +195,7 @@ public class ConsoleAppHost : IDisposable
     }
 
     /// <summary>Register a command that can be triggered with /command-name.</summary>
-    public void AddCommand(Command command) => _commands[command.Name] = command;
+    public void AddCommand(Command command) => _commandManager.Add(command);
 
     /// <summary>
     /// Register a command with argument suggestions for autocomplete.
@@ -207,7 +207,7 @@ public class ConsoleAppHost : IDisposable
         Func<string[], Dictionary<string, string>, Task> handler,
         string[]? argumentSuggestions)
     {
-        _commands[name] = new Command(name, description, handler, argumentSuggestions);
+        _commandManager.Add(new Command(name, description, handler, argumentSuggestions));
     }
 
     /// <summary>Run the main input/render loop until cancelled or Ctrl+D is pressed.</summary>
@@ -432,8 +432,9 @@ public class ConsoleAppHost : IDisposable
         _renderer.ClearInputBlock(submittedInput);
 
         bool hasAttachments = _inputHandler.Attachments.Count > 0;
-        bool isCommand = !hasAttachments && TryGetCommandName(submittedInput, out string? commandName)
-            && _commands.ContainsKey(commandName!);
+        bool isCommand = !hasAttachments
+            && CommandManager.TryGetCommandName(submittedInput, out string? commandName)
+            && _commandManager.Contains(commandName!);
 
         var inputType = isCommand ? InputType.Command : InputType.PlainText;
         UserInputSubmitted?.Invoke(new UserInputSubmittedEventArgs
@@ -444,7 +445,7 @@ public class ConsoleAppHost : IDisposable
         });
 
         if (isCommand)
-            ExecuteCommand(submittedInput);
+            _ = ExecuteCommandAsync(submittedInput);
 
         _inputHandler.Reset();
     }
@@ -519,53 +520,11 @@ public class ConsoleAppHost : IDisposable
         }
     }
 
-    private void ExecuteCommand(string input)
+    /// <summary>Executes a command asynchronously via the CommandManager.</summary>
+    private async Task ExecuteCommandAsync(string input)
     {
-        if (!TryGetCommandName(input, out string? commandName, out string? argsString))
-            return;
-
-        if (!_commands.TryGetValue(commandName!, out var command))
-        {
-            AddMessage($"[red]Unknown command: /{commandName}[/]");
-            return;
-        }
-
-        var (positionalArgs, namedArgs) = CommandParser.Parse(argsString);
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await command.Handler(positionalArgs, namedArgs);
-            }
-            catch (Exception ex)
-            {
-                AddMessage($"[red]Command error: {ex.Message}[/]");
-            }
-        });
+        string? error = await _commandManager.ExecuteAsync(input);
+        if (error is not null)
+            AddMessage(error);
     }
-
-    /// <summary>Extracts the command name and argument string from a /command input.
-    /// Returns false if the input doesn't look like a valid command reference.</summary>
-    private static bool TryGetCommandName(string input, out string? name, out string args)
-    {
-        name = null;
-        args = string.Empty;
-
-        if (input.Length <= 1 || input[0] != '/')
-            return false;
-
-        string query = input[1..];
-        var parts = CommandParser.Split(query);
-        if (parts.Count == 0)
-            return false;
-
-        name = parts[0];
-        args = query.Length > name.Length ? query[(name.Length + 1)..] : string.Empty;
-        return true;
-    }
-
-    /// <summary>Convenience overload when only the command name is needed.</summary>
-    private static bool TryGetCommandName(string input, out string? name)
-        => TryGetCommandName(input, out name, out _);
 }

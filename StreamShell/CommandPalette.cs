@@ -298,14 +298,22 @@ internal class CommandPalette : IBottomPanel
     /// </summary>
     private static ArgMatchInfo GetArgMatchInfo(ReadOnlySpan<char> argsPart, string[] suggestions)
     {
-        // Manual matching to avoid capturing a ref-like span in a lambda
-        var matchList = new List<string>(suggestions.Length);
+        // Count matches first so we can allocate the exact array size
+        // (avoids the List<T> + ToArray() double allocation).
+        int matchCount = 0;
         foreach (var s in suggestions)
         {
             if (s.AsSpan().StartsWith(argsPart, StringComparison.OrdinalIgnoreCase))
-                matchList.Add(s);
+                matchCount++;
         }
-        var matches = matchList.ToArray();
+
+        var matches = new string[matchCount];
+        int idx = 0;
+        foreach (var s in suggestions)
+        {
+            if (s.AsSpan().StartsWith(argsPart, StringComparison.OrdinalIgnoreCase))
+                matches[idx++] = s;
+        }
 
         if (matches.Length <= 1)
             return new ArgMatchInfo(matches, null);
