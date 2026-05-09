@@ -136,14 +136,6 @@ internal class ClipboardHandler
     // ══════════════════════════════════════════════════════════════════
 
     /// <summary>Flushes non-control input accumulated in the temp buffer into the main buffer.</summary>
-    /// <remarks>
-    /// This inserts directly into the buffer — it does NOT go through
-    /// <see cref="InsertPastedText"/> because temp input is typed/flushed input,
-    /// not clipboard paste. Using <c>InsertPastedText</c> would cause the
-    /// first character (already inserted by <see cref="InsertCharacter"/>) to
-    /// be treated separately from the rest when the accumulated text exceeds
-    /// the large-paste threshold.
-    /// </remarks>
     public void FlushTempInput()
     {
         if (_tempInput.Length == 0)
@@ -151,7 +143,7 @@ internal class ClipboardHandler
 
         string text = _tempInput.ToString();
         _tempInput.Clear();
-        _buffer.Insert(text);
+        InsertPastedText(text);
     }
 
     private void InsertPastedText(string text)

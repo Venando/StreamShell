@@ -314,7 +314,7 @@ internal class UserInputHandler : IInputHandler
             return;
         }
 
-        if (_buffer.CursorPosition < _buffer.Length || _buffer.Length == 0)
+        if (_buffer.CursorPosition < _buffer.Length)
             _buffer.Insert(c);
         else
             _tempInput.Append(c);
