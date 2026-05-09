@@ -136,10 +136,9 @@ public class ConsoleRendererTests
         Assert.Equal("!!!!", result[1]);
     }
 
-    // ── Console-dependent functions (structural invariants) ───────────
-    // GetInputLines, GetVisualLineData, GetCursorVisualPosition depend on
-    // Console.WindowWidth which varies by environment. Only structural
-    // invariants that hold regardless of terminal width are tested here.
+    // ── Pure line geometry functions (now testable without Console) ───
+    // GetInputLines, GetVisualLineData, GetCursorVisualPosition no longer
+    // depend on Console.WindowWidth — full deterministic tests below.
 
     [Fact]
     public void GetInputLines_Empty_ReturnsSingleEmptyLine()
@@ -185,5 +184,139 @@ public class ConsoleRendererTests
         var (line, col) = ConsoleRenderer.GetCursorVisualPosition("hello", 100, margin: 80);
         Assert.True(line >= 0);
         Assert.True(col >= 0);
+    }
+
+    // ── Deterministic line geometry tests ─────────────────────────────
+    // These pass a known width directly. With margin=20, prefixMargin=2,
+    // rightMargin=4, totalMargin=6, cap=20-6=14 per line.
+
+    [Fact]
+    public void GetInputLines_ShortText_ReturnsSingleLine()
+    {
+        var result = ConsoleRenderer.GetInputLines("hello", margin: 20);
+        Assert.Single(result);
+        Assert.Equal("hello", result[0]);
+    }
+
+    [Fact]
+    public void GetInputLines_MultiWord_SingleLine()
+    {
+        // "hello world" = 11 chars, cap=14 → fits on one line
+        var result = ConsoleRenderer.GetInputLines("hello world", margin: 20);
+        Assert.Single(result);
+        Assert.Equal("hello world", result[0]);
+    }
+
+    [Fact]
+    public void GetInputLines_Newlines_CreateMultipleSegments()
+    {
+        var result = ConsoleRenderer.GetInputLines("hello\nworld", margin: 20);
+        Assert.Equal(2, result.Count);
+        Assert.Equal("hello", result[0]);
+        Assert.Equal("world", result[1]);
+    }
+
+    [Fact]
+    public void GetInputLines_WrappingAtCap()
+    {
+        // "hello world" = 11 chars, margin=10 → width=10, cap=4 → 3 visual lines
+        var result = ConsoleRenderer.GetInputLines("hello world", margin: 10);
+        Assert.Equal(3, result.Count);
+        Assert.Equal("hell", result[0]);
+        Assert.Equal("o wo", result[1]);
+        Assert.Equal("rld", result[2]);
+    }
+
+    [Fact]
+    public void GetVisualLineData_ReturnsCorrectOffsets()
+    {
+        // "hello world" at margin=10 → ["hell"],["o wo"],["rld"]
+        // offsets: 0, 4, 8
+        var (lines, offsets) = ConsoleRenderer.GetVisualLineData("hello world", margin: 10);
+        Assert.Equal(3, lines.Count);
+        Assert.Equal(3, offsets.Count);
+        Assert.Equal(0, offsets[0]);
+        Assert.Equal(4, offsets[1]);
+        Assert.Equal(8, offsets[2]);
+    }
+
+    [Fact]
+    public void GetVisualLineData_MultiLine_OffsetsAcrossSegments()
+    {
+        // "ab\ncde" = two newline segments
+        // Segment 0: "ab" at width=10, cap=4 → ["ab"]
+        // Segment 1: "cde" at width=10, cap=4 → ["cde"]
+        // Offsets: 0,  2+1(\n)=3
+        var (lines, offsets) = ConsoleRenderer.GetVisualLineData("ab\ncde", margin: 10);
+        Assert.Equal(2, lines.Count);
+        Assert.Equal(0, offsets[0]);
+        Assert.Equal(3, offsets[1]); // 2 + 1 for \n
+    }
+
+    [Fact]
+    public void GetCursorVisualPosition_AtStart_ReturnsFirstLineColumnZero()
+    {
+        var (line, col) = ConsoleRenderer.GetCursorVisualPosition("hello world", 0, margin: 80);
+        Assert.Equal(0, line);
+        Assert.Equal(0, col);
+    }
+
+    [Fact]
+    public void GetCursorVisualPosition_InMiddle_ReturnsCorrectLineAndColumn()
+    {
+        // "hello world" at margin=10, 3 lines: ["hell"],["o wo"],["rld"]
+        // offsets: 0, 4, 8
+        // Cursor 5 → line 1, col 5-4=1
+        var (line, col) = ConsoleRenderer.GetCursorVisualPosition("hello world", 5, margin: 10);
+        Assert.Equal(1, line);
+        Assert.Equal(1, col);
+    }
+
+    [Fact]
+    public void GetCursorVisualPosition_AtLineStart_ReturnsFirstColumn()
+    {
+        // "hello world" at margin=10 → offset[1]=4
+        // Cursor 4 → start of visual line 1, col 0
+        var (line, col) = ConsoleRenderer.GetCursorVisualPosition("hello world", 4, margin: 10);
+        Assert.Equal(1, line);
+        Assert.Equal(0, col);
+    }
+
+    [Fact]
+    public void GetCursorVisualPosition_MultiLineAtSecondLine_ReturnsCorrectLine()
+    {
+        // "ab\ncde" → lines: ["ab"],["cde"]
+        // Cursor 4 = 'd' → on second visual line
+        var (line, col) = ConsoleRenderer.GetCursorVisualPosition("ab\ncde", 4, margin: 10);
+        Assert.Equal(1, line);
+    }
+
+    [Fact]
+    public void GetCursorVisualPosition_PastEnd_ReturnsLastLineLastColumn()
+    {
+        var (line, col) = ConsoleRenderer.GetCursorVisualPosition("hello", 100, margin: 80);
+        Assert.Equal(0, line);
+        Assert.Equal(5, col);
+    }
+
+    // ── Newline wrapping ─────────────────────────────────────────────
+
+    [Fact]
+    public void GetInputLines_MultipleNewlines_ProportionalLines()
+    {
+        var result = ConsoleRenderer.GetInputLines("a\nb\nc\nd", margin: 80);
+        Assert.Equal(4, result.Count);
+        Assert.Equal("a", result[0]);
+        Assert.Equal("b", result[1]);
+        Assert.Equal("c", result[2]);
+        Assert.Equal("d", result[3]);
+    }
+
+    [Fact]
+    public void GetInputLines_LongLineWithNewlines_HasExpectedLines()
+    {
+        var result = ConsoleRenderer.GetInputLines("hello world\nfoobar", margin: 10);
+        Assert.True(result.Count >= 4);
+        Assert.Equal("hell", result[0]);
     }
 }

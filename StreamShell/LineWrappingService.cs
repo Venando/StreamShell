@@ -76,7 +76,7 @@ public static class LineWrappingService
     public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin,
         int prefixMargin = 2, int rightMargin = 4)
     {
-        int width = Math.Max(1, Math.Min(margin, Console.WindowWidth));
+        int width = Math.Max(1, margin);
         var lines = new List<string>();
         var offsets = new List<int>();
 

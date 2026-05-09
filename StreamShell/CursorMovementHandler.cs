@@ -258,8 +258,7 @@ internal class CursorMovementHandler
 
     private int GetEffectiveWidth()
     {
-        int effectiveMargin = Math.Max(10, _getRightMargin());
-        return Math.Max(1, Math.Min(effectiveMargin, Console.WindowWidth));
+        return Math.Max(10, _getRightMargin());
     }
 
     private (int visLine, int visCol) GetVisualPosition(string input, List<string> visualLines, List<int> offsets)
