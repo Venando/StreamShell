@@ -101,7 +101,11 @@ internal class UserInputHandler : IInputHandler
             bool shift = key.Modifiers.HasFlag(ConsoleModifiers.Shift);
             bool alt = key.Modifiers.HasFlag(ConsoleModifiers.Alt);
 
-            if (HandleEnter(key, ctrl, shift, alt, ref submitted))
+            EnterHandleResult enterHandle = HandleEnter(key, ctrl, shift, alt, ref submitted);
+
+            if (enterHandle == EnterHandleResult.Continue) 
+                continue;
+            if (enterHandle == EnterHandleResult.Break)
                 break;
             if (HandleControlKey(key, ctrl, shift))
                 continue;
@@ -130,30 +134,37 @@ internal class UserInputHandler : IInputHandler
     // ══════════════════════════════════════════════════════════════════
 
     /// <summary>Handles Enter. Returns true if the outer while should continue or break.</summary>
-    private bool HandleEnter(ConsoleKeyInfo key, bool ctrl, bool shift, bool alt, ref string? submitted)
+    private EnterHandleResult HandleEnter(ConsoleKeyInfo key, bool ctrl, bool shift, bool alt, ref string? submitted)
     {
         if (key.Key != ConsoleKey.Enter)
-            return false;
+            return EnterHandleResult.None;
 
         if (!shift && !ctrl && !alt)
         {
             while (_terminal.KeyAvailable)
             {
                 _tempInput.Append('\n');
-                return false; // keep processing buffered keys
+                return EnterHandleResult.Continue; // keep processing buffered keys
             }
 
             if (_tempInput.Length == 0 && _buffer.Length > 0)
             {
                 submitted = _buffer.CurrentInput;
                 ResetState();
-                return true; // break outer while
+                return EnterHandleResult.Break; // break outer while
             }
         }
 
         // Shift+Enter / Ctrl+Enter / Alt+Enter → literal newline
         _tempInput.Append('\n');
-        return true;
+        return EnterHandleResult.Break;
+    }
+
+    private enum EnterHandleResult
+    {
+        None,
+        Continue,
+        Break
     }
 
     // ══════════════════════════════════════════════════════════════════
