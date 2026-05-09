@@ -168,13 +168,15 @@ internal class ClipboardHandler
     /// <returns>True if at least one placeholder was preemptively removed.</returns>
     public bool RemovePlaceholderAffectedBy(int affectedStart, int affectedLength)
     {
-        bool anyRemoved = false;
+        // Phase 1: compute all overlaps on the ORIGINAL buffer content
+        string originalInput = _buffer.CurrentInput;
+        var toRemove = new List<(int index, int length)>();
 
         foreach (var attachment in Attachments.ToList())
         {
             string placeholder = attachment.Placeholder;
             if (string.IsNullOrEmpty(placeholder)) continue;
-            int placeholderIndex = _buffer.CurrentInput.IndexOf(placeholder, StringComparison.Ordinal);
+            int placeholderIndex = originalInput.IndexOf(placeholder, StringComparison.Ordinal);
             if (placeholderIndex == -1) continue;
 
             int placeholderEnd = placeholderIndex + placeholder.Length;
@@ -182,13 +184,18 @@ internal class ClipboardHandler
 
             if (affectedStart < placeholderEnd && affectedEnd > placeholderIndex)
             {
-                _buffer.Remove(placeholderIndex, placeholder.Length);
+                toRemove.Add((placeholderIndex, placeholder.Length));
                 Attachments.Remove(attachment);
-                anyRemoved = true;
             }
         }
 
-        return anyRemoved;
+        // Phase 2: remove right-to-left so indices stay valid
+        toRemove.Sort((a, b) => b.index.CompareTo(a.index));
+
+        foreach (var (index, length) in toRemove)
+            _buffer.Remove(index, length);
+
+        return toRemove.Count > 0;
     }
 
     /// <summary>Resets the attachment counter (called on each submit).</summary>
