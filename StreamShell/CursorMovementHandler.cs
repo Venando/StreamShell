@@ -11,17 +11,38 @@ internal class CursorMovementHandler
     private readonly TextBuffer _buffer;
     private readonly SelectionManager _selection;
     private readonly Func<int> _getRightMargin;
+    private readonly Func<IReadOnlyList<Attachment>> _getAttachments;
     private int _stickyColumn = -1;
 
-    public CursorMovementHandler(TextBuffer buffer, SelectionManager selection, Func<int> getRightMargin)
+    public CursorMovementHandler(
+        TextBuffer buffer,
+        SelectionManager selection,
+        Func<int> getRightMargin,
+        Func<IReadOnlyList<Attachment>>? getAttachments = null)
     {
         _buffer = buffer;
         _selection = selection;
         _getRightMargin = getRightMargin;
+        _getAttachments = getAttachments ?? (() => Array.Empty<Attachment>());
     }
 
     /// <summary>Resets sticky column tracking (e.g. when the user presses left/right or home/end).</summary>
     public void ResetStickyColumn() => _stickyColumn = -1;
+
+    /// <summary>Returns the (start, end) range of each attachment's placeholder in the buffer.</summary>
+    private List<(int start, int end)> GetPlaceholderRanges()
+    {
+        var ranges = new List<(int start, int end)>();
+        string currentInput = _buffer.CurrentInput;
+        foreach (var attachment in _getAttachments())
+        {
+            string placeholder = ClipboardHandler.GeneratePlaceholder(attachment);
+            int start = currentInput.IndexOf(placeholder, StringComparison.Ordinal);
+            if (start >= 0)
+                ranges.Add((start, start + placeholder.Length));
+        }
+        return ranges;
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  Character-level movement
@@ -29,14 +50,27 @@ internal class CursorMovementHandler
 
     public void MoveCursorLeft(bool shift)
     {
-        if (_buffer.CursorPosition <= 0)
+        int cursor = _buffer.CursorPosition;
+        if (cursor <= 0)
         {
-            _selection.ForMovement(shift, _buffer.CursorPosition);
+            _selection.ForMovement(shift, cursor);
             return;
         }
 
-        _selection.ForMovement(shift, _buffer.CursorPosition);
-        _buffer.MoveTo(_buffer.CursorPosition - 1);
+        int target = cursor - 1;
+
+        // Skip over placeholder if cursor is right after or inside it
+        foreach (var (start, end) in GetPlaceholderRanges())
+        {
+            if (cursor > start && cursor <= end)
+            {
+                target = start;
+                break;
+            }
+        }
+
+        _selection.ForMovement(shift, cursor);
+        _buffer.MoveTo(target);
 
         // When selecting with Shift, skip newline characters so the
         // first selected character is visible content, not a structural line break.
@@ -49,14 +83,27 @@ internal class CursorMovementHandler
 
     public void MoveCursorRight(bool shift)
     {
-        if (_buffer.CursorPosition >= _buffer.Length)
+        int cursor = _buffer.CursorPosition;
+        if (cursor >= _buffer.Length)
         {
             if (!shift) _selection.Clear();
             return;
         }
 
-        int originalPos = _buffer.CursorPosition;
-        _buffer.MoveTo(_buffer.CursorPosition + 1);
+        int target = cursor + 1;
+
+        // Skip over placeholder if cursor is at or inside it
+        foreach (var (start, end) in GetPlaceholderRanges())
+        {
+            if (cursor >= start && cursor < end)
+            {
+                target = end;
+                break;
+            }
+        }
+
+        int originalPos = cursor;
+        _buffer.MoveTo(target);
 
         // When selecting with Shift, skip newline characters so the
         // first selected character is visible content, not a structural line break.

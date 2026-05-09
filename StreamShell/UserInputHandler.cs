@@ -34,7 +34,7 @@ internal class UserInputHandler : IInputHandler
             () => LargePasteLineThreshold);
 
         _cursorMovement = new CursorMovementHandler(
-            _buffer, _selection, () => RightMargin);
+            _buffer, _selection, () => RightMargin, () => Attachments);
 
         LargePasteThreshold = 300;
         LargePasteLineThreshold = 4;
