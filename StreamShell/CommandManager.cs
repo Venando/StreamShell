@@ -32,13 +32,23 @@ internal class CommandManager
         if (input.Length <= 1 || input[0] != '/')
             return false;
 
-        string query = input[1..];
-        var parts = CommandParser.Split(query);
-        if (parts.Count == 0)
+        // Use spans to avoid substring allocations on every command lookup.
+        ReadOnlySpan<char> querySpan = input.AsSpan(1);
+
+        // Split the query into words using span-based iteration.
+        // Only extract the first word (command name) and reconstruct args from the span.
+        ReadOnlySpan<char> trimmed = querySpan.TrimStart();
+        if (trimmed.IsEmpty)
             return false;
 
-        name = parts[0];
-        args = query.Length > name.Length ? query[(name.Length + 1)..] : string.Empty;
+        int wordEnd = trimmed.IndexOf(' ');
+        ReadOnlySpan<char> firstWord = wordEnd < 0 ? trimmed : trimmed[..wordEnd];
+
+        if (firstWord.IsEmpty)
+            return false;
+
+        name = firstWord.ToString();
+        args = wordEnd >= 0 ? trimmed[(wordEnd + 1)..].ToString() : string.Empty;
         return true;
     }
 
