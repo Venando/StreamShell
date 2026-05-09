@@ -68,6 +68,10 @@ internal class UserInputHandler : IInputHandler
     /// and returns the completed input, or null/empty if no completion is possible.</summary>
     public Func<string, string?>? AutoCompleteProvider { get; set; }
 
+    /// <summary>Optional callback for hint navigation (\u2191\u2193 selection in palette).
+    /// Returns true if the key was handled by the palette.</summary>
+    public Func<ConsoleKey, bool>? HintNavigationProvider { get; set; }
+
     // ══════════════════════════════════════════════════════════════════
     //  Main Processing Loop
     // ══════════════════════════════════════════════════════════════════
@@ -205,9 +209,13 @@ internal class UserInputHandler : IInputHandler
         switch (key.Key)
         {
             case ConsoleKey.UpArrow:
+                if (!shift && HintNavigationProvider?.Invoke(ConsoleKey.UpArrow) == true)
+                    return true;
                 _cursorMovement.MoveCursorUp(shift);
                 return true;
             case ConsoleKey.DownArrow:
+                if (!shift && HintNavigationProvider?.Invoke(ConsoleKey.DownArrow) == true)
+                    return true;
                 _cursorMovement.MoveCursorDown(shift);
                 return true;
             case ConsoleKey.LeftArrow:

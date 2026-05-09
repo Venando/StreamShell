@@ -4,7 +4,9 @@ namespace StreamShell;
 
 internal class CommandPalette
 {
-    public const int MaxHeight = 6;
+    public const int MaxHeight = 5;
+    public const int StatusLineIndex = 0;
+    public const int HintsStartIndex = 1;
 
     public static bool IsActive(string currentInput) => currentInput.StartsWith('/');
 
@@ -20,7 +22,59 @@ internal class CommandPalette
 
     private readonly Func<IEnumerable<Command>> _commandProvider;
     private string? _lastInput;
-    private IReadOnlyList<string>? _lastHints;
+    private List<string>? _hintsCache;          // Raw hints without selection markers
+    private string[]? _currentSuggestions;      // Suggestion strings for each hint position
+    private int _selectedIndex = -1;
+    private int _selectionVersion;
+
+    /// <summary>Version counter bumped on selection changes. Used by render diff.</summary>
+    public int SelectionVersion => _selectionVersion;
+
+    /// <summary>Moves selection up (true) or down (false). Returns true if changed.</summary>
+    public bool MoveSelection(bool up)
+    {
+        if (_hintsCache == null || _currentSuggestions == null || _currentSuggestions.Length == 0)
+            return false;
+
+        int maxIndex = Math.Min(_currentSuggestions.Length, MaxHeight - HintsStartIndex) - 1;
+        if (maxIndex < 0) return false;
+
+        int newIndex;
+        if (up)
+            newIndex = _selectedIndex <= 0 ? -1 : _selectedIndex - 1;
+        else
+            newIndex = _selectedIndex >= maxIndex ? -1 : _selectedIndex + 1;
+
+        if (newIndex == _selectedIndex) return false;
+        _selectedIndex = newIndex;
+        _selectionVersion++;
+        return true;
+    }
+
+    /// <summary>Applies " >" selection marker to the selected hint line.</summary>
+    private IReadOnlyList<string> ApplySelection(List<string> raw)
+    {
+        var result = new List<string>(raw.Count);
+        for (int i = 0; i < raw.Count; i++)
+        {
+            if (i == StatusLineIndex)
+            {
+                result.Add(raw[i]);
+            }
+            else if (i - HintsStartIndex == _selectedIndex
+                     && !string.IsNullOrEmpty(raw[i])
+                     && raw[i].Length >= 2
+                     && raw[i][..2] == "  ")
+            {
+                result.Add(" >" + raw[i][2..]);
+            }
+            else
+            {
+                result.Add(raw[i]);
+            }
+        }
+        return result;
+    }
 
     /// <summary>Creates a palette that reads from a live command provider.</summary>
     public CommandPalette(Func<IEnumerable<Command>> commandProvider)
@@ -37,13 +91,18 @@ internal class CommandPalette
 
     public IReadOnlyList<string> GetHints(string currentInput)
     {
-        if (_lastInput == currentInput && _lastHints != null)
-            return _lastHints;
+        if (_lastInput == currentInput && _hintsCache != null)
+            return ApplySelection(_hintsCache);
+
+        // Reset selection on any input change
+        _selectedIndex = -1;
+        _selectionVersion++;
 
         if (!IsActive(currentInput))
         {
             _lastInput = currentInput;
-            _lastHints = _cachedEmptyHints;
+            _hintsCache = null;
+            _currentSuggestions = null;
             return _cachedEmptyHints;
         }
 
@@ -53,13 +112,17 @@ internal class CommandPalette
         if (matching.Count == 0)
         {
             _lastInput = currentInput;
-            _lastHints = _cachedEmptyHints;
+            _hintsCache = null;
+            _currentSuggestions = null;
             return _cachedEmptyHints;
         }
 
-        List<string> hints = new(MaxHeight);
+        // Build raw hints — index 0 = status line, 1..4 = actual hints
+        List<string> raw = new(MaxHeight);
+        raw.Add("[dim]Tab: autocomplete  \u2191\u2193: select[/]");
 
         int spaceIndex = query.IndexOf(' ');
+        int hintSlots = MaxHeight - HintsStartIndex; // 4
 
         if (matching.Count == 1
             && matching[0].ArgumentSuggestions is { Length: > 0 } suggestions
@@ -67,42 +130,64 @@ internal class CommandPalette
         {
             // Exactly one command with argument suggestions → show argument completions
             string argsPart = query[(spaceIndex + 1)..];
-            AddArgumentHints(hints, matching[0], argsPart, suggestions);
+            var info = GetArgMatchInfo(argsPart, suggestions);
+
+            // Build suggestions for selection
+            if (info.Matches.Length > 0)
+            {
+                string fullPrefix = "/" + matching[0].Name + " ";
+                _currentSuggestions = info.Matches
+                    .Take(hintSlots)
+                    .Select(m => fullPrefix + m + " ")
+                    .ToArray();
+            }
+            else
+            {
+                _currentSuggestions = null;
+            }
+
+            AddArgumentHints(raw, matching[0], argsPart, suggestions);
         }
         else
         {
-            // Show command hints (existing behavior)
-            var showMatching = matching.Take(MaxHeight).ToList();
-            int maxSize = showMatching.MaxBy(val => val.Name.Length)?.Name.Length ?? 12;
+            // Show command hints
+            var showHints = matching.Take(hintSlots).ToList();
+            _currentSuggestions = showHints
+                .Select(cmd => "/" + cmd.Name + " ")
+                .ToArray();
 
-            foreach (var cmd in showMatching)
+            int maxSize = showHints.MaxBy(val => val.Name.Length)?.Name.Length ?? 12;
+            foreach (var cmd in showHints)
             {
-                hints.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
-                if (hints.Count >= MaxHeight) break;
+                raw.Add($"  [grey]/{cmd.Name.PadRight(maxSize)}[/] {cmd.Description}");
             }
         }
 
-        int emptyCount = MaxHeight - hints.Count;
-        if (emptyCount > 0)
-        {
-            for (int i = 0; i < emptyCount; i++)
-                hints.Add(string.Empty);
-        }
+        // Pad to MaxHeight
+        while (raw.Count < MaxHeight)
+            raw.Add(string.Empty);
 
         _lastInput = currentInput;
-        _lastHints = hints;
-        return hints;
+        _hintsCache = raw;
+        return ApplySelection(raw);
     }
 
     /// <summary>
     /// Returns the best autocomplete suggestion for the given input, or null if no
     /// completion is possible. Used by the Tab key autocomplete in UserInputHandler.
-    /// Always completes to the first alphabetically-sorted matching entry.
+    /// If a hint is selected via arrow keys, completes to that specific hint.
     /// </summary>
     public string? GetTopSuggestion(string currentInput)
     {
         if (!IsActive(currentInput))
             return null;
+
+        // If a hint is selected, complete to the selected suggestion
+        if (_selectedIndex >= 0 && _currentSuggestions != null
+            && _selectedIndex < _currentSuggestions.Length)
+        {
+            return _currentSuggestions[_selectedIndex];
+        }
 
         string query = currentInput.Length > 1 ? currentInput[1..] : string.Empty;
         List<Command> matching = GetMatchingCommands(query);
@@ -129,13 +214,11 @@ internal class CommandPalette
 
         if (nameExact && spaceIndex < 0)
         {
-            // Name matches exactly but no space yet → complete with space
             return "/" + command.Name + " ";
         }
 
         if (namePartial)
         {
-            // Partial match on command name → complete name + space
             return "/" + command.Name + " ";
         }
 
@@ -160,7 +243,8 @@ internal class CommandPalette
         return null;
     }
 
-    /// <summary>Returns all commands matching the given query (command prefix).</summary>
+    /// <summary>Returns all commands matching the given query (command prefix).
+    /// Limit: MaxHeight entries (hint slots, not counting status line).</summary>
     private List<Command> GetMatchingCommands(string query)
     {
         var currentCommands = _commandProvider();
@@ -170,17 +254,21 @@ internal class CommandPalette
         if (cmdPrefix.Length == 0)
             return currentCommands.ToList();
 
-        List<Command> matching = new(MaxHeight);
+        // Match up to hintSlotCount + 1 so we can detect overflow
+        int limit = MaxHeight - HintsStartIndex + 1;
+        List<Command> matching = new(limit);
         foreach (var cmd in currentCommands)
         {
             if (cmd.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 matching.Add(cmd);
-                if (matching.Count > MaxHeight) break;
+                if (matching.Count > limit) break;
             }
         }
         return matching;
     }
+
+
 
     /// <summary>Result of matching argument suggestions against typed args.</summary>
     private sealed record ArgMatchInfo(
@@ -251,8 +339,6 @@ internal class CommandPalette
         if (atWordBoundary)
         {
             // At word boundary → show unique next words
-            // Include argsPart context (e.g. "linux ") so hints show
-            // "/demo linux ubuntu" not just "/demo  ubuntu"
             string contextPrefix = argsPart.Length > 0 ? cmdPath + argsPart : cmdPath;
             var seenWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var match in info.Matches)
