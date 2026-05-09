@@ -249,7 +249,7 @@ internal class ConsoleRenderer : IRenderer
 
             // After selection (not at position 0, no command slash)
             if (selEndInLine < lineText.Length)
-                sb.Append(Markup.Escape(lineText[selEndInLine..]));
+                sb.Append(EscapeWithPlaceholderStyling(lineText[selEndInLine..]));
         }
         else
         {
@@ -264,6 +264,7 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>
     /// Appends escaped text, wrapping a leading '/' in command markup if this
     /// is the first visual line and the character is at position 0.
+    /// Placeholder patterns (<c>[paste ...]</c>) are rendered as underlined markup.
     /// </summary>
     private static void AppendEscapedChunk(System.Text.StringBuilder sb,
         string text, bool isCommandSlash, string cmdSlashMarkup)
@@ -272,12 +273,55 @@ internal class ConsoleRenderer : IRenderer
         {
             sb.Append("[").Append(cmdSlashMarkup).Append("]/[/]");
             if (text.Length > 1)
-                sb.Append(Markup.Escape(text[1..]));
+                sb.Append(EscapeWithPlaceholderStyling(text[1..]));
         }
         else
         {
-            sb.Append(Markup.Escape(text));
+            sb.Append(EscapeWithPlaceholderStyling(text));
         }
+    }
+
+    /// <summary>
+    /// Escapes text for Spectre markup, but renders known placeholder patterns
+    /// (<c>[paste N lines: name...]</c>) with underline styling instead of
+    /// escaping them as plain text.
+    /// </summary>
+    private static string EscapeWithPlaceholderStyling(string text)
+    {
+        int idx = text.IndexOf("[paste ", StringComparison.Ordinal);
+        if (idx < 0)
+            return Markup.Escape(text);
+
+        var sb = new System.Text.StringBuilder();
+        int searchFrom = 0;
+
+        while (idx >= 0)
+        {
+            // Escape text before the placeholder
+            if (idx > searchFrom)
+                sb.Append(Markup.Escape(text[searchFrom..idx]));
+
+            // Find the closing bracket
+            int bracketEnd = text.IndexOf(']', idx + 7);
+            if (bracketEnd < 0)
+            {
+                // Incomplete placeholder — escape normally
+                sb.Append(Markup.Escape(text[idx..]));
+                searchFrom = text.Length;
+                break;
+            }
+
+            // Render placeholder as underlined (escape brackets for Spectre)
+            string content = text[(idx + 1)..bracketEnd];
+            string escaped = content.Replace("[", "\\[").Replace("]", "\\]");
+            sb.Append("[underline]").Append(escaped).Append("[/]");
+            searchFrom = bracketEnd + 1;
+        }
+
+        if (searchFrom < text.Length)
+            sb.Append(Markup.Escape(text[searchFrom..]));
+
+        return sb.ToString();
     }
 
     /// <summary>
@@ -320,7 +364,7 @@ internal class ConsoleRenderer : IRenderer
               .Append(escapedChar).Append("[/]");
 
             if (localCol + 1 < rawText.Length)
-                sb.Append(Markup.Escape(rawText[(localCol + 1)..]));
+                sb.Append(EscapeWithPlaceholderStyling(rawText[(localCol + 1)..]));
         }
         else
         {
