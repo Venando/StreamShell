@@ -64,13 +64,13 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>Total vertical space taken by the input block with a given panel line count.</summary>
     private int GetBlockOffset(string input, int panelLineCount)
     {
-        return (1 + panelLineCount) + LineWrappingService.GetInputLines(
-            input, _terminal.WindowWidth, 2, 4).Count;
+        return (1 + panelLineCount) + LineWrappingService.GetInputLineCount(
+            input, _terminal.WindowWidth, 2, 4);
     }
 
     /// <summary>Number of visual lines the input occupies.</summary>
-    public int GetInputLineCount(string input) => LineWrappingService.GetInputLines(
-        input, RightMargin, _settings.PrefixMargin, _settings.WrappingRightMargin).Count;
+    public int GetInputLineCount(string input) => LineWrappingService.GetInputLineCount(
+        input, RightMargin, _settings.PrefixMargin, _settings.WrappingRightMargin);
 
     // ── Message History ──────────────────────────────────────────────
     private readonly List<string> _messageHistory = new();

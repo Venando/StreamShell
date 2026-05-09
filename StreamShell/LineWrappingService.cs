@@ -23,8 +23,12 @@ public static class LineWrappingService
         int prefixMargin = 2,
         int rightMargin = 4)
     {
-        var lines = new List<string>();
         int totalMargin = prefixMargin + rightMargin;
+
+        // Estimate capacity: at most ceil(segment.Length / (width - totalMargin)) + 1
+        int cap = Math.Max(1, Math.Min(segment.Length, width - totalMargin));
+        int estimatedLines = segment.Length == 0 ? 1 : (segment.Length + cap - 1) / cap;
+        var lines = new List<string>(estimatedLines);
 
         // Short single segment that fits on one line
         if (isFirstSegment && isLastSegment && segment.Length + totalMargin < width)
@@ -40,8 +44,8 @@ public static class LineWrappingService
         {
             // First visual line has "> " prefix (2 chars), continuation gets "  " (2 chars)
             // Both use cap = width - 4 for consistent right margin
-            int cap = Math.Max(isFirstSegment && isFirstVisualLine && lines.Count == 0 ? 0 : 1, width - totalMargin);
-            int take = Math.Min(remaining, cap);
+            int takeCap = Math.Max(isFirstSegment && isFirstVisualLine && lines.Count == 0 ? 0 : 1, width - totalMargin);
+            int take = Math.Min(remaining, takeCap);
             lines.Add(segment.Slice(pos, take).ToString());
             pos += take;
             remaining -= take;
@@ -50,16 +54,70 @@ public static class LineWrappingService
         // Empty segment produces an empty visual line so the cursor
         // after a newline has somewhere to render (e.g. Shift+Enter).
         if (segment.Length == 0)
-            lines.Add("");
+            lines.Add(string.Empty);
 
         return lines;
     }
 
-    /// <summary>Number of visual lines the input occupies at the given margin.</summary>
+    /// <summary>
+    /// Counts visual lines the input occupies without allocating any strings or lists.
+    /// Called on every render tick — must be allocation-free.
+    /// </summary>
     public static int GetInputLineCount(string input, int margin,
         int prefixMargin = 2, int rightMargin = 4)
     {
-        return GetInputLines(input, margin, prefixMargin, rightMargin).Count;
+        if (string.IsNullOrEmpty(input))
+            return 1;
+
+        int width = Math.Max(1, margin);
+        int totalMargin = prefixMargin + rightMargin;
+
+        ReadOnlySpan<char> span = input.AsSpan();
+        int count = 0;
+        bool anyLinesProduced = false;
+        int segStart = 0;
+        int segIdx = 0;
+
+        while (segStart <= span.Length)
+        {
+            int nlPos = segStart < span.Length ? span[segStart..].IndexOf('\n') : -1;
+            int segEnd = nlPos >= 0 ? segStart + nlPos : span.Length;
+            ReadOnlySpan<char> segment = span[segStart..segEnd];
+            bool isFirstSegment = segIdx == 0;
+
+            // Count wrapped lines for this segment (mirrors WrapSegment logic)
+            if (isFirstSegment && segEnd == span.Length && segment.Length + totalMargin < width)
+            {
+                count++;
+            }
+            else
+            {
+                int remaining = segment.Length;
+                int lineIdx = 0;
+                while (remaining > 0)
+                {
+                    int cap = Math.Max(isFirstSegment && !anyLinesProduced && lineIdx == 0 ? 0 : 1,
+                        width - totalMargin);
+                    int take = Math.Min(remaining, cap);
+                    remaining -= take;
+                    count++;
+                    lineIdx++;
+                }
+                if (segment.Length == 0)
+                    count++;
+            }
+
+            if (count > 0)
+                anyLinesProduced = true;
+
+            segStart = segEnd + 1;
+            segIdx++;
+
+            if (segEnd >= span.Length)
+                break;
+        }
+
+        return count > 0 ? count : 1;
     }
 
     /// <summary>Returns the wrapped visual lines for an input string at the given margin.</summary>
@@ -78,9 +136,18 @@ public static class LineWrappingService
     public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin,
         int prefixMargin = 2, int rightMargin = 4)
     {
+        if (input is null)
+        {
+            var emptyLines = new List<string> { "" };
+            var emptyOffsets = new List<int> { 0 };
+            return (emptyLines, emptyOffsets);
+        }
+
         int width = Math.Max(1, margin);
-        var lines = new List<string>();
-        var offsets = new List<int>();
+        // Estimate: roughly input.Length / (width - margin) newlines + some for hard breaks
+        int estimatedLines = Math.Max(1, input.Length / Math.Max(1, width - prefixMargin - rightMargin - 4) + 4);
+        var lines = new List<string>(estimatedLines);
+        var offsets = new List<int>(estimatedLines);
 
         if (string.IsNullOrEmpty(input))
         {

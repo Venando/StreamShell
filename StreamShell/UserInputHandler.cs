@@ -447,10 +447,13 @@ internal class UserInputHandler : IInputHandler
     public string SaveInputField()
     {
         string id = Interlocked.Increment(ref _saveCounter).ToString();
+        var attachments = new List<Attachment>(Attachments.Count);
+        foreach (var a in Attachments)
+            attachments.Add(a with { });
         var saved = new SavedInputState(
             _buffer.CurrentInput,
             _buffer.CursorPosition,
-            Attachments.Select(a => a with { }).ToList());
+            attachments);
         _savedInputs[id] = saved;
         return id;
     }
@@ -461,7 +464,9 @@ internal class UserInputHandler : IInputHandler
         if (!_savedInputs.TryGetValue(id, out var state))
             return false;
 
-        var attachments = state.Attachments.Select(a => a with { }).ToList();
+        var attachments = new List<Attachment>(state.Attachments.Count);
+        foreach (var a in state.Attachments)
+            attachments.Add(a with { });
 
         Reset();
         _buffer.SetContent(state.Text, state.CursorPosition);
@@ -492,5 +497,10 @@ internal class UserInputHandler : IInputHandler
 
     /// <summary>Returns the IDs of all currently saved input field states.</summary>
     public IReadOnlyList<string> GetSavedInputFieldIds()
-        => _savedInputs.Keys.ToList();
+    {
+        var keys = new List<string>(_savedInputs.Count);
+        foreach (var key in _savedInputs.Keys)
+            keys.Add(key);
+        return keys;
+    }
 }
