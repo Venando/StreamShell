@@ -251,6 +251,9 @@ internal class CommandPalette
         if (atWordBoundary)
         {
             // At word boundary → show unique next words
+            // Include argsPart context (e.g. "linux ") so hints show
+            // "/demo linux ubuntu" not just "/demo  ubuntu"
+            string contextPrefix = argsPart.Length > 0 ? cmdPath + argsPart : cmdPath;
             var seenWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var match in info.Matches)
             {
@@ -258,7 +261,7 @@ internal class CommandPalette
                 string nextWord = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
                 if (!string.IsNullOrEmpty(nextWord) && seenWords.Add(nextWord))
                 {
-                    hints.Add($"  [grey]{Markup.Escape(cmdPath)} {Markup.Escape(nextWord)}[/]");
+                    hints.Add($"  [grey]{Markup.Escape(contextPrefix)}{Markup.Escape(nextWord)}[/]");
                     if (hints.Count >= MaxHeight) break;
                 }
             }
