@@ -174,18 +174,62 @@ internal class CursorMovementHandler
 
     public void MoveCursorWordLeft(bool shift)
     {
-        _selection.ForMovement(shift, _buffer.CursorPosition);
+        int cursor = _buffer.CursorPosition;
+        _selection.ForMovement(shift, cursor);
 
-        if (_buffer.CursorPosition > 0)
-            _buffer.MoveTo(FindPreviousWordStart(_buffer.CurrentInput, _buffer.CursorPosition));
+        if (cursor > 0)
+        {
+            int target = FindPreviousWordStart(_buffer.CurrentInput, cursor);
+
+            // Skip over placeholder if cursor or target lands inside it
+            foreach (var (start, end) in GetPlaceholderRanges())
+            {
+                // Cursor is inside or right after placeholder → jump to start
+                if (cursor > start && cursor <= end)
+                {
+                    target = start;
+                    break;
+                }
+                // Target landed inside placeholder → jump to its start
+                if (target > start && target < end)
+                {
+                    target = start;
+                    break;
+                }
+            }
+
+            _buffer.MoveTo(target);
+        }
     }
 
     public void MoveCursorWordRight(bool shift)
     {
-        _selection.ForMovement(shift, _buffer.CursorPosition);
+        int cursor = _buffer.CursorPosition;
+        _selection.ForMovement(shift, cursor);
 
-        if (_buffer.CursorPosition < _buffer.Length)
-            _buffer.MoveTo(FindNextWordStart(_buffer.CurrentInput, _buffer.CursorPosition));
+        if (cursor < _buffer.Length)
+        {
+            int target = FindNextWordStart(_buffer.CurrentInput, cursor);
+
+            // Skip over placeholder if cursor or target lands inside it
+            foreach (var (start, end) in GetPlaceholderRanges())
+            {
+                // Cursor is at or inside placeholder → jump to end
+                if (cursor >= start && cursor < end)
+                {
+                    target = end;
+                    break;
+                }
+                // Target landed inside placeholder → jump past its end
+                if (target > start && target < end)
+                {
+                    target = end;
+                    break;
+                }
+            }
+
+            _buffer.MoveTo(target);
+        }
     }
 
     private static int FindPreviousWordStart(string input, int pos)
