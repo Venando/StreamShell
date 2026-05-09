@@ -130,10 +130,9 @@ internal class ClipboardHandler
 
         if (text.Length > _getLargePasteThreshold() || lineCount > _getLargePasteLineThreshold())
         {
-            string name = GenerateName(text);
-            Attachments.Add(new Attachment(text, AttachmentType.PlainText, lineCount));
-            string placeholder = $"[paste {lineCount} lines: {name}]";
-            _buffer.Insert(placeholder);
+            var attachment = new Attachment(text, AttachmentType.PlainText, lineCount);
+            Attachments.Add(attachment);
+            _buffer.Insert(GeneratePlaceholder(attachment));
         }
         else
         {
@@ -150,8 +149,14 @@ internal class ClipboardHandler
     /// <summary>Generates the placeholder text that will be inserted into the buffer for an attachment.</summary>
     internal static string GeneratePlaceholder(Attachment attachment)
     {
-        string name = GenerateName(attachment.Content);
-        return $"[paste {attachment.LineCount} lines: {name}]";
+        if (attachment.LineCount > 1)
+        {
+            return $"[paste {attachment.LineCount} lines]";
+        }
+        else
+        {
+            return $"[paste {1} line]";
+        }
     }
 
     /// <summary>
@@ -185,19 +190,5 @@ internal class ClipboardHandler
         }
 
         return anyRemoved;
-    }
-
-    private static string GenerateName(string content)
-    {
-        foreach (string line in content.Split('\n'))
-        {
-            string trimmed = line.TrimEnd();
-            if (trimmed.Length > 0)
-            {
-                string result = trimmed.Length > 15 ? trimmed[..15] : trimmed;
-                return result + "...";
-            }
-        }
-        return "...";
     }
 }

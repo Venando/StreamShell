@@ -312,9 +312,9 @@ internal class ConsoleRenderer : IRenderer
             }
 
             // Render placeholder as underlined (escape brackets for Spectre)
-            string content = text[(idx + 1)..bracketEnd];
-            string escaped = content.Replace("[", "\\[").Replace("]", "\\]");
-            sb.Append("[underline]").Append(escaped).Append("[/]");
+            string content = text[(idx)..(bracketEnd + 1)];
+            string escaped = content.Replace("[", "[[").Replace("]", "]]");
+            sb.Append("[italic underline]").Append(escaped).Append("[/]");
             searchFrom = bracketEnd + 1;
         }
 
