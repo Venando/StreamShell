@@ -132,6 +132,17 @@ public class ConsoleAppHost : IDisposable
     /// <summary>Queue a markup message to be displayed.</summary>
     public void AddMessage(string markup) => _messages.Enqueue(markup);
 
+    /// <summary>Sets the separator line rendered between the message feed and the input block.</summary>
+    public void SetSeparator(string? leftText = null, string? rightText = null, char repeatedCharacter = '-')
+    {
+        _renderer.Separator = new SeparatorConfig
+        {
+            LeftText = leftText,
+            RightText = rightText,
+            RepeatedChar = repeatedCharacter
+        };
+    }
+
     /// <summary>Register a command that can be triggered with /command-name.</summary>
     public void AddCommand(Command command) => _commands[command.Name] = command;
 

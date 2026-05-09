@@ -5,6 +5,8 @@ public interface IRenderer
 {
     /// <summary>Sets the number of lines the bottom panel renders. Used for block offset calculation.</summary>
     void SetPanelLineCount(int count);
+    /// <summary>Current separator configuration.</summary>
+    SeparatorConfig Separator { get; set; }
     /// <summary>Total vertical space taken by the input block (separator + input + hints).</summary>
     int GetBlockOffset(string input);
 

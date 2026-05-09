@@ -25,6 +25,13 @@ internal class ConsoleRenderer : IRenderer
     // Line count of the current bottom panel (set by host). Defaults to CommandPalette's size.
     private int _panelLineCount = CommandPalette.MaxHeight;
 
+    /// <summary>Current separator configuration.</summary>
+    public SeparatorConfig Separator { get; set; } = SeparatorConfig.Default;
+
+    /// <summary>Last printed separator line (for flicker-free re-render).</summary>
+    private string? _lastSeparatorLine;
+    private int _lastSeparatorWidth;
+
     /// <summary>Updates the panel line count used for block offset calculation.</summary>
     public void SetPanelLineCount(int count) => _panelLineCount = count;
 
@@ -300,7 +307,7 @@ internal class ConsoleRenderer : IRenderer
     }
 
     // ── Hints Block ───────────────────────────────────────────────────
-    private static void RenderHintsBlock(IReadOnlyList<string> hints)
+    private void RenderHintsBlock(IReadOnlyList<string> hints)
     {
         if (hints.Any(h => !string.IsNullOrEmpty(h)))
             RenderSeparatorLine();
@@ -381,9 +388,43 @@ internal class ConsoleRenderer : IRenderer
         return text;
     }
 
-    private static void RenderSeparatorLine()
+    /// <summary>Renders the separator line using the current config. Skips re-draw when unchanged to reduce flicker.</summary>
+    private void RenderSeparatorLine()
     {
-        Console.WriteLine(new string('─', Console.WindowWidth - 1));
+        int width = Console.WindowWidth - 1;
+        string line = BuildSeparatorLine(Separator, width);
+
+        if (line == _lastSeparatorLine && width == _lastSeparatorWidth)
+            return;
+
+        Console.WriteLine(line);
+        _lastSeparatorLine = line;
+        _lastSeparatorWidth = width;
+    }
+
+    /// <summary>Builds the separator string from the given config and available width.</summary>
+    private static string BuildSeparatorLine(SeparatorConfig config, int width)
+    {
+        string left = config.LeftText ?? string.Empty;
+        string right = config.RightText ?? string.Empty;
+        char fill = config.RepeatedChar;
+
+        // Measure display length (strip markup)
+        int leftLen = string.IsNullOrEmpty(left) ? 0 : Markup.Remove(left).Length;
+        int rightLen = string.IsNullOrEmpty(right) ? 0 : Markup.Remove(right).Length;
+
+        int fillCount = width - leftLen - rightLen;
+        if (fillCount < 0) fillCount = 0;
+
+        string fillStr = new string(fill, fillCount);
+
+        if (!string.IsNullOrEmpty(left) && !string.IsNullOrEmpty(right))
+            return left + fillStr + right;
+        if (!string.IsNullOrEmpty(left))
+            return left + fillStr;
+        if (!string.IsNullOrEmpty(right))
+            return fillStr + right;
+        return fillStr;
     }
 
     private static void ClearLine() => Console.Write("\x1b[K");
