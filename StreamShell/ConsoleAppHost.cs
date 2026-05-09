@@ -171,18 +171,18 @@ public class ConsoleAppHost : IDisposable
     }
 
     // ── Tracks render state between loop iterations ───────────────────
-    // ── Tracks render state between loop iterations ───────────────────
     private sealed record RenderSnapshot(
         string? LastInput,
         int LastCursor,
         bool LastHasSelection,
         int LastInputLineCount,
-        int LastWindowWidth
+        int LastWindowWidth,
+        int LastPanelLineCount
     );
 
     private async Task RunLoop(CancellationToken token)
     {
-        var state = new RenderSnapshot(null, 0, false, 0, Console.WindowWidth);
+        var state = new RenderSnapshot(null, 0, false, 0, Console.WindowWidth, _bottomPanel.LineCount);
 
         while (!token.IsCancellationRequested)
         {
@@ -196,7 +196,7 @@ public class ConsoleAppHost : IDisposable
             if (TryRender(state, input, cursor, hasSelection, selStart, selLength, margin, windowWidth))
             {
                 state = new RenderSnapshot(input, cursor, hasSelection,
-                    _renderer.GetInputLineCount(input), windowWidth);
+                    _renderer.GetInputLineCount(input), windowWidth, _bottomPanel.LineCount);
             }
 
             if (_inputHandler.QuitRequested)
@@ -209,7 +209,7 @@ public class ConsoleAppHost : IDisposable
             if (submittedInput != null)
             {
                 HandleSubmittedInput(submittedInput, windowWidth);
-                state = new RenderSnapshot(null, 0, false, 0, windowWidth);
+                state = new RenderSnapshot(null, 0, false, 0, windowWidth, _bottomPanel.LineCount);
             }
 
             await Task.Delay(10, token);
@@ -241,7 +241,7 @@ public class ConsoleAppHost : IDisposable
             return false;
 
         if (state.LastInput is not null)
-            _renderer.ClearInputBlockForReRender(state.LastInput, input);
+            _renderer.ClearInputBlockForReRender(state.LastInput, input, state.LastPanelLineCount);
         else
             _renderer.ClearInputLine();
 
@@ -283,7 +283,7 @@ public class ConsoleAppHost : IDisposable
         else
         {
             if (state.LastInput is not null)
-                _renderer.ClearInputBlockForReRender(state.LastInput, input);
+                _renderer.ClearInputBlockForReRender(state.LastInput, input, state.LastPanelLineCount);
             RenderFullInputBlock(input, cursor, hasSelection, selStart, selLength, margin);
         }
 

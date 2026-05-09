@@ -28,12 +28,19 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>Updates the panel line count used for block offset calculation.</summary>
     public void SetPanelLineCount(int count) => _panelLineCount = count;
 
-    /// <summary>Total vertical space taken by the input block.</summary>
+    /// <summary>Total vertical space taken by the input block using the current panel line count.</summary>
     public int GetBlockOffset(string input)
     {
         // 1 (separator) + BlankAfterInput + HintsSep + _panelLineCount = 1 + 1 + 1 + _panelLineCount = 3 + _panelLineCount
         // Plus input line count
         return (1 + _panelLineCount) + GetInputLineCount(input);
+    }
+
+    /// <summary>Total vertical space taken by the input block with a given panel line count.</summary>
+    private static int GetBlockOffset(string input, int panelLineCount)
+    {
+        return (1 + panelLineCount) + LineWrappingService.GetInputLines(
+            input, Console.WindowWidth, 2, 4).Count;
     }
 
     /// <summary>Number of visual lines the input occupies.</summary>
@@ -74,12 +81,12 @@ internal class ConsoleRenderer : IRenderer
 
     /// <summary>Clears enough lines to cover both old and new block heights,
     /// preventing stale content when the re-rendered block is taller.</summary>
-    public void ClearInputBlockForReRender(string? oldInput, string newInput)
+    public void ClearInputBlockForReRender(string? oldInput, string newInput, int oldPanelLineCount)
     {
         if (oldInput is null)
             return;
 
-        int oldOffset = GetBlockOffset(oldInput);
+        int oldOffset = GetBlockOffset(oldInput, oldPanelLineCount);
         int newOffset = GetBlockOffset(newInput);
         int clearOffset = Math.Max(oldOffset, newOffset);
         int bufferHeight = Console.BufferHeight;

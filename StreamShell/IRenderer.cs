@@ -17,8 +17,10 @@ public interface IRenderer
     /// <summary>Clear the entire input block for a given input state.</summary>
     void ClearInputBlock(string? lastInput);
 
-    /// <summary>Clear enough lines to cover both the old and new block heights.</summary>
-    void ClearInputBlockForReRender(string? oldInput, string newInput);
+    /// <summary>Clear enough lines to cover both the old and new block heights.
+    /// <paramref name="oldPanelLineCount"/> is the panel line count that was active
+    /// when <paramref name="oldInput"/> was rendered (may differ from current).</summary>
+    void ClearInputBlockForReRender(string? oldInput, string newInput, int oldPanelLineCount);
 
     /// <summary>Render a markup message line.</summary>
     void RenderMessage(string markup);
