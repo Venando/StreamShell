@@ -28,10 +28,6 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>Current separator configuration.</summary>
     public SeparatorConfig Separator { get; set; } = SeparatorConfig.Default;
 
-    /// <summary>Last printed separator line (for flicker-free re-render).</summary>
-    private string? _lastSeparatorLine;
-    private int _lastSeparatorWidth;
-
     /// <summary>Updates the panel line count used for block offset calculation.</summary>
     public void SetPanelLineCount(int count) => _panelLineCount = count;
 
@@ -388,18 +384,11 @@ internal class ConsoleRenderer : IRenderer
         return text;
     }
 
-    /// <summary>Renders the separator line using the current config. Skips re-draw when unchanged to reduce flicker.</summary>
+    /// <summary>Renders the separator line using the current config.</summary>
     private void RenderSeparatorLine()
     {
         int width = Console.WindowWidth - 1;
-        string line = BuildSeparatorLine(Separator, width);
-
-        if (line == _lastSeparatorLine && width == _lastSeparatorWidth)
-            return;
-
-        Console.WriteLine(line);
-        _lastSeparatorLine = line;
-        _lastSeparatorWidth = width;
+        Console.WriteLine(BuildSeparatorLine(Separator, width));
     }
 
     /// <summary>Builds the separator string from the given config and available width.</summary>
