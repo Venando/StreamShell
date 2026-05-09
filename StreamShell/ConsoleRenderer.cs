@@ -189,7 +189,8 @@ internal class ConsoleRenderer : IRenderer
             string lineMarkup = _markupBuilder.BuildLineMarkup(
                 input, 0, "",
                 cursorPosition, hasSelection, selectionStart, selectionLength);
-            AnsiConsole.Markup($"{_settings.InputPrefix}{lineMarkup}");
+            AnsiConsole.Markup(_settings.InputPrefix);
+            AnsiConsole.Markup(lineMarkup);
             return;
         }
 
@@ -264,7 +265,10 @@ internal class ConsoleRenderer : IRenderer
             input, charOffset, lineText,
             cursorPosition, hasSelection, selectionStart, selectionLength);
 
-        AnsiConsole.Markup(prefix + lineMarkup);
+        // Two separate Markup calls avoid the prefix + lineMarkup string
+        // concatenation (one allocation per visual line per render tick).
+        AnsiConsole.Markup(prefix);
+        AnsiConsole.Markup(lineMarkup);
     }
 
 
