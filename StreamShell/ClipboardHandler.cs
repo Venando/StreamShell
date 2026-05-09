@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text;
 
 namespace StreamShell;
@@ -190,14 +191,15 @@ internal class ClipboardHandler
     /// <param name="affectedLength">Length of the affected range (0 for insertions).</param>
     /// <returns>True if at least one placeholder was preemptively removed.</returns>
     /// <summary>Removes attachments whose placeholders no longer exist intact in the buffer.
-    /// Uses reverse iteration to avoid allocating a copy of the list for safe removal.</summary>
+    /// Uses reverse iteration and span-based searching to avoid string allocations.</summary>
     public void CleanupOrphanedAttachments()
     {
         string currentInput = _buffer.CurrentInput;
+        ReadOnlySpan<char> inputSpan = currentInput.AsSpan();
         for (int i = Attachments.Count - 1; i >= 0; i--)
         {
             string placeholder = Attachments[i].Placeholder;
-            if (string.IsNullOrEmpty(placeholder) || !currentInput.Contains(placeholder))
+            if (string.IsNullOrEmpty(placeholder) || inputSpan.IndexOf(placeholder, StringComparison.Ordinal) < 0)
                 Attachments.RemoveAt(i);
         }
     }
@@ -207,6 +209,8 @@ internal class ClipboardHandler
     /// at the given buffer range (insertion point with length 0, or deletion range
     /// with length &gt; 0). If an overlap is found, the placeholder is removed from
     /// the buffer and its attachment is removed from the list.
+    /// Uses <see cref="ArrayPool{T}"/> for the overlap tracking list to avoid
+    /// per-call heap allocation on every Insert/Backspace/Delete keystroke.
     /// </summary>
     /// <param name="affectedStart">Start position of the affected buffer range.</param>
     /// <param name="affectedLength">Length of the affected range (0 for insertions).</param>
@@ -215,33 +219,70 @@ internal class ClipboardHandler
     {
         // Phase 1: compute all overlaps on the ORIGINAL buffer content
         string originalInput = _buffer.CurrentInput;
-        var toRemove = new List<(int index, int length)>();
+        ReadOnlySpan<char> inputSpan = originalInput.AsSpan();
 
-        // Reverse-iterate attachments to avoid allocating Attachments.ToList()
-        for (int i = Attachments.Count - 1; i >= 0; i--)
+        // Rent from ArrayPool to avoid List<(int,int)> allocation on every keystroke.
+        int maxOverlaps = Math.Min(Attachments.Count, 16);
+        (int index, int length)[]? rentedBuffer = null;
+        Span<(int index, int length)> overlapBuffer = maxOverlaps <= 8
+            ? stackalloc (int, int)[8]
+            : (rentedBuffer = ArrayPool<(int index, int length)>.Shared.Rent(maxOverlaps));
+
+        int overlapCount = 0;
+
+        try
         {
-            string placeholder = Attachments[i].Placeholder;
-            if (string.IsNullOrEmpty(placeholder)) continue;
-            int placeholderIndex = originalInput.IndexOf(placeholder, StringComparison.Ordinal);
-            if (placeholderIndex == -1) continue;
-
-            int placeholderEnd = placeholderIndex + placeholder.Length;
-            int affectedEnd = affectedStart + affectedLength;
-
-            if (affectedStart < placeholderEnd && affectedEnd > placeholderIndex)
+            // Reverse-iterate attachments to avoid allocating Attachments.ToList()
+            for (int i = Attachments.Count - 1; i >= 0; i--)
             {
-                toRemove.Add((placeholderIndex, placeholder.Length));
-                Attachments.RemoveAt(i);
+                string placeholder = Attachments[i].Placeholder;
+                if (string.IsNullOrEmpty(placeholder)) continue;
+
+                int placeholderIndex = inputSpan.IndexOf(placeholder, StringComparison.Ordinal);
+                if (placeholderIndex == -1) continue;
+
+                int placeholderEnd = placeholderIndex + placeholder.Length;
+                int affectedEnd = affectedStart + affectedLength;
+
+                if (affectedStart < placeholderEnd && affectedEnd > placeholderIndex)
+                {
+                    if (overlapCount < overlapBuffer.Length)
+                        overlapBuffer[overlapCount++] = (placeholderIndex, placeholder.Length);
+                    Attachments.RemoveAt(i);
+                }
             }
+
+            // Phase 2: remove right-to-left so indices stay valid
+            // Sort descending by index using span to avoid comparer allocation
+            if (overlapCount > 1)
+            {
+                Span<(int index, int length)> toSort = overlapBuffer[..overlapCount];
+                // Simple insertion sort for small lists
+                for (int i = 1; i < toSort.Length; i++)
+                {
+                    var key = toSort[i];
+                    int j = i - 1;
+                    while (j >= 0 && toSort[j].index < key.index)
+                    {
+                        toSort[j + 1] = toSort[j];
+                        j--;
+                    }
+                    toSort[j + 1] = key;
+                }
+            }
+
+            for (int i = 0; i < overlapCount; i++)
+            {
+                _buffer.Remove(overlapBuffer[i].index, overlapBuffer[i].length);
+            }
+
+            return overlapCount > 0;
         }
-
-        // Phase 2: remove right-to-left so indices stay valid
-        toRemove.Sort((a, b) => b.index.CompareTo(a.index));
-
-        foreach (var (index, length) in toRemove)
-            _buffer.Remove(index, length);
-
-        return toRemove.Count > 0;
+        finally
+        {
+            if (rentedBuffer is not null)
+                ArrayPool<(int index, int length)>.Shared.Return(rentedBuffer);
+        }
     }
 
     /// <summary>Resets the attachment counter (called on each submit).</summary>
