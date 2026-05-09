@@ -390,15 +390,20 @@ internal class ConsoleRenderer : IRenderer
 
             // Render placeholder as italic underline
             sb.Append("[italic underline]");
-            // Escape the placeholder content (double the brackets)
+            // Escape the placeholder content (double brackets)
             ReadOnlySpan<char> placeholderContent = text[bestIdx..bestEnd];
             for (int i = 0; i < placeholderContent.Length; i++)
             {
                 char c = placeholderContent[i];
-                if (c == '[')
-                    sb.Append("[[");
-                else
+                if (c == '[' || c == ']')
+                {
                     sb.Append(c);
+                    sb.Append(c);  // [[ or ]]
+                }
+                else
+                {
+                    sb.Append(c);
+                }
             }
             sb.Append("[/]");
             searchFrom = bestEnd;
@@ -440,11 +445,19 @@ internal class ConsoleRenderer : IRenderer
         int last = 0;
         for (int i = 0; i < span.Length; i++)
         {
-            if (span[i] == '[')
+            char c = span[i];
+            if (c == '[')
             {
                 if (i > last)
                     sb.Append(span[last..i]);
                 sb.Append("[[");
+                last = i + 1;
+            }
+            else if (c == ']')
+            {
+                if (i > last)
+                    sb.Append(span[last..i]);
+                sb.Append("]]");
                 last = i + 1;
             }
         }
@@ -491,6 +504,8 @@ internal class ConsoleRenderer : IRenderer
             sb.Append('[').Append(cursorStyle).Append(']');
             if (c == '[')
                 sb.Append("[[");  // Escape [ for Spectre markup
+            else if (c == ']')
+                sb.Append("]]");  // Escape ] for Spectre markup
             else
                 sb.Append(c);     // No allocation: char appends directly
             sb.Append("[/]");

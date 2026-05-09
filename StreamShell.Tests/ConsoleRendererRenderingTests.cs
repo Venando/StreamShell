@@ -232,6 +232,54 @@ public class ConsoleRendererRenderingTests
         Assert.Equal(0, _terminal.CursorLeft);
     }
 
+    [Fact]
+    public void RenderInputLine_WithBracket_BuildsValidMarkup()
+    {
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        // Closing bracket must be escaped for Spectre markup
+        renderer.RenderInputLine("text with ] bracket", 5, false, 0, 0, 80);
+
+        Assert.True(_terminal.CursorLeft >= 0);
+    }
+
+    [Fact]
+    public void RenderInputLine_WithBothBrackets_BuildsValidMarkup()
+    {
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        // Both [ and ] must be escaped for Spectre markup
+        renderer.RenderInputLine("[text] with brackets", 5, false, 0, 0, 80);
+
+        Assert.True(_terminal.CursorLeft >= 0);
+    }
+
+    [Fact]
+    public void RenderInputLine_WithSelectionAndBracket_BuildsValidMarkup()
+    {
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        // Selection path handles brackets differently via AppendMarkupEscaped
+        renderer.RenderInputLine("select [brackets] here", 5, true, 7, 10, 80);
+
+        Assert.True(_terminal.CursorLeft >= 0);
+    }
+
+    [Fact]
+    public void RenderInputLine_WithCursorAtBracket_BuildsValidMarkup()
+    {
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        // Cursor-at-char path must escape [ and ] properly
+        renderer.RenderInputLine("cursor at ] bracket", 10, false, 0, 0, 80);
+
+        Assert.True(_terminal.CursorLeft >= 0);
+    }
+
     // ── HandleBlockHeightChange ──────────────────────────────────────
 
     [Fact]
