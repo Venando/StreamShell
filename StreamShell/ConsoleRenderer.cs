@@ -288,15 +288,15 @@ internal class ConsoleRenderer : IRenderer
     /// </summary>
     private static string EscapeWithPlaceholderStyling(string text)
     {
-        int idx = text.IndexOf("[paste ", StringComparison.Ordinal);
-        if (idx < 0)
-            return Markup.Escape(text);
-
         var sb = new System.Text.StringBuilder();
         int searchFrom = 0;
 
-        while (idx >= 0)
+        while (true)
         {
+            int idx = text.IndexOf("[paste ", searchFrom, StringComparison.Ordinal);
+            if (idx < 0)
+                break;
+
             // Escape text before the placeholder
             if (idx > searchFrom)
                 sb.Append(Markup.Escape(text[searchFrom..idx]));
@@ -321,7 +321,7 @@ internal class ConsoleRenderer : IRenderer
         if (searchFrom < text.Length)
             sb.Append(Markup.Escape(text[searchFrom..]));
 
-        return sb.ToString();
+        return sb.Length > 0 ? sb.ToString() : Markup.Escape(text);
     }
 
     /// <summary>
