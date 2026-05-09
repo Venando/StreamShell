@@ -109,7 +109,7 @@ internal class ConsoleRenderer : IRenderer
         int selectionLength,
         int margin)
     {
-        RenderSeparatorLine();
+        RenderTopSeparator();
         RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
         Console.WriteLine();
         RenderHintsBlock(hints);
@@ -306,9 +306,14 @@ internal class ConsoleRenderer : IRenderer
     private void RenderHintsBlock(IReadOnlyList<string> hints)
     {
         if (hints.Any(h => !string.IsNullOrEmpty(h)))
-            RenderSeparatorLine();
+            RenderBottomSeparator();
         else
+        {
+            // Clear the old bottom separator line first, then advance
+            Console.CursorLeft = 0;
+            ClearLine();
             Console.WriteLine();
+        }
 
         int maxWidth = Console.WindowWidth - 1;
         for (int i = 0; i < hints.Count; i++)
@@ -385,6 +390,13 @@ internal class ConsoleRenderer : IRenderer
     }
 
     /// <summary>Renders the separator line using the current config.</summary>
+    /// <summary>Renders the top separator (between message feed and input block).</summary>
+    private void RenderTopSeparator() => RenderSeparatorLine();
+
+    /// <summary>Renders the bottom separator (between input line and hints block).</summary>
+    private void RenderBottomSeparator() => RenderSeparatorLine();
+
+    /// <summary>Renders a separator line using the current config.</summary>
     private void RenderSeparatorLine()
     {
         int width = Console.WindowWidth - 1;
