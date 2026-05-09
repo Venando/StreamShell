@@ -30,6 +30,7 @@ public class ConsoleAppHost : IDisposable
     private readonly IInputHandler _inputHandler;
     private readonly IRenderer _renderer;
     private IBottomPanel _bottomPanel;
+    private CancellationTokenSource _panelCts = new();
     private readonly CancellationTokenSource _cts = new();
 
     /// <summary>Raised when the bottom panel is swapped. Lets the renderer update its line count.</summary>
@@ -59,6 +60,9 @@ public class ConsoleAppHost : IDisposable
         BottomPanelChanged += (_, e) => _renderer.SetPanelLineCount(e.Panel.LineCount);
         ApplySettings();
         WireUpAutoComplete();
+
+        // Start the default panel's background loop
+        _ = _bottomPanel.RunAsync(_panelCts.Token);
     }
 
     /// <summary>Creates a host with explicit renderer and input handler (for testing).</summary>
@@ -71,14 +75,29 @@ public class ConsoleAppHost : IDisposable
         BottomPanelChanged += (_, e) => _renderer.SetPanelLineCount(e.Panel.LineCount);
         ApplySettings();
         WireUpAutoComplete();
+
+        // Start the default panel's background loop
+        _ = _bottomPanel.RunAsync(_panelCts.Token);
     }
 
-    /// <summary>Swaps the bottom panel. Raises BottomPanelChanged so the renderer adjusts.</summary>
+    /// <summary>
+    /// Swaps the bottom panel. Cancels the previous panel's background task (if any) and
+    /// starts the new one. Raises BottomPanelChanged so the renderer adjusts.
+    /// </summary>
     public void SetBottomPanel(IBottomPanel panel)
     {
+        // Cancel previous panel's background task
+        _panelCts.Cancel();
+        _panelCts.Dispose();
+        _panelCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+
         _bottomPanel = panel;
         WireUpAutoComplete();
         BottomPanelChanged?.Invoke(this, new BottomPanelChangedEventArgs(panel));
+
+        // Start new panel's background loop (fire-and-forget; the linked token
+        // ensures it is cancelled when swapped or when the host stops).
+        _ = panel.RunAsync(_panelCts.Token);
     }
 
     /// <summary>Restores the default CommandPalette bottom panel.</summary>
@@ -301,6 +320,8 @@ public class ConsoleAppHost : IDisposable
     public void Dispose()
     {
         _cts.Cancel();
+        _panelCts.Cancel();
+        _panelCts.Dispose();
         _cts.Dispose();
         Console.CursorVisible = true;
         Console.Write("\u001b[?2004l");
