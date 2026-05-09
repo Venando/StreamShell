@@ -10,6 +10,7 @@ internal class SelectionPanel : IBottomPanel
     private readonly IVariant[] _variants;
     private readonly SelectionInfo? _info;
     private readonly Action<IVariant[]> _onSubmit;
+    private readonly Action _onCancel;
 
     private readonly bool[] _toggled;
     private int _highlightIndex;
@@ -20,13 +21,8 @@ internal class SelectionPanel : IBottomPanel
     bool IBottomPanel.IsDirty => _isDirty;
     void IBottomPanel.ClearDirty() => _isDirty = false;
 
-    /// <summary>
-    /// Number of navigable items: variants only (single) or variants + submit button (multi).
-    /// </summary>
-    private int ItemCount => _info is not null ? _variants.Length + 1 : _variants.Length;
-
-    /// <summary>Total lines: title + navigable items.</summary>
-    public int LineCount => 1 + ItemCount;
+    /// <summary>Total lines: controls + title + variants.</summary>
+    public int LineCount => 2 + _variants.Length;
 
     /// <summary>True in multi-select mode.</summary>
     private bool IsMulti => _info is not null;
@@ -35,12 +31,13 @@ internal class SelectionPanel : IBottomPanel
     /// Creates a selection panel.
     /// </summary>
     public SelectionPanel(string title, IVariant[] variants, SelectionInfo? info,
-        Action<IVariant[]> onSubmit)
+        Action<IVariant[]> onSubmit, Action onCancel)
     {
         _title = title;
         _variants = variants;
         _info = info;
         _onSubmit = onSubmit;
+        _onCancel = onCancel;
         _toggled = new bool[variants.Length];
     }
 
@@ -56,7 +53,10 @@ internal class SelectionPanel : IBottomPanel
 
         var lines = new List<string>(LineCount);
 
-        // Line 0: title
+        // Line 0: control scheme
+        lines.Add("[dim]\u2191\u2193: navigate  Enter: select  Space: submit  Esc: cancel[/]");
+
+        // Line 1: title
         lines.Add($"[bold]{_title}[/]");
 
         // Variant lines
@@ -65,16 +65,12 @@ internal class SelectionPanel : IBottomPanel
             bool highlighted = i == _highlightIndex;
             bool selected = IsMulti && _toggled[i];
 
-            string indicator = selected ? "\u25a3 " : "\u2610 ";
-            string selectedIndicator = "\u25a3 ";  // filled checkbox
-            string unselectedIndicator = "\u2610 "; // empty checkbox
-
             string prefix;
             string color;
 
             if (IsMulti)
             {
-                prefix = selected ? selectedIndicator : unselectedIndicator;
+                prefix = selected ? "\u25a3 " : "\u2610 ";
                 color = highlighted ? "white" : "grey";
             }
             else
@@ -84,14 +80,6 @@ internal class SelectionPanel : IBottomPanel
             }
 
             lines.Add($"{prefix}[{color}]{_variants[i].Name}[/]");
-        }
-
-        // Submit button (multi-select only)
-        if (_info is not null)
-        {
-            bool onSubmit = _highlightIndex == _variants.Length;
-            string style = onSubmit ? "bold white" : "bold grey";
-            lines.Add($"> [{style}]{_info.SubmitTitle}[/]");
         }
 
         _lastRenderHighlight = _highlightIndex;
@@ -114,7 +102,7 @@ internal class SelectionPanel : IBottomPanel
                 return true;
 
             case ConsoleKey.DownArrow:
-                if (_highlightIndex < ItemCount - 1)
+                if (_highlightIndex < _variants.Length - 1)
                 {
                     _highlightIndex++;
                     _isDirty = true;
@@ -126,6 +114,10 @@ internal class SelectionPanel : IBottomPanel
 
             case ConsoleKey.Spacebar:
                 return HandleSubmit();
+
+            case ConsoleKey.Escape:
+                _onCancel();
+                return true;
         }
 
         return false;
@@ -137,10 +129,6 @@ internal class SelectionPanel : IBottomPanel
     {
         if (IsMulti)
         {
-            // On the submit button?
-            if (_highlightIndex == _variants.Length)
-                return HandleSubmit();
-
             // Toggle the highlighted variant
             int idx = _highlightIndex;
 
@@ -163,7 +151,7 @@ internal class SelectionPanel : IBottomPanel
         }
 
         // Single — select highlighted and submit
-        SelectAndSubmit(_variants[_highlightIndex]);
+        _onSubmit([_variants[_highlightIndex]]);
         return true;
     }
 
@@ -183,10 +171,5 @@ internal class SelectionPanel : IBottomPanel
 
         _onSubmit(result);
         return true;
-    }
-
-    private void SelectAndSubmit(IVariant variant)
-    {
-        _onSubmit([variant]);
     }
 }

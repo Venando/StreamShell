@@ -331,25 +331,30 @@ public class ConsoleAppHost : IDisposable
     /// <summary>
     /// Opens an interactive selection panel at the bottom of the console.
     /// The user navigates variants with arrows, selects with Enter,
-    /// and submits with Enter (on submit button) or Space.
-    /// The previous panel is restored after selection completes.
+    /// submits with Space, and cancels with Escape.
+    /// The previous panel is restored after selection or cancellation.
     /// </summary>
     /// <param name="title">Header line, supports Spectre markup.</param>
     /// <param name="variants">Options to pick from.</param>
     /// <param name="info">
-    /// When null — single-select mode: Enter on a variant selects and submits immediately.<br/>
-    /// When set — multi-select mode: Enter toggles variants, navigate to submit button + Enter to finish.r/\>
-    /// In both modes Space submits the current selection.
+    /// When null — single-select mode: Enter on a variant selects and submits immediately.
+    /// When set — multi-select mode: Enter toggles variants, Space submits.
     /// </param>
-    /// <returns>Array of selected variants.</returns>
-    public Task<IVariant[]> PromptSelection(string title, IVariant[] variants, SelectionInfo? info = null)
+    /// <returns>Array of selected variants, or null if cancelled.</returns>
+    public Task<IVariant[]?> PromptSelection(string title, IVariant[] variants, SelectionInfo? info = null)
     {
-        var tcs = new TaskCompletionSource<IVariant[]>();
-        var panel = new SelectionPanel(title, variants, info, result =>
-        {
-            tcs.TrySetResult(result);
-            ResetBottomPanel();
-        });
+        var tcs = new TaskCompletionSource<IVariant[]?>();
+        var panel = new SelectionPanel(title, variants, info,
+            onSubmit: result =>
+            {
+                tcs.TrySetResult(result);
+                ResetBottomPanel();
+            },
+            onCancel: () =>
+            {
+                tcs.TrySetResult(null);
+                ResetBottomPanel();
+            });
         SetBottomPanel(panel);
         return tcs.Task;
     }

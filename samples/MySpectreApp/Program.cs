@@ -153,13 +153,21 @@ var colorVariants = new IVariant[]
 host.AddCommand(new Command("pick", "Single-select an OS via PromptSelection", async (_, _) =>
 {
     var selected = await host.PromptSelection("Pick an OS", osVariants);
-    host.AddMessage($"[green]You picked: [bold]{Markup.Escape(selected[0].Name)}[/][/]");
+    if (selected is null)
+        host.AddMessage("[yellow]Selection cancelled[/]");
+    else
+        host.AddMessage($"[green]You picked: [bold]{Markup.Escape(selected[0].Name)}[/][/]");
 }));
 
 host.AddCommand(new Command("multi", "Multi-select tools (min 1, max 3) via PromptSelection", async (_, _) =>
 {
     var selected = await host.PromptSelection("Select your tools [dim](1-3)[/]", toolVariants,
-        new SelectionInfo { SubmitTitle = "Ready for battle!", Min = 1, Max = 3 });
+        new SelectionInfo { Min = 1, Max = 3 });
+    if (selected is null)
+    {
+        host.AddMessage("[yellow]Cancelled tool selection[/]");
+        return;
+    }
     var names = string.Join(", ", selected.Select(v => Markup.Escape(v.Name)));
     host.AddMessage($"[green]Equipped: [bold]{names}[/][/]");
 }));
@@ -167,7 +175,12 @@ host.AddCommand(new Command("multi", "Multi-select tools (min 1, max 3) via Prom
 host.AddCommand(new Command("colors", "Multi-select colors (min 2) via PromptSelection", async (_, _) =>
 {
     var selected = await host.PromptSelection("Choose at least 2 colors", colorVariants,
-        new SelectionInfo { SubmitTitle = "Apply", Min = 2 });
+        new SelectionInfo { Min = 2 });
+    if (selected is null)
+    {
+        host.AddMessage("[yellow]Cancelled color selection[/]");
+        return;
+    }
     var names = string.Join(", ", selected.Select(v => Markup.Escape(v.Name)));
     host.AddMessage($"[green]Colors chosen: [bold]{names}[/][/]");
 }));
