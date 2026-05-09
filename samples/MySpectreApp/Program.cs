@@ -324,11 +324,11 @@ host.AddCommand(new Command("saved", "List all saved input field states", (_, _)
 
 // ════════════════════════════════════════════════════════════════
 
-host.UserInputSubmitted += (input, inputType, attachments) =>
+host.UserInputSubmitted += args =>
 {
-    host.AddMessage("[green]USER:[/] [cyan]" + inputType + "[/]");
-    host.AddMessage("  [grey]\"" + Markup.Escape(input) + "\"[/]");
-    foreach (var att in attachments)
+    host.AddMessage("[green]USER:[/] [cyan]" + args.InputType + "[/]");
+    host.AddMessage("  [grey]\"" + Markup.Escape(args.RawOutput) + "\"[/]");
+    foreach (var att in args.Attachments)
     {
         host.AddMessage("  [grey][[attachment: " + att.Type + ", " + att.LineCount + " lines, " + att.Content.Length + " chars]][/]");
     }

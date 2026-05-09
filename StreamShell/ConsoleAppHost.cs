@@ -49,7 +49,7 @@ public class ConsoleAppHost : IDisposable
     /// Provides the raw text, whether it is a command or plain text,
     /// and any attachments (large pastes).
     /// </summary>
-    public event Action<string, InputType, IReadOnlyList<Attachment>>? UserInputSubmitted;
+    public event Action<UserInputSubmittedEventArgs>? UserInputSubmitted;
 
     /// <summary>Creates a host wired to the real console renderer and input handler.
     /// Default bottom panel is EmptyBottomPanel; CommandPalette activates on "/".</summary>
@@ -380,7 +380,12 @@ public class ConsoleAppHost : IDisposable
             && _commands.ContainsKey(commandName!);
 
         var inputType = isCommand ? InputType.Command : InputType.PlainText;
-        UserInputSubmitted?.Invoke(submittedInput, inputType, _inputHandler.Attachments);
+        UserInputSubmitted?.Invoke(new UserInputSubmittedEventArgs
+        {
+            InputType = inputType,
+            Attachments = _inputHandler.Attachments,
+            RawOutput = submittedInput
+        });
 
         if (isCommand)
             ExecuteCommand(submittedInput);
