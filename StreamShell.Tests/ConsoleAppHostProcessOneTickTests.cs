@@ -168,12 +168,8 @@ public class ConsoleAppHostProcessOneTickTests
     public void ProcessOneTick_CommandInput_DetectsCommand()
     {
         CreateHost();
-        var commandExecuted = false;
         _host.AddCommand(new Command("test", "A test", (_, _) =>
-        {
-            commandExecuted = true;
-            return Task.CompletedTask;
-        }));
+            Task.CompletedTask));
 
         _inputHandler.CurrentInput = "/test";
         _inputHandler.QueueSubmittedInput("/test");

@@ -100,7 +100,7 @@ public class CommandPaletteTests
         Assert.Contains("Tab", lines[0]);
         Assert.Contains("\u2191\u2193", lines[0]);
         // At least one hint populated
-        Assert.True(lines.Skip(1).Any(l => !string.IsNullOrEmpty(l)));
+        Assert.Contains(lines.Skip(1), l => !string.IsNullOrEmpty(l));
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public class CommandPaletteTests
         var palette = CreatePalette();
         var lines = palette.GetLines("/HELLO");
 
-        Assert.True(lines.Skip(1).Any(l => l.Contains("hello")));
+        Assert.Contains(lines.Skip(1), l => l.Contains("hello"));
     }
 
     // ── GetLines: Cached Lines ───────────────────────────────────────
@@ -239,7 +239,7 @@ public class CommandPaletteTests
         var lines = palette.GetLines("/deploy ");
 
         // Should show argument completions
-        Assert.True(lines.Skip(1).Any(l => l.Contains("linux") || l.Contains("windows")));
+        Assert.Contains(lines.Skip(1), l => l.Contains("linux") || l.Contains("windows"));
     }
 
     [Fact]
@@ -248,7 +248,7 @@ public class CommandPaletteTests
         var palette = new CommandPalette(ArgSuggestionCommands);
         var lines = palette.GetLines("/deploy win");
 
-        Assert.True(lines.Skip(1).Any(l => l.Contains("windows")));
+        Assert.Contains(lines.Skip(1), l => l.Contains("windows"));
     }
 
     [Fact]
@@ -269,7 +269,7 @@ public class CommandPaletteTests
         var lines = palette.GetLines("/deploy li");
 
         // Should show a single compressed hint for "linux" common prefix
-        Assert.True(lines.Skip(1).Any(l => l.Contains("linux")));
+        Assert.Contains(lines.Skip(1), l => l.Contains("linux"));
     }
 
     // ── MaxHeight / Capacity ─────────────────────────────────────────
