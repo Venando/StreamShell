@@ -181,6 +181,12 @@ internal class UserInputHandler : IInputHandler
             case ConsoleKey.Z:
                 Undo();
                 return true;
+
+            case ConsoleKey.A:
+                Snapshot();
+                _selection.SetAnchor(0);
+                _buffer.MoveTo(_buffer.Length);
+                return true;
         }
 
         return false;
