@@ -246,7 +246,8 @@ internal class CommandPalette : IBottomPanel
     {
         var currentCommands = _commandProvider();
         int spaceIndex = query.IndexOf(' ');
-        string cmdPrefix = spaceIndex > 0 ? query[..spaceIndex] : query;
+        bool isSpacePresent = spaceIndex > 0;
+        string cmdPrefix = isSpacePresent ? query[..spaceIndex] : query;
 
         if (cmdPrefix.Length == 0)
             return currentCommands.ToList();
@@ -255,10 +256,21 @@ internal class CommandPalette : IBottomPanel
         List<Command> matching = new(limit);
         foreach (var cmd in currentCommands)
         {
-            if (cmd.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
+            if (isSpacePresent)
             {
-                matching.Add(cmd);
-                if (matching.Count > limit) break;
+                if (cmd.Name.Equals(cmdPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    matching.Add(cmd);
+                    if (matching.Count > limit) break;
+                }
+            }
+            else
+            {
+                if (cmd.Name.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    matching.Add(cmd);
+                    if (matching.Count > limit) break;
+                }
             }
         }
         return matching;
