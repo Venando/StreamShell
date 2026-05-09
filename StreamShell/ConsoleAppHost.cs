@@ -255,6 +255,14 @@ public class ConsoleAppHost : IDisposable
             int windowWidth = Console.WindowWidth;
             int margin = _inputHandler.RightMargin;
 
+            if (_renderer is ConsoleRenderer cr)
+            {
+                cr.PlaceholderStrings = _inputHandler.Attachments
+                    .Select(a => a.Placeholder)
+                    .Where(p => !string.IsNullOrEmpty(p))
+                    .ToList();
+            }
+
             if (TryRender(state, input, cursor, hasSelection, selStart, selLength, margin, windowWidth))
             {
                 state = new RenderSnapshot(input, cursor, hasSelection,

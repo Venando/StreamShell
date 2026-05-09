@@ -266,7 +266,7 @@ internal class ConsoleRenderer : IRenderer
     /// is the first visual line and the character is at position 0.
     /// Placeholder patterns (<c>[paste ...]</c>) are rendered as underlined markup.
     /// </summary>
-    private static void AppendEscapedChunk(System.Text.StringBuilder sb,
+    private void AppendEscapedChunk(System.Text.StringBuilder sb,
         string text, bool isCommandSlash, string cmdSlashMarkup)
     {
         if (isCommandSlash && text.Length > 0 && text[0] == '/')
@@ -286,54 +286,74 @@ internal class ConsoleRenderer : IRenderer
     /// (<c>[paste N lines: name...]</c>) with underline styling instead of
     /// escaping them as plain text.
     /// </summary>
-    private static string EscapeWithPlaceholderStyling(string text)
+    /// <summary>
+    /// Placeholder strings from current attachments, used to render them as
+    /// underlined markup instead of plain escaped text.
+    /// </summary>
+    public IReadOnlyList<string>? PlaceholderStrings { get; set; }
+
+    /// <summary>
+    /// Escapes text for Spectre markup, but renders known placeholder strings
+    /// (from <see cref="PlaceholderStrings"/>) with italic underline styling.
+    /// Also handles cursor-split fragments where the opening <c>[</c> was
+    /// consumed by the cursor character highlight.
+    /// </summary>
+    private string EscapeWithPlaceholderStyling(string text)
     {
+        var phStrings = PlaceholderStrings;
+        if (phStrings is null || phStrings.Count == 0)
+            return Markup.Escape(text);
+
         var sb = new System.Text.StringBuilder();
         int searchFrom = 0;
 
-        while (true)
+        while (searchFrom < text.Length)
         {
-            int nextFull = text.IndexOf("[paste ", searchFrom, StringComparison.Ordinal);
+            // Search for the earliest placeholder match (full or cursor-split fragment)
+            int bestIdx = -1;
+            int bestEnd = -1;
+            string bestMatch = null!;
 
-            // Check for cursor-split fragment at current position (missing [)
-            int nextFragment = -1;
-            if (text.Length - searchFrom >= 7 &&
-                text[searchFrom] == 'p' &&
-                text.AsSpan(searchFrom, 7).Equals("paste #", StringComparison.Ordinal))
+            foreach (string ph in phStrings)
             {
-                nextFragment = searchFrom;
+                // Try full placeholder string
+                int idx = text.IndexOf(ph, searchFrom, StringComparison.Ordinal);
+                if (idx >= 0 && (bestIdx < 0 || idx < bestIdx))
+                {
+                    bestIdx = idx;
+                    bestEnd = idx + ph.Length;
+                    bestMatch = ph;
+                }
+
+                // Try cursor-split fragment (missing opening [)
+                if (ph.Length > 0 && ph[0] == '[')
+                {
+                    string fragment = ph[1..];
+                    if (fragment.Length + searchFrom <= text.Length &&
+                        text.AsSpan(searchFrom).StartsWith(fragment, StringComparison.Ordinal))
+                    {
+                        if (bestIdx < 0 || searchFrom < bestIdx)
+                        {
+                            bestIdx = searchFrom;
+                            bestEnd = searchFrom + fragment.Length;
+                            bestMatch = fragment;
+                        }
+                    }
+                }
             }
 
-            // Use whichever match (full or fragment) comes first
-            int idx;
-            if (nextFull >= 0 && nextFragment >= 0)
-                idx = Math.Min(nextFull, nextFragment);
-            else if (nextFull >= 0)
-                idx = nextFull;
-            else if (nextFragment >= 0)
-                idx = nextFragment;
-            else
+            if (bestIdx < 0)
                 break;
 
             // Escape text before the placeholder
-            if (idx > searchFrom)
-                sb.Append(Markup.Escape(text[searchFrom..idx]));
+            if (bestIdx > searchFrom)
+                sb.Append(Markup.Escape(text[searchFrom..bestIdx]));
 
-            // Find the closing bracket
-            int bracketEnd = text.IndexOf(']', idx + 7);
-            if (bracketEnd < 0)
-            {
-                // Incomplete placeholder — escape normally
-                sb.Append(Markup.Escape(text[idx..]));
-                searchFrom = text.Length;
-                break;
-            }
-
-            // Render placeholder as underlined (escape brackets for Spectre)
-            string content = text[(idx)..(bracketEnd + 1)];
+            // Render placeholder as italic underline (escape brackets for Spectre)
+            string content = text[bestIdx..bestEnd];
             string escaped = content.Replace("[", "[[").Replace("]", "]]");
             sb.Append("[italic underline]").Append(escaped).Append("[/]");
-            searchFrom = bracketEnd + 1;
+            searchFrom = bestEnd;
         }
 
         if (searchFrom < text.Length)
