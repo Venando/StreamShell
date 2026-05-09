@@ -63,21 +63,6 @@ public class ConsoleAppHost : IDisposable
         if (_inputHandler is UserInputHandler uih)
         {
             uih.AutoCompleteProvider = input => _commandPalette.GetTopSuggestion(input);
-            uih.HintNavigationProvider = key =>
-            {
-                if (!CommandPalette.IsActive(_inputHandler.CurrentInput))
-                    return false;
-
-                switch (key)
-                {
-                    case ConsoleKey.UpArrow:
-                        return _commandPalette.MoveSelection(up: true);
-                    case ConsoleKey.DownArrow:
-                        return _commandPalette.MoveSelection(up: false);
-                    default:
-                        return false;
-                }
-            };
         }
     }
 
@@ -129,18 +114,18 @@ public class ConsoleAppHost : IDisposable
     }
 
     // ── Tracks render state between loop iterations ───────────────────
+    // ── Tracks render state between loop iterations ───────────────────
     private sealed record RenderSnapshot(
         string? LastInput,
         int LastCursor,
         bool LastHasSelection,
         int LastInputLineCount,
-        int LastWindowWidth,
-        int LastHintSelVersion
+        int LastWindowWidth
     );
 
     private async Task RunLoop(CancellationToken token)
     {
-        var state = new RenderSnapshot(null, 0, false, 0, Console.WindowWidth, 0);
+        var state = new RenderSnapshot(null, 0, false, 0, Console.WindowWidth);
 
         while (!token.IsCancellationRequested)
         {
@@ -154,8 +139,7 @@ public class ConsoleAppHost : IDisposable
             if (TryRender(state, input, cursor, hasSelection, selStart, selLength, margin, windowWidth))
             {
                 state = new RenderSnapshot(input, cursor, hasSelection,
-                    _renderer.GetInputLineCount(input), windowWidth,
-                    _commandPalette.SelectionVersion);
+                    _renderer.GetInputLineCount(input), windowWidth);
             }
 
             if (_inputHandler.QuitRequested)
@@ -168,7 +152,7 @@ public class ConsoleAppHost : IDisposable
             if (submittedInput != null)
             {
                 HandleSubmittedInput(submittedInput, windowWidth);
-                state = new RenderSnapshot(null, 0, false, 0, windowWidth, 0);
+                state = new RenderSnapshot(null, 0, false, 0, windowWidth);
             }
 
             await Task.Delay(10, token);
@@ -239,17 +223,15 @@ public class ConsoleAppHost : IDisposable
         return true;
     }
 
-    /// <summary>Returns true when any tracked state has changed from the last render.
-    /// Includes hint selection version so arrow navigation re-renders hints.</summary>
-    private bool StateDiffersFromRender(
+    /// <summary>Returns true when any tracked state has changed from the last render.</summary>
+    private static bool StateDiffersFromRender(
         RenderSnapshot state,
         string input, int cursor, bool hasSelection, int windowWidth)
     {
         return state.LastInput != input
             || state.LastCursor != cursor
             || state.LastHasSelection != hasSelection
-            || state.LastWindowWidth != windowWidth
-            || state.LastHintSelVersion != _commandPalette.SelectionVersion;
+            || state.LastWindowWidth != windowWidth;
     }
 
     private void HandleSubmittedInput(string submittedInput, int windowWidth)
