@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 
 namespace StreamShell;
 
@@ -150,8 +151,9 @@ public class ConsoleAppHost : IDisposable
     /// <summary>Run the main input/render loop until cancelled or Ctrl+D is pressed.</summary>
     public async Task Run(CancellationToken cancellationToken = default)
     {
-        Console.Write("\u001b[?2004h");      // Enable bracketed paste mode
-        Console.TreatControlCAsInput = true; // Ctrl+C is used for Copy
+        Console.OutputEncoding = Encoding.UTF8; // Enable Unicode symbols (arrows, etc.)
+        Console.Write("\u001b[?2004h");         // Enable bracketed paste mode
+        Console.TreatControlCAsInput = true;    // Ctrl+C is used for Copy
         Console.CursorVisible = false;
 
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
