@@ -294,6 +294,17 @@ internal class ConsoleRenderer : IRenderer
         while (true)
         {
             int idx = text.IndexOf("[paste ", searchFrom, StringComparison.Ordinal);
+
+            // Cursor-split fragment: if [paste wasn't found but current
+            // position starts with "paste #", the opening [ was consumed
+            // by the cursor character highlight.
+            if (idx < 0 && text.Length - searchFrom >= 7 &&
+                text[searchFrom] == 'p' &&
+                text.AsSpan(searchFrom, 7).Equals("paste #", StringComparison.Ordinal))
+            {
+                idx = searchFrom;
+            }
+
             if (idx < 0)
                 break;
 
