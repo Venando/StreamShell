@@ -437,6 +437,7 @@ internal class UserInputHandler : IInputHandler
         _selection.Reset();
         _cursorMovement.ResetStickyColumn();
         _undo.Clear();
+        _clipboard.ResetCounter();
     }
 
     // ══════════════════════════════════════════════════════════════════

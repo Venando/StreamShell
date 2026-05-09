@@ -20,6 +20,9 @@ internal class ClipboardHandler
     /// <summary>Attachments collected during input (e.g. large pastes). Shared with the owner.</summary>
     public List<Attachment> Attachments { get; set; } = new();
 
+    /// <summary>Counter for attachment placeholders, reset on each submit.</summary>
+    private int _attachmentCounter;
+
     public ClipboardHandler(
         TextBuffer buffer,
         SelectionManager selection,
@@ -130,7 +133,7 @@ internal class ClipboardHandler
 
         if (text.Length > _getLargePasteThreshold() || lineCount > _getLargePasteLineThreshold())
         {
-            var attachment = new Attachment(text, AttachmentType.PlainText, lineCount);
+            var attachment = new Attachment(text, AttachmentType.PlainText, lineCount, ++_attachmentCounter);
             Attachments.Add(attachment);
             _buffer.Insert(GeneratePlaceholder(attachment));
         }
@@ -149,14 +152,8 @@ internal class ClipboardHandler
     /// <summary>Generates the placeholder text that will be inserted into the buffer for an attachment.</summary>
     internal static string GeneratePlaceholder(Attachment attachment)
     {
-        if (attachment.LineCount > 1)
-        {
-            return $"[paste {attachment.LineCount} lines]";
-        }
-        else
-        {
-            return $"[paste {1} line]";
-        }
+        string lines = attachment.LineCount > 1 ? $"{attachment.LineCount} lines" : "1 line";
+        return $"[paste #{attachment.Counter}, {lines}]";
     }
 
     /// <summary>
@@ -191,4 +188,7 @@ internal class ClipboardHandler
 
         return anyRemoved;
     }
+
+    /// <summary>Resets the attachment counter (called on each submit).</summary>
+    public void ResetCounter() => _attachmentCounter = 0;
 }

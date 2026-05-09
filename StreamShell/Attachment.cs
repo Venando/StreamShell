@@ -11,4 +11,5 @@ public enum AttachmentType
 /// <param name="Content">The full content of the attachment.</param>
 /// <param name="Type">The type of attachment.</param>
 /// <param name="LineCount">Number of lines in the content.</param>
-public record Attachment(string Content, AttachmentType Type, int LineCount);
+/// <param name="Counter">Incrementing counter reset on each submit.</param>
+public record Attachment(string Content, AttachmentType Type, int LineCount, int Counter = 0);
