@@ -388,7 +388,7 @@ internal class ConsoleRenderer : IRenderer
     private void RenderSeparatorLine()
     {
         int width = Console.WindowWidth - 1;
-        Console.WriteLine(BuildSeparatorLine(Separator, width));
+        AnsiConsole.MarkupLine(BuildSeparatorLine(Separator, width));
     }
 
     /// <summary>Builds the separator string from the given config and available width.</summary>
