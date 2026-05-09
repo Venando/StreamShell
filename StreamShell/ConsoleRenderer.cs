@@ -103,8 +103,13 @@ internal class ConsoleRenderer : IRenderer
         if (oldInput is null)
             return;
 
-        int oldOffset = GetBlockOffset(oldInput, oldPanelLineCount);
-        int newOffset = GetBlockOffset(newInput);
+        // The offset from GetBlockOffset does not include the top separator line.
+        // The full visual block height is offset + 1 (includes the blank line
+        // between input and hints). We add 1 here so the clear covers the entire
+        // visual block, preventing stale content from remaining when the panel
+        // size changes.
+        int oldOffset = GetBlockOffset(oldInput, oldPanelLineCount) + 1;
+        int newOffset = GetBlockOffset(newInput) + 1;
         int clearOffset = Math.Max(oldOffset, newOffset);
         int bufferHeight = Console.BufferHeight;
 
@@ -553,79 +558,45 @@ internal class ConsoleRenderer : IRenderer
     }
 
     /// <summary>
-    /// After the input block is re-rendered, handles the scroll effect
-    /// from the block height change. See <see cref="IRenderer.HandleBlockHeightChange"/>.
+    /// After the input block is re-rendered and the block shrunk (<paramref name="newBlockOffset"/>
+    /// is smaller than <paramref name="oldBlockOffset"/>), clears the excess lines that were
+    /// cleared but not re-filled by the new (smaller) block.
+    /// The +1 fix in <see cref="ClearInputBlockForReRender"/> ensures all old lines are properly
+    /// cleared, so the growing case doesn't need additional handling.
     /// </summary>
     public void HandleBlockHeightChange(int oldBlockOffset, int newBlockOffset)
     {
         int delta = newBlockOffset - oldBlockOffset;
-        if (delta == 0)
+        if (delta >= 0)
             return;
 
-        if (delta > 0)
-        {
-            // Block grew — replay messages to fill the swallowed gap
-            int replayCount = Math.Min(delta, MessageBufferReplayCount);
-            ReplayMessagesFromBuffer(replayCount);
-            // Restore cursor to block bottom so subsequent renders are not offset
-            RestoreCursorPosition(replayCount);
-        }
-        else
-        {
-            // Block shrunk — clear leftover lines above the block
-            ClearLinesAbove(-delta);
-        }
+        // Block shrunk — clear leftover lines below the new block
+        ClearLinesBelow(-delta);
     }
 
-    /// <summary>Re-renders the last <paramref name="count"/> lines from the message history buffer.</summary>
-    private void ReplayMessagesFromBuffer(int count)
+    /// <summary>Clears <paramref name="count"/> lines below the new block that were
+    /// part of the old block but not re-filled (block shrank). These are uncleared
+    /// gaps between the new block bottom and the old clear area end.</summary>
+    private void ClearLinesBelow(int count)
     {
-        if (count <= 0 || _messageHistory.Count == 0)
+        if (count <= 0)
             return;
 
-        int startIndex = Math.Max(0, _messageHistory.Count - count);
-        for (int i = startIndex; i < _messageHistory.Count; i++)
-        {
-            RenderMessageLineNoHistory(_messageHistory[i]);
-        }
-    }
-
-    /// <summary>Renders a markup line to the console without storing in the message history.</summary>
-    private static void RenderMessageLineNoHistory(string markup)
-    {
-        try
-        {
-            AnsiConsole.MarkupLine(markup);
-        }
-        catch (InvalidOperationException)
-        {
-            AnsiConsole.MarkupLine(Markup.Escape(markup));
-        }
-    }
-
-    /// <summary>Moves the cursor back up by <paramref name="lines"/> after replaying messages.</summary>
-    private void RestoreCursorPosition(int lines)
-    {
-        if (lines <= 0)
-            return;
-        int newTop = Console.CursorTop - lines;
-        Console.CursorTop = Math.Max(0, newTop);
-    }
-
-    /// <summary>Clears <paramref name="count"/> lines above the current cursor position.</summary>
-    private void ClearLinesAbove(int count)
-    {
-        int startTop = Console.CursorTop;
+        // Save cursor position first — SetCursorPosition + ClearLine moves the cursor
+        int savedTop = Console.CursorTop;
         int bufferHeight = Console.BufferHeight;
 
         for (int i = 1; i <= count; i++)
         {
-            int top = startTop - i;
-            if (top < 0)
+            int top = savedTop + i;
+            if (top >= bufferHeight)
                 break;
             Console.SetCursorPosition(0, top);
             ClearLine();
         }
+
+        // Restore cursor to saved position (block bottom)
+        Console.CursorTop = Math.Max(0, Math.Min(savedTop, bufferHeight - 1));
     }
 
     private static void ClearLine() => Console.Write("\x1b[K");

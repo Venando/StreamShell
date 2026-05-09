@@ -52,8 +52,10 @@ public interface IRenderer
 
     /// <summary>
     /// Called after the input block was re-rendered and its height changed.
-    /// When the block grew, replays messages from the history buffer to fill the swallowed gap.
-    /// When the block shrunk, clears the extra lines above the block.
+    /// When the block shrunk, clears excess lines below the new block that were
+    /// part of the old (larger) block area. The growing case doesn't need
+    /// additional handling because <see cref="ClearInputBlockForReRender"/>
+    /// now covers the full visual block height.
     /// </summary>
     /// <param name="oldBlockOffset">Block offset before the change.</param>
     /// <param name="newBlockOffset">Block offset after the change.</param>
