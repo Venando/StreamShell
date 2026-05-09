@@ -190,6 +190,70 @@ public class TextBufferTests
         Assert.Equal('l', buf[3]);
         Assert.Equal('o', buf[4]);
     }
+
+    [Fact]
+    public void Remove_NegativeLength_Throws_DoesNotCorrupt()
+    {
+        // StringBuilder.Remove throws on invalid params; verify buffer survives
+        var buf = new TextBuffer();
+        buf.Insert("abc");
+        Assert.Throws<ArgumentOutOfRangeException>(() => buf.Remove(1, -1));
+        Assert.Equal("abc", buf.CurrentInput); // buffer unchanged
+    }
+
+    [Fact]
+    public void Remove_PastEnd_Throws()
+    {
+        var buf = new TextBuffer();
+        buf.Insert("abc");
+        Assert.Throws<ArgumentOutOfRangeException>(() => buf.Remove(1, 10));
+    }
+
+    [Fact]
+    public void Backspace_OnEmptyBuffer_DoesNothing()
+    {
+        var buf = new TextBuffer();
+        buf.Backspace();
+        Assert.Equal("", buf.CurrentInput);
+        Assert.Equal(0, buf.CursorPosition);
+    }
+
+    [Fact]
+    public void Delete_OnEmptyBuffer_DoesNothing()
+    {
+        var buf = new TextBuffer();
+        buf.Delete();
+        Assert.Equal("", buf.CurrentInput);
+        Assert.Equal(0, buf.CursorPosition);
+    }
+
+    [Fact]
+    public void SetContent_NegativeCursor_ClampsToZero()
+    {
+        var buf = new TextBuffer();
+        buf.SetContent("test", -5);
+        Assert.Equal("test", buf.CurrentInput);
+        Assert.Equal(0, buf.CursorPosition);
+    }
+
+    [Fact]
+    public void MoveTo_OnEmptyBuffer_StaysAtZero()
+    {
+        var buf = new TextBuffer();
+        buf.MoveTo(5);
+        Assert.Equal(0, buf.CursorPosition);
+    }
+
+    [Fact]
+    public void Remove_LengthZero_DoesNothing()
+    {
+        var buf = new TextBuffer();
+        buf.Insert("abc");
+        buf.MoveTo(1);
+        buf.Remove(1, 0);
+        Assert.Equal("abc", buf.CurrentInput);
+        Assert.Equal(1, buf.CursorPosition);
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -211,9 +275,13 @@ public class SelectionManagerTests
     public void IsActiveAt_AnchorEqualsCursor_ReturnsFalse()
     {
         _sel.ForMovement(shift: true, 5);
-        Assert.False(_sel.IsActiveAt(5)); // anchor == cursor, no active selection
+        Assert.False(_sel.IsActiveAt(5));
+    }
 
-        // With cursor moved away, selection becomes active
+    [Fact]
+    public void IsActiveAt_CursorDifferentFromAnchor_ReturnsTrue()
+    {
+        _sel.ForMovement(shift: true, 5);
         Assert.True(_sel.IsActiveAt(10));
     }
 
@@ -516,6 +584,7 @@ public class UserInputSubmittedEventArgsTests
     [Fact]
     public void EmptyPlaceholder_NotReplaced()
     {
+        // Attachments can have empty placeholders when constructed manually
         var args = new UserInputSubmittedEventArgs
         {
             InputType = InputType.PlainText,
@@ -528,6 +597,22 @@ public class UserInputSubmittedEventArgsTests
 
         Assert.Equal("test [paste #1, 1 line]", args.TextWithoutAttachments);
         Assert.Equal("test [paste #1, 1 line]", args.TextWithAttachmentsExpanded);
+    }
+
+    [Fact]
+    public void PlaceholderAppearsMultipleTimes_AllReplaced()
+    {
+        var args = new UserInputSubmittedEventArgs
+        {
+            InputType = InputType.PlainText,
+            RawOutput = "[paste #1, 1 line] and again [paste #1, 1 line]",
+            Attachments = new[]
+            {
+                new Attachment("content", AttachmentType.PlainText, 1, 1, "[paste #1, 1 line]")
+            }
+        };
+
+        Assert.Equal("content and again content", args.TextWithAttachmentsExpanded);
     }
 
     [Fact]
