@@ -103,13 +103,8 @@ internal class ConsoleRenderer : IRenderer
         if (oldInput is null)
             return;
 
-        // The offset from GetBlockOffset does not include the top separator line.
-        // The full visual block height is offset + 1 (includes the blank line
-        // between input and hints). We add 1 here so the clear covers the entire
-        // visual block, preventing stale content from remaining when the panel
-        // size changes.
-        int oldOffset = GetBlockOffset(oldInput, oldPanelLineCount) + 1;
-        int newOffset = GetBlockOffset(newInput) + 1;
+        int oldOffset = GetBlockOffset(oldInput, oldPanelLineCount);
+        int newOffset = GetBlockOffset(newInput);
         int clearOffset = Math.Max(oldOffset, newOffset);
         int bufferHeight = Console.BufferHeight;
 
@@ -558,20 +553,39 @@ internal class ConsoleRenderer : IRenderer
     }
 
     /// <summary>
-    /// After the input block is re-rendered and the block shrunk (<paramref name="newBlockOffset"/>
-    /// is smaller than <paramref name="oldBlockOffset"/>), clears the excess lines that were
-    /// cleared but not re-filled by the new (smaller) block.
-    /// The +1 fix in <see cref="ClearInputBlockForReRender"/> ensures all old lines are properly
-    /// cleared, so the growing case doesn't need additional handling.
+    /// After the input block was re-rendered and its visual height changed,
+    /// cleans up stale content that wasn't cleared by
+    /// <see cref="ClearInputBlockForReRender"/> because the offset excludes
+    /// the separator line at the top of the block:
+    /// - Growing case: clears the old separator line at block_top
+    /// - Shrinking case: also clears excess lines below the new block
     /// </summary>
     public void HandleBlockHeightChange(int oldBlockOffset, int newBlockOffset)
     {
         int delta = newBlockOffset - oldBlockOffset;
-        if (delta >= 0)
+        if (delta == 0)
             return;
 
-        // Block shrunk — clear leftover lines below the new block
-        ClearLinesBelow(-delta);
+        // Cursor is at the last panel line after the full render.
+        // visual = offset + 2, cursor at visual - 1 = offset + 1
+        // So block_top = cursorTop - (offset + 1) = cursorTop - newBlockOffset - 1
+        int cursorBottom = Console.CursorTop;
+        int blockTop = cursorBottom - newBlockOffset - 1;
+
+        // Handle shrinking first so ClearLinesBelow uses the correct cursor
+        if (delta < 0)
+            ClearLinesBelow(-delta);
+
+        // The old separator line at block_top was not cleared by
+        // ClearInputBlockForReRender (starts from block_top+1).
+        if (blockTop >= 0)
+        {
+            Console.SetCursorPosition(0, blockTop);
+            ClearLine();
+        }
+
+        // Restore cursor to block bottom
+        Console.CursorTop = Math.Max(0, Math.Min(cursorBottom, Console.BufferHeight - 1));
     }
 
     /// <summary>Clears <paramref name="count"/> lines below the new block that were

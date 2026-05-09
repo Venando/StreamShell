@@ -51,11 +51,10 @@ public interface IRenderer
         int margin);
 
     /// <summary>
-    /// Called after the input block was re-rendered and its height changed.
-    /// When the block shrunk, clears excess lines below the new block that were
-    /// part of the old (larger) block area. The growing case doesn't need
-    /// additional handling because <see cref="ClearInputBlockForReRender"/>
-    /// now covers the full visual block height.
+    /// Called after the input block was re-rendered and its visual height
+    /// changed. Cleans up stale content not covered by the original clear:
+    /// - Growing: clears the old separator line at the block top
+    /// - Shrinking: also clears excess lines below the new (smaller) block
     /// </summary>
     /// <param name="oldBlockOffset">Block offset before the change.</param>
     /// <param name="newBlockOffset">Block offset after the change.</param>
