@@ -417,7 +417,9 @@ internal class ConsoleRenderer : IRenderer
         int fillCount = width - leftLen - rightLen;
         if (fillCount < 0) fillCount = 0;
 
-        string fillStr = new string(fill, fillCount);
+        string fillStr = string.IsNullOrEmpty(config.RepeatedCharMarkup)
+            ? new string(fill, fillCount)
+            : $"[{config.RepeatedCharMarkup}]{new string(fill, fillCount)}[/]";
 
         if (!string.IsNullOrEmpty(left) && !string.IsNullOrEmpty(right))
             return left + fillStr + right;

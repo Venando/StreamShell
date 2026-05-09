@@ -15,6 +15,13 @@ public record SeparatorConfig
     /// <summary>Character used to fill the gap between left and right text.</summary>
     public char RepeatedChar { get; init; } = '─';
 
+    /// <summary>
+    /// Optional Spectre markup style applied to the repeated fill section.
+    /// Example: "dim" wraps the fill in [dim]...[/dim].
+    /// When null, the fill is rendered as plain characters.
+    /// </summary>
+    public string? RepeatedCharMarkup { get; init; }
+
     /// <summary>Default separator: full line of '─' (no text).</summary>
     public static readonly SeparatorConfig Default = new();
 }

@@ -133,13 +133,14 @@ public class ConsoleAppHost : IDisposable
     public void AddMessage(string markup) => _messages.Enqueue(markup);
 
     /// <summary>Sets the separator line rendered between the message feed and the input block.</summary>
-    public void SetSeparator(string? leftText = null, string? rightText = null, char repeatedCharacter = '-')
+    public void SetSeparator(string? leftText = null, string? rightText = null, char repeatedCharacter = '-', string? repeatedCharMarkup = null)
     {
         _renderer.Separator = new SeparatorConfig
         {
             LeftText = leftText,
             RightText = rightText,
-            RepeatedChar = repeatedCharacter
+            RepeatedChar = repeatedCharacter,
+            RepeatedCharMarkup = repeatedCharMarkup
         };
     }
 
