@@ -123,15 +123,21 @@ public class CommandPaletteTests
     }
 
     [Fact]
-    public void GetLines_SingleMatch_AutocompleteSuggestion()
+    public void GetLines_MultipleMatches_PicksFirstSuggestion()
     {
         var palette = CreatePalette();
-        palette.GetLines("/he");
-
-        // Multiple matches (hello, help) means no unique autocomplete
+        palette.GetLines("/he");  // matches hello, help
+        // Picks the first match's suggestion even with multiple matches
         Assert.NotNull(palette.CurrentSuggestion);
-        // Should suggest the first match
         Assert.StartsWith("/", palette.CurrentSuggestion);
+    }
+
+    [Fact]
+    public void GetLines_ExactSingleMatch_SuggestsUniqueCommand()
+    {
+        var palette = CreatePalette();
+        palette.GetLines("/exit");  // single exact match
+        Assert.Equal("/exit ", palette.CurrentSuggestion);
     }
 
     [Fact]
@@ -178,46 +184,50 @@ public class CommandPaletteTests
     {
         var palette = CreatePalette();
 
-        // Get lines, verify suggestion starts at first match
         palette.GetLines("/h");
         string? firstSuggestion = palette.CurrentSuggestion;
 
-        // Navigate down
+        // Navigate down to next match
         palette.AdjustSelection(1);
         palette.GetLines("/h");
         string? secondSuggestion = palette.CurrentSuggestion;
 
-        // Different selection may give different suggestion
-        // At minimum, both should be non-null
+        // With 2+ matches, different selection should give different suggestion
         Assert.NotNull(firstSuggestion);
         Assert.NotNull(secondSuggestion);
+        Assert.NotEqual(firstSuggestion, secondSuggestion);
     }
 
     [Fact]
     public void AdjustSelection_ClampsToMatchCount()
     {
         var palette = CreatePalette();
-        palette.GetLines("/h");  // initialize state
+        palette.GetLines("/h");  // initialize state (hello, help matches)
 
         palette.AdjustSelection(10);  // beyond available matches
         palette.GetLines("/h");
 
-        // Should be clamped to maxVisible - 1
-        // Could be at any valid position, just shouldn't throw
+        // Should be clamped — valid suggestion produced
+        Assert.NotNull(palette.CurrentSuggestion);
+
+        // Then adjust with large negative to ensure clamp doesn't go below 0
+        palette.AdjustSelection(-20);
+        palette.GetLines("/h");
         Assert.NotNull(palette.CurrentSuggestion);
     }
 
     [Fact]
-    public void AdjustSelection_InputChanged_ResetsToZero()
+    public void AdjustSelection_InputChanged_ResetsToFirstMatch()
     {
         var palette = CreatePalette();
-        palette.GetLines("/h");
-        palette.AdjustSelection(1);
+        palette.GetLines("/h");  // initializes with first match suggestion
+        string? firstSuggestion = palette.CurrentSuggestion;
 
-        // Change input
-        palette.GetLines("/he");
-        // Selection should reset
+        palette.AdjustSelection(1);  // move to second match
+        palette.GetLines("/he");  // change input → should reset to first match
+
         Assert.NotNull(palette.CurrentSuggestion);
+        Assert.StartsWith("/he", palette.CurrentSuggestion);
     }
 
     // ── Argument Suggestions ─────────────────────────────────────────
