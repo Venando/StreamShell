@@ -26,6 +26,13 @@ public class StreamShellSettings
     public string SelectionMarkup { get; set; } = "bold cyan on Grey27";
 
     /// <summary>
+    /// Spectre.Console markup style string for the command slash character (/)
+    /// displayed as the first character of the input field.
+    /// Default: "cyan".
+    /// </summary>
+    public string CommandSlashMarkup { get; set; } = "cyan";
+
+    /// <summary>
     /// Spectre.Console markup for the first-line input field prefix.
     /// Default: "[bold SkyBlue1]> [/]"
     /// </summary>

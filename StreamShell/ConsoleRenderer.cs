@@ -214,6 +214,8 @@ internal class ConsoleRenderer : IRenderer
     {
         int lineStart = lineOffset;
         int lineEnd = lineOffset + lineText.Length;
+        bool isCommandSlashLine = lineOffset == 0 && lineText.Length > 0 && lineText[0] == '/';
+        string cmdSlashMarkup = _settings.CommandSlashMarkup;
 
         // Determine cursor column on this line (only when no selection)
         int cursorCol = -1;
@@ -235,26 +237,47 @@ internal class ConsoleRenderer : IRenderer
 
         if (selectionOnThisLine)
         {
-            // Before selection
+            // Before selection — wrap leading / if at position 0
             if (selStartInLine > 0)
-                sb.Append(Markup.Escape(lineText[..selStartInLine]));
+                AppendEscapedChunk(sb, lineText[..selStartInLine],
+                    isCommandSlashLine, cmdSlashMarkup);
 
             // Selected text
             string selText = Markup.Escape(lineText[selStartInLine..selEndInLine]);
             sb.Append("[").Append(_settings.SelectionMarkup).Append("]")
               .Append(selText).Append("[/]");
 
-            // After selection
+            // After selection (not at position 0, no command slash)
             if (selEndInLine < lineText.Length)
                 sb.Append(Markup.Escape(lineText[selEndInLine..]));
         }
         else
         {
-            AppendCursorHighlight(sb, lineText, ref cursorCol, 0);
+            AppendCursorHighlight(sb, lineText, ref cursorCol, 0,
+                isCommandSlashLine, cmdSlashMarkup);
             cursorCol = -1;
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Appends escaped text, wrapping a leading '/' in command markup if this
+    /// is the first visual line and the character is at position 0.
+    /// </summary>
+    private static void AppendEscapedChunk(System.Text.StringBuilder sb,
+        string text, bool isCommandSlash, string cmdSlashMarkup)
+    {
+        if (isCommandSlash && text.Length > 0 && text[0] == '/')
+        {
+            sb.Append("[").Append(cmdSlashMarkup).Append("]/[/]");
+            if (text.Length > 1)
+                sb.Append(Markup.Escape(text[1..]));
+        }
+        else
+        {
+            sb.Append(Markup.Escape(text));
+        }
     }
 
     /// <summary>
@@ -267,24 +290,26 @@ internal class ConsoleRenderer : IRenderer
         System.Text.StringBuilder sb,
         string rawText,
         ref int cursorCol,
-        int segmentOffset)
+        int segmentOffset,
+        bool isCommandSlashLine,
+        string cmdSlashMarkup)
     {
         if (cursorCol < 0)
         {
-            sb.Append(Markup.Escape(rawText));
+            AppendEscapedChunk(sb, rawText, isCommandSlashLine, cmdSlashMarkup);
             return;
         }
 
         int localCol = cursorCol - segmentOffset;
         if (localCol < 0 || localCol > rawText.Length)
         {
-            sb.Append(Markup.Escape(rawText));
+            AppendEscapedChunk(sb, rawText, isCommandSlashLine, cmdSlashMarkup);
             return;
         }
 
         // Before cursor
         if (localCol > 0)
-            sb.Append(Markup.Escape(rawText[..localCol]));
+            AppendEscapedChunk(sb, rawText[..localCol], isCommandSlashLine, cmdSlashMarkup);
 
         string cursorStyle = _settings.CursorMarkup;
 
