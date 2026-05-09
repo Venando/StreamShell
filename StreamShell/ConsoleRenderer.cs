@@ -168,6 +168,18 @@ internal class ConsoleRenderer : IRenderer
         int effectiveMargin = Math.Max(10, margin);
         int width = Math.Max(1, Math.Min(effectiveMargin, _terminal.WindowWidth));
 
+        // Handle empty input early: render a single line with just the prefix
+        if (string.IsNullOrEmpty(input))
+        {
+            _terminal.CursorLeft = 0;
+            string lineMarkup = BuildLineMarkup(
+                input, 0, "",
+                cursorPosition, hasSelection, selectionStart, selectionLength);
+            AnsiConsole.Markup($"{_settings.InputPrefix}{lineMarkup}");
+            return;
+        }
+
+        // Split into newline-delimited segments and render each wrapped visual line
         var segments = input.Split('\n');
         bool isFirstOverallLine = true;
         int charOffset = 0;
@@ -181,37 +193,48 @@ internal class ConsoleRenderer : IRenderer
 
             for (int lineIdx = 0; lineIdx < wrappedLines.Count; lineIdx++)
             {
-                string lineText = wrappedLines[lineIdx];
-                string lineMarkup = BuildLineMarkup(
-                    input, charOffset, lineText,
-                    cursorPosition, hasSelection, selectionStart, selectionLength);
+                RenderSingleVisualLine(
+                    input, charOffset, wrappedLines[lineIdx],
+                    cursorPosition, hasSelection, selectionStart, selectionLength,
+                    isFirstOverallLine);
 
-                _terminal.CursorLeft = 0;
-
-                string prefix = isFirstOverallLine
-                    ? _settings.InputPrefix
-                    : _settings.ContinuationPrefix;
-                AnsiConsole.Markup(prefix + lineMarkup);
-
+                // Don't write a newline after the very last visual line
                 if (!(segIdx == segments.Length - 1 && lineIdx == wrappedLines.Count - 1))
                     _terminal.WriteLine();
 
-                charOffset += lineText.Length;
+                charOffset += wrappedLines[lineIdx].Length;
                 isFirstOverallLine = false;
             }
 
             charOffset++; // Account for the \n between segments
         }
+    }
 
-        // Handle entirely empty input (single empty segment)
-        if (segments.Length == 1 && segments[0].Length == 0 && string.IsNullOrEmpty(input))
-        {
-            _terminal.CursorLeft = 0;
-            string lineMarkup = BuildLineMarkup(
-                input, 0, "",
-                cursorPosition, hasSelection, selectionStart, selectionLength);
-            AnsiConsole.Markup($"{_settings.InputPrefix}{lineMarkup}");
-        }
+    /// <summary>
+    /// Renders a single visual line of the input block: clears to column 0,
+    /// writes the prefix (input or continuation), and the markup for this line.
+    /// </summary>
+    private void RenderSingleVisualLine(
+        string input,
+        int charOffset,
+        string lineText,
+        int cursorPosition,
+        bool hasSelection,
+        int selectionStart,
+        int selectionLength,
+        bool isFirstOverallLine)
+    {
+        _terminal.CursorLeft = 0;
+
+        string prefix = isFirstOverallLine
+            ? _settings.InputPrefix
+            : _settings.ContinuationPrefix;
+
+        string lineMarkup = BuildLineMarkup(
+            input, charOffset, lineText,
+            cursorPosition, hasSelection, selectionStart, selectionLength);
+
+        AnsiConsole.Markup(prefix + lineMarkup);
     }
 
     // ── Selection & Cursor Markup Building ───────────────────────────
@@ -254,19 +277,19 @@ internal class ConsoleRenderer : IRenderer
 
         if (selectionOnThisLine)
         {
-            // Before selection — wrap leading / if at position 0
+            // Before selection (span-based to avoid substring allocation)
             if (selStartInLine > 0)
-                AppendEscapedChunk(sb, lineText[..selStartInLine],
+                AppendEscapedChunk(sb, lineText.AsSpan(0, selStartInLine),
                     isCommandSlashLine, cmdSlashMarkup);
 
-            // Selected text
-            string selText = Markup.Escape(lineText[selStartInLine..selEndInLine]);
-            sb.Append("[").Append(_settings.SelectionMarkup).Append("]")
-              .Append(selText).Append("[/]");
+            // Selected text (use AppendMarkupEscaped to avoid intermediate string)
+            sb.Append('[').Append(_settings.SelectionMarkup).Append(']');
+            AppendMarkupEscaped(sb, lineText.AsSpan(selStartInLine, selEndInLine - selStartInLine));
+            sb.Append("[/]");
 
-            // After selection (not at position 0, no command slash)
+            // After selection (span-based to avoid substring allocation)
             if (selEndInLine < lineText.Length)
-                sb.Append(EscapeWithPlaceholderStyling(lineText[selEndInLine..]));
+                AppendEscapedChunk(sb, lineText.AsSpan(selEndInLine), isCommandSlashLine, cmdSlashMarkup);
         }
         else
         {
@@ -282,73 +305,77 @@ internal class ConsoleRenderer : IRenderer
     /// Appends escaped text, wrapping a leading '/' in command markup if this
     /// is the first visual line and the character is at position 0.
     /// Placeholder patterns (<c>[paste ...]</c>) are rendered as underlined markup.
+    /// String overload — calls through to the span-based implementation.
     /// </summary>
     private void AppendEscapedChunk(System.Text.StringBuilder sb,
         string text, bool isCommandSlash, string cmdSlashMarkup)
+        => AppendEscapedChunk(sb, text.AsSpan(), isCommandSlash, cmdSlashMarkup);
+
+    /// <summary>
+    /// Span-based overload — appends escaped text directly to the StringBuilder,
+    /// avoiding intermediate string allocations from range slicing.
+    /// </summary>
+    private void AppendEscapedChunk(System.Text.StringBuilder sb,
+        ReadOnlySpan<char> text, bool isCommandSlash, string cmdSlashMarkup)
     {
         if (isCommandSlash && text.Length > 0 && text[0] == '/')
         {
-            sb.Append("[").Append(cmdSlashMarkup).Append("]/[/]");
+            sb.Append('[').Append(cmdSlashMarkup).Append("]/[/]");
             if (text.Length > 1)
-                sb.Append(EscapeWithPlaceholderStyling(text[1..]));
+                AppendMarkupEscapedWithPlaceholder(sb, text[1..]);
         }
         else
         {
-            sb.Append(EscapeWithPlaceholderStyling(text));
+            AppendMarkupEscapedWithPlaceholder(sb, text);
         }
     }
 
     /// <summary>
-    /// Placeholder strings from current attachments, used to render them as
-    /// underlined markup instead of plain escaped text.
+    /// Appends Spectre-escaped text from a span to the StringBuilder, rendering
+    /// known placeholder strings (from <see cref="PlaceholderStrings"/>) with italic
+    /// underline styling. This is the span-based equivalent of
+    /// <see cref="EscapeWithPlaceholderStyling"/> that avoids intermediate strings.
     /// </summary>
-    public IReadOnlyList<string>? PlaceholderStrings { get; set; }
-
-    /// <summary>
-    /// Escapes text for Spectre markup, but renders known placeholder strings
-    /// (from <see cref="PlaceholderStrings"/>) with italic underline styling.
-    /// Also handles cursor-split fragments where the opening <c>[</c> was
-    /// consumed by the cursor character highlight.
-    /// </summary>
-    private string EscapeWithPlaceholderStyling(string text)
+    private void AppendMarkupEscapedWithPlaceholder(System.Text.StringBuilder sb, ReadOnlySpan<char> text)
     {
         var phStrings = PlaceholderStrings;
         if (phStrings is null || phStrings.Count == 0)
-            return Markup.Escape(text);
+        {
+            AppendMarkupEscaped(sb, text);
+            return;
+        }
 
-        var sb = new System.Text.StringBuilder();
         int searchFrom = 0;
 
         while (searchFrom < text.Length)
         {
+            ReadOnlySpan<char> remaining = text[searchFrom..];
+
             // Search for the earliest placeholder match (full or cursor-split fragment)
             int bestIdx = -1;
             int bestEnd = -1;
-            string bestMatch = null!;
 
             foreach (string ph in phStrings)
             {
                 // Try full placeholder string
-                int idx = text.IndexOf(ph, searchFrom, StringComparison.Ordinal);
+                int idx = text[searchFrom..].IndexOf(ph, StringComparison.Ordinal);
                 if (idx >= 0 && (bestIdx < 0 || idx < bestIdx))
                 {
-                    bestIdx = idx;
-                    bestEnd = idx + ph.Length;
-                    bestMatch = ph;
+                    bestIdx = searchFrom + idx;
+                    bestEnd = bestIdx + ph.Length;
                 }
 
                 // Try cursor-split fragment (missing opening [)
                 if (ph.Length > 0 && ph[0] == '[')
                 {
-                    string fragment = ph[1..];
-                    if (fragment.Length + searchFrom <= text.Length &&
-                        text.AsSpan(searchFrom).StartsWith(fragment, StringComparison.Ordinal))
+                    ReadOnlySpan<char> fragment = ph.AsSpan(1);
+                    if (fragment.Length <= remaining.Length &&
+                        remaining.StartsWith(fragment, StringComparison.Ordinal))
                     {
                         if (bestIdx < 0 || searchFrom < bestIdx)
                         {
                             bestIdx = searchFrom;
                             bestEnd = searchFrom + fragment.Length;
-                            bestMatch = fragment;
                         }
                     }
                 }
@@ -359,19 +386,70 @@ internal class ConsoleRenderer : IRenderer
 
             // Escape text before the placeholder
             if (bestIdx > searchFrom)
-                sb.Append(Markup.Escape(text[searchFrom..bestIdx]));
+                AppendMarkupEscaped(sb, text[searchFrom..bestIdx]);
 
-            // Render placeholder as italic underline (escape brackets for Spectre)
-            string content = text[bestIdx..bestEnd];
-            string escaped = content.Replace("[", "[[").Replace("]", "]]");
-            sb.Append("[italic underline]").Append(escaped).Append("[/]");
+            // Render placeholder as italic underline
+            sb.Append("[italic underline]");
+            // Escape the placeholder content (double the brackets)
+            ReadOnlySpan<char> placeholderContent = text[bestIdx..bestEnd];
+            for (int i = 0; i < placeholderContent.Length; i++)
+            {
+                char c = placeholderContent[i];
+                if (c == '[')
+                    sb.Append("[[");
+                else
+                    sb.Append(c);
+            }
+            sb.Append("[/]");
             searchFrom = bestEnd;
         }
 
         if (searchFrom < text.Length)
-            sb.Append(Markup.Escape(text[searchFrom..]));
+            AppendMarkupEscaped(sb, text[searchFrom..]);
+    }
 
+    /// <summary>
+    /// Placeholder strings from current attachments, used to render them as
+    /// underlined markup instead of plain escaped text.
+    /// </summary>
+    public IReadOnlyList<string>? PlaceholderStrings { get; set; }
+
+    /// <summary>
+    /// Escapes text for Spectre markup, rendering known placeholder strings
+    /// (from <see cref="PlaceholderStrings"/>) with italic underline styling.
+    /// Delegates to the span-based <see cref="AppendMarkupEscapedWithPlaceholder"/>.
+    /// </summary>
+    private string EscapeWithPlaceholderStyling(string text)
+    {
+        var phStrings = PlaceholderStrings;
+        if (phStrings is null || phStrings.Count == 0)
+            return Markup.Escape(text);
+
+        var sb = new System.Text.StringBuilder();
+        AppendMarkupEscapedWithPlaceholder(sb, text.AsSpan());
         return sb.Length > 0 ? sb.ToString() : Markup.Escape(text);
+    }
+
+    /// <summary>
+    /// Appends Spectre-escaped text from a <see cref="ReadOnlySpan{T}"/> directly
+    /// to the StringBuilder, escaping <c>[</c> as <c>[[</c> to match the behavior
+    /// of <see cref="Markup.Escape(string)"/> without allocating intermediate strings.
+    /// </summary>
+    private static void AppendMarkupEscaped(System.Text.StringBuilder sb, ReadOnlySpan<char> span)
+    {
+        int last = 0;
+        for (int i = 0; i < span.Length; i++)
+        {
+            if (span[i] == '[')
+            {
+                if (i > last)
+                    sb.Append(span[last..i]);
+                sb.Append("[[");
+                last = i + 1;
+            }
+        }
+        if (last < span.Length)
+            sb.Append(span[last..]);
     }
 
     /// <summary>
@@ -397,24 +475,28 @@ internal class ConsoleRenderer : IRenderer
         int localCol = cursorCol - segmentOffset;
         if (localCol < 0 || localCol > rawText.Length)
         {
-            AppendEscapedChunk(sb, rawText, isCommandSlashLine, cmdSlashMarkup);
+            AppendEscapedChunk(sb, rawText.AsSpan(), isCommandSlashLine, cmdSlashMarkup);
             return;
         }
 
-        // Before cursor
+        // Before cursor (span-based to avoid substring allocation)
         if (localCol > 0)
-            AppendEscapedChunk(sb, rawText[..localCol], isCommandSlashLine, cmdSlashMarkup);
+            AppendEscapedChunk(sb, rawText.AsSpan(0, localCol), isCommandSlashLine, cmdSlashMarkup);
 
         string cursorStyle = _settings.CursorMarkup;
 
         if (localCol < rawText.Length)
         {
-            string escapedChar = Markup.Escape(rawText[localCol].ToString());
-            sb.Append("[").Append(cursorStyle).Append("]")
-              .Append(escapedChar).Append("[/]");
+            char c = rawText[localCol];
+            sb.Append('[').Append(cursorStyle).Append(']');
+            if (c == '[')
+                sb.Append("[[");  // Escape [ for Spectre markup
+            else
+                sb.Append(c);     // No allocation: char appends directly
+            sb.Append("[/]");
 
             if (localCol + 1 < rawText.Length)
-                sb.Append(EscapeWithPlaceholderStyling(rawText[(localCol + 1)..]));
+                AppendMarkupEscapedWithPlaceholder(sb, rawText.AsSpan(localCol + 1));
         }
         else
         {
@@ -539,17 +621,31 @@ internal class ConsoleRenderer : IRenderer
         int fillCount = width - leftLen - rightLen;
         if (fillCount < 0) fillCount = 0;
 
-        string fillStr = string.IsNullOrEmpty(config.RepeatedCharMarkup)
-            ? new string(fill, fillCount)
-            : $"[{config.RepeatedCharMarkup}]{new string(fill, fillCount)}[/]";
+        if (fillCount == 0)
+        {
+            return string.IsNullOrEmpty(left) ? string.Empty
+                : string.IsNullOrEmpty(right) ? left : left + right;
+        }
 
-        if (!string.IsNullOrEmpty(left) && !string.IsNullOrEmpty(right))
-            return left + fillStr + right;
-        if (!string.IsNullOrEmpty(left))
-            return left + fillStr;
-        if (!string.IsNullOrEmpty(right))
-            return fillStr + right;
-        return fillStr;
+        // Build with StringBuilder::Append(char, int) to avoid
+        // allocating a large repeated-char string on every render.
+        var sb = new System.Text.StringBuilder(capacity: left.Length + fillCount + right.Length);
+        sb.Append(left);
+
+        string fillMarkup = config.RepeatedCharMarkup;
+        if (string.IsNullOrEmpty(fillMarkup))
+        {
+            sb.Append(fill, fillCount);
+        }
+        else
+        {
+            sb.Append('[').Append(fillMarkup).Append(']');
+            sb.Append(fill, fillCount);
+            sb.Append("[/]");
+        }
+
+        sb.Append(right);
+        return sb.ToString();
     }
 
     /// <summary>

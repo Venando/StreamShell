@@ -11,9 +11,11 @@ public static class LineWrappingService
     /// <summary>
     /// Wraps a single segment (no newline characters) into visual lines
     /// at the given terminal <paramref name="width"/>.
+    /// Accepts a <see cref="ReadOnlySpan{T}"/> to avoid intermediate string
+    /// allocations when called from <see cref="GetVisualLineData"/>.
     /// </summary>
     public static List<string> WrapSegment(
-        string segment,
+        ReadOnlySpan<char> segment,
         int width,
         bool isFirstSegment,
         bool isLastSegment,
@@ -27,7 +29,7 @@ public static class LineWrappingService
         // Short single segment that fits on one line
         if (isFirstSegment && isLastSegment && segment.Length + totalMargin < width)
         {
-            lines.Add(segment);
+            lines.Add(segment.ToString());
             return lines;
         }
 
@@ -40,7 +42,7 @@ public static class LineWrappingService
             // Both use cap = width - 4 for consistent right margin
             int cap = Math.Max(isFirstSegment && isFirstVisualLine && lines.Count == 0 ? 0 : 1, width - totalMargin);
             int take = Math.Min(remaining, cap);
-            lines.Add(segment.Substring(pos, take));
+            lines.Add(segment.Slice(pos, take).ToString());
             pos += take;
             remaining -= take;
         }
@@ -87,15 +89,22 @@ public static class LineWrappingService
             return (lines, offsets);
         }
 
-        var segments = input.Split('\n');
+        // Manual iteration over newline-delimited segments using ReadOnlySpan<char>
+        // to avoid the string[] and per-segment string allocations from Split('\n').
+        ReadOnlySpan<char> span = input.AsSpan();
         bool anyLinesProduced = false;
         int charOffset = 0;
+        int segStart = 0;
+        int segIdx = 0;
 
-        for (int segIdx = 0; segIdx < segments.Length; segIdx++)
+        while (segStart <= span.Length)
         {
-            string segment = segments[segIdx];
+            // Find the next newline (or end of span)
+            int nlPos = segStart < span.Length ? span[segStart..].IndexOf('\n') : -1;
+            int segEnd = nlPos >= 0 ? segStart + nlPos : span.Length;
+            ReadOnlySpan<char> segment = span[segStart..segEnd];
             bool isFirstSegment = segIdx == 0;
-            bool isLastSegment = segIdx == segments.Length - 1;
+            bool isLastSegment = segEnd == span.Length;
 
             var wrapped = WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced,
                 prefixMargin, rightMargin);
@@ -111,6 +120,11 @@ public static class LineWrappingService
                 anyLinesProduced = true;
 
             charOffset++; // Account for \n between segments
+            segStart = segEnd + 1;
+            segIdx++;
+
+            if (segEnd >= span.Length)
+                break;
         }
 
         if (lines.Count == 0)

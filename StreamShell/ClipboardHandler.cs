@@ -147,7 +147,12 @@ internal class ClipboardHandler
 
     private void InsertPastedText(string text)
     {
-        int lineCount = text.Split('\n').Length;
+        // Count newlines without allocating a string array from Split
+        int lineCount = 1;
+        foreach (char c in text)
+        {
+            if (c == '\n') lineCount++;
+        }
 
         if (text.Length > _getLargePasteThreshold() || lineCount > _getLargePasteLineThreshold())
         {
@@ -184,15 +189,16 @@ internal class ClipboardHandler
     /// <param name="affectedStart">Start position of the affected buffer range.</param>
     /// <param name="affectedLength">Length of the affected range (0 for insertions).</param>
     /// <returns>True if at least one placeholder was preemptively removed.</returns>
-    /// <summary>Removes attachments whose placeholders no longer exist intact in the buffer.</summary>
+    /// <summary>Removes attachments whose placeholders no longer exist intact in the buffer.
+    /// Uses reverse iteration to avoid allocating a copy of the list for safe removal.</summary>
     public void CleanupOrphanedAttachments()
     {
         string currentInput = _buffer.CurrentInput;
-        foreach (var attachment in Attachments.ToList())
+        for (int i = Attachments.Count - 1; i >= 0; i--)
         {
-            string placeholder = attachment.Placeholder;
+            string placeholder = Attachments[i].Placeholder;
             if (string.IsNullOrEmpty(placeholder) || !currentInput.Contains(placeholder))
-                Attachments.Remove(attachment);
+                Attachments.RemoveAt(i);
         }
     }
 
@@ -211,9 +217,10 @@ internal class ClipboardHandler
         string originalInput = _buffer.CurrentInput;
         var toRemove = new List<(int index, int length)>();
 
-        foreach (var attachment in Attachments.ToList())
+        // Reverse-iterate attachments to avoid allocating Attachments.ToList()
+        for (int i = Attachments.Count - 1; i >= 0; i--)
         {
-            string placeholder = attachment.Placeholder;
+            string placeholder = Attachments[i].Placeholder;
             if (string.IsNullOrEmpty(placeholder)) continue;
             int placeholderIndex = originalInput.IndexOf(placeholder, StringComparison.Ordinal);
             if (placeholderIndex == -1) continue;
@@ -224,7 +231,7 @@ internal class ClipboardHandler
             if (affectedStart < placeholderEnd && affectedEnd > placeholderIndex)
             {
                 toRemove.Add((placeholderIndex, placeholder.Length));
-                Attachments.Remove(attachment);
+                Attachments.RemoveAt(i);
             }
         }
 
