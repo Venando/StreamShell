@@ -328,6 +328,32 @@ public class ConsoleAppHost : IDisposable
 
     private IReadOnlyList<string> GetCommandHints(string input) => _bottomPanel.GetLines(input);
 
+    /// <summary>
+    /// Opens an interactive selection panel at the bottom of the console.
+    /// The user navigates variants with arrows, selects with Enter,
+    /// and submits with Enter (on submit button) or Space.
+    /// The previous panel is restored after selection completes.
+    /// </summary>
+    /// <param name="title">Header line, supports Spectre markup.</param>
+    /// <param name="variants">Options to pick from.</param>
+    /// <param name="info">
+    /// When null — single-select mode: Enter on a variant selects and submits immediately.<br/>
+    /// When set — multi-select mode: Enter toggles variants, navigate to submit button + Enter to finish.r/\>
+    /// In both modes Space submits the current selection.
+    /// </param>
+    /// <returns>Array of selected variants.</returns>
+    public Task<IVariant[]> PromptSelection(string title, IVariant[] variants, SelectionInfo? info = null)
+    {
+        var tcs = new TaskCompletionSource<IVariant[]>();
+        var panel = new SelectionPanel(title, variants, info, result =>
+        {
+            tcs.TrySetResult(result);
+            ResetBottomPanel();
+        });
+        SetBottomPanel(panel);
+        return tcs.Task;
+    }
+
     /// <summary>Signal the host to stop after the current loop iteration.</summary>
     public void Stop() => _cts.Cancel();
 
