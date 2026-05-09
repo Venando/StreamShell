@@ -22,12 +22,13 @@ internal class ConsoleRenderer : IRenderer
 
     public int RightMargin { get; set; } = Console.WindowWidth;
 
-    private const int BlockOffsetBase = 7; // Known off-by-2 for some cases — see PROJECT-INDEX
+    // Offset = 1 (separator) + BlankAfterInput + HintsSep + MaxHeight.
+    // The +N from input happens in GetBlockOffset.
+    private const int BlockOffsetBase = 1 + CommandPalette.MaxHeight; // 6 for MaxHeight=5
 
     /// <summary>Total vertical space taken by the input block.</summary>
     public int GetBlockOffset(string input)
     {
-        // BlockSeparator + BlankAfterInput + HintsSeparator + HintsLines = 9 estimated
         return BlockOffsetBase + GetInputLineCount(input);
     }
 
