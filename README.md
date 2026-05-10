@@ -468,21 +468,23 @@ host.AddCommand(new Command("fail", "Exit with error", (_, _) =>
 
 ## Samples
 
-A runnable sample app is included in the repo:
+Six focused sample projects are included, one per feature:
+
+| Sample | Feature | Command |
+|---|---|---|
+| `01-HelloStreamShell` | Full lifecycle, basic commands | `dotnet run -p samples/01-HelloStreamShell` |
+| `02-MarkupRendering` | Styled messages, background events | `dotnet run -p samples/02-MarkupRendering` |
+| `03-CommandAutocomplete` | Tab completion, arg suggestions | `dotnet run -p samples/03-CommandAutocomplete` |
+| `04-TextEditing` | Cursor, selection, clipboard, paste | `dotnet run -p samples/04-TextEditing` |
+| `05-SelectionPanels` | Single & multi-select panels | `dotnet run -p samples/05-SelectionPanels` |
+| `06-SeparatorsPanels` | Separators, custom bottom panels | `dotnet run -p samples/06-SeparatorsPanels` |
+
+The original comprehensive demo is also available:
 
 ```bash
 cd samples/MySpectreApp
 dotnet run
 ```
-
-It demonstrates:
-- Command registration with and without argument suggestions
-- Selection panels (single-select OS picker, multi-select tools/colors)
-- Top/bottom separator configuration
-- Default panel swapping
-- Input field save/load
-- Background event injection
-- Large paste attachment detection
 
 ---
 
