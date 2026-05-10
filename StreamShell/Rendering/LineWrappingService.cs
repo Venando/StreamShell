@@ -229,6 +229,8 @@ public static class LineWrappingService
             return;
         }
 
+        int totalMargin = prefixMargin + rightMargin;
+
         // Manual iteration over newline-delimited segments using ReadOnlySpan<char>
         // to avoid the string[] and per-segment string allocations from Split('\n').
         ReadOnlySpan<char> span = input.AsSpan();
@@ -247,13 +249,49 @@ public static class LineWrappingService
             bool isLastSegment = segEnd == span.Length;
             int linesBefore = lines.Count;
 
-            WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced,
-                lines, prefixMargin, rightMargin, wordWrap);
-
-            for (int lineIdx = linesBefore; lineIdx < lines.Count; lineIdx++)
+            if (wordWrap && segment.Length > 0)
             {
-                offsets.Add(charOffset);
-                charOffset += lines[lineIdx].Length;
+                // Inline word-wrap with accurate skip tracking for cursor navigation.
+                // WrapSegment hides skipAfter; we must track it ourselves so
+                // that each visual line's charOffset correctly reflects its
+                // starting position in the raw input.
+                int remaining = segment.Length;
+                int pos = 0;
+                int lineIdx = 0;
+                while (remaining > 0)
+                {
+                    int takeCap = Math.Max(
+                        isFirstSegment && !anyLinesProduced && lineIdx == 0 ? 0 : 1,
+                        width - totalMargin);
+                    int skipAfter = 0;
+                    int take = FindWordBreak(segment, pos, takeCap, true, out skipAfter);
+
+                    lines.Add(segment.Slice(pos, take).ToString());
+                    offsets.Add(charOffset);
+                    charOffset += take + skipAfter;
+
+                    remaining -= take + skipAfter;
+                    pos += take + skipAfter;
+                    lineIdx++;
+                }
+                if (segment.Length == 0)
+                {
+                    lines.Add(string.Empty);
+                    offsets.Add(charOffset);
+                    charOffset++;
+                }
+            }
+            else
+            {
+                // Character-wrap path: no skipped spaces, WrapSegment is sufficient.
+                WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced,
+                    lines, prefixMargin, rightMargin, false);
+
+                for (int lineIdx = linesBefore; lineIdx < lines.Count; lineIdx++)
+                {
+                    offsets.Add(charOffset);
+                    charOffset += lines[lineIdx].Length;
+                }
             }
 
             if (lines.Count > linesBefore)
@@ -344,7 +382,7 @@ public static class LineWrappingService
             {
                 offsets.Add(segment.Length);
             }
-            else
+            else if (wordWrap && segment.Length > 0)
             {
                 int remaining = segment.Length;
                 int pos = 0;
@@ -354,10 +392,26 @@ public static class LineWrappingService
                     int cap = Math.Max(isFirstSegment && !anyLinesProduced && lineIdx == 0 ? 0 : 1,
                         width - totalMargin);
                     int skipAfter = 0;
-                    int take = FindWordBreak(segment, pos, cap, wordWrap, out skipAfter);
+                    int take = FindWordBreak(segment, pos, cap, true, out skipAfter);
                     offsets.Add(take);
                     remaining -= take + skipAfter;
                     pos += take + skipAfter;
+                    lineIdx++;
+                }
+                if (segment.Length == 0)
+                    offsets.Add(0);
+            }
+            else
+            {
+                int remaining = segment.Length;
+                int lineIdx = 0;
+                while (remaining > 0)
+                {
+                    int cap = Math.Max(isFirstSegment && !anyLinesProduced && lineIdx == 0 ? 0 : 1,
+                        width - totalMargin);
+                    int take = Math.Min(remaining, cap);
+                    offsets.Add(take);
+                    remaining -= take;
                     lineIdx++;
                 }
                 if (segment.Length == 0)
