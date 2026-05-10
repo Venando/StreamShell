@@ -15,6 +15,12 @@ public class StreamShellSettings
     public int LargePasteLineThreshold { get; set; } = 4;
 
     /// <summary>
+    /// Number of visible lines for the command palette (status + hints).
+    /// Default: 8 (1 status line + 7 hint lines).
+    /// </summary>
+    public int CommandPaletteHeight { get; set; } = 8;
+
+    /// <summary>
     /// Number of messages to re-emit after console width decreases and resize settles.
     /// -1 means auto (Console.WindowHeight + 1). Default: -1.
     /// </summary>

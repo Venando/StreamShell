@@ -4,15 +4,22 @@ namespace StreamShell;
 
 internal class CommandPalette : IBottomPanel
 {
+    /// <summary>Default maximum height for the command palette. Configurable via <see cref="StreamShellSettings.CommandPaletteHeight"/>.</summary>
+    public static int DefaultMaxHeight { get; set; } = 8;
+
     /// <summary>Total visible lines in the hints block (status + hints).</summary>
-    public const int MaxHeight = 5;
-    int IBottomPanel.LineCount => MaxHeight;
+    public int MaxHeight { get; init; } = DefaultMaxHeight;
+
     /// <summary>Index of the status line (always populated when hints are visible).</summary>
     public const int StatusLineIndex = 0;
+
     /// <summary>Index of the first actual hint line.</summary>
     public const int HintsStartIndex = 1;
+
     /// <summary>Maximum number of actual hint entries.</summary>
-    public const int HintCapacity = MaxHeight - HintsStartIndex; // 4
+    public int HintCapacity => MaxHeight - HintsStartIndex;
+
+    int IBottomPanel.LineCount => MaxHeight;
 
     /// <summary>Backing field for interface IsDirty. Volatile for cross-thread visibility.</summary>
     private volatile bool _isDirty;
@@ -90,29 +97,31 @@ internal class CommandPalette : IBottomPanel
 
             if (newIndex >= visibleCount && delta > 0)
             {
-                // Scroll down if there are more matches below
-                int newScroll = ScrollOffset + delta;
-                if (newScroll < _lastMatchCount)
+                // Scroll down if there are more matches than fit on screen
+                if (_lastMatchCount > HintCapacity)
                 {
-                    ScrollOffset = Math.Min(newScroll, _lastMatchCount - HintCapacity);
-                    if (ScrollOffset < 0) ScrollOffset = 0;
+                    int newScroll = ScrollOffset + delta;
+                    ScrollOffset = Math.Max(0, Math.Min(newScroll, _lastMatchCount - HintCapacity));
                     // Keep selection at bottom of visible window
                     SelectedIndex = Math.Min(HintCapacity, _lastMatchCount - ScrollOffset) - 1;
                 }
             }
             else if (newIndex < 0 && delta < 0)
             {
-                // Scroll up if there are more matches above
-                int newScroll = ScrollOffset + delta;
-                if (newScroll >= 0)
+                // Scroll up if there are more matches than fit on screen
+                if (_lastMatchCount > HintCapacity)
                 {
-                    ScrollOffset = newScroll;
-                    SelectedIndex = 0;
-                }
-                else
-                {
-                    ScrollOffset = 0;
-                    SelectedIndex = 0;
+                    int newScroll = ScrollOffset + delta;
+                    if (newScroll >= 0)
+                    {
+                        ScrollOffset = newScroll;
+                        SelectedIndex = 0;
+                    }
+                    else
+                    {
+                        ScrollOffset = 0;
+                        SelectedIndex = 0;
+                    }
                 }
             }
             else
@@ -127,10 +136,10 @@ internal class CommandPalette : IBottomPanel
 
     public static bool IsActive(string currentInput) => currentInput.StartsWith('/');
 
-    private static readonly string[] _emptyHints = BuildEmptyHints();
-    private static readonly IReadOnlyList<string> _cachedEmptyHints = _emptyHints;
+    private readonly string[] _emptyHints;
+    private readonly IReadOnlyList<string> _cachedEmptyHints;
 
-    private static string[] BuildEmptyHints()
+    private string[] BuildEmptyHints()
     {
         var arr = new string[MaxHeight];
         for (int i = 0; i < MaxHeight; i++) arr[i] = string.Empty;
@@ -141,28 +150,41 @@ internal class CommandPalette : IBottomPanel
     private string? _lastInput;
     private IReadOnlyList<string>? _lastLines;
     private int _lastSelectedIndex;
+    private int _lastScrollOffset;
     private int _lastMatchCount;
 
     // Reusable lists for building content on every GetLines call.
     // Cleared and repopulated on each cache miss to avoid per-call allocation.
-    private readonly List<string> _linesBuffer = new(MaxHeight);
-    private readonly List<Command> _matchingBuffer = new(HintCapacity + 1);
+    private readonly List<string> _linesBuffer;
+    private readonly List<Command> _matchingBuffer;
 
     // Reusable StringBuilder for building hint lines without per-line
     // PadRight or string interpolation allocation.
     private readonly System.Text.StringBuilder _sb = new(capacity: 128);
 
     /// <summary>Creates a palette that reads from a live command provider.</summary>
-    public CommandPalette(Func<IEnumerable<Command>> commandProvider)
+    public CommandPalette(Func<IEnumerable<Command>> commandProvider, StreamShellSettings? settings = null)
     {
         _commandProvider = commandProvider;
+        if (settings != null)
+            MaxHeight = settings.CommandPaletteHeight;
+        _emptyHints = BuildEmptyHints();
+        _cachedEmptyHints = _emptyHints;
+        _linesBuffer = new(MaxHeight);
+        _matchingBuffer = new(HintCapacity + 1);
     }
 
     /// <summary>Creates a palette with a fixed set of commands (for testing).</summary>
-    public CommandPalette(IEnumerable<Command> commands)
+    public CommandPalette(IEnumerable<Command> commands, StreamShellSettings? settings = null)
     {
         var arr = commands.ToArray();
         _commandProvider = () => arr;
+        if (settings != null)
+            MaxHeight = settings.CommandPaletteHeight;
+        _emptyHints = BuildEmptyHints();
+        _cachedEmptyHints = _emptyHints;
+        _linesBuffer = new(MaxHeight);
+        _matchingBuffer = new(HintCapacity + 1);
     }
 
     /// <summary>
@@ -176,9 +198,10 @@ internal class CommandPalette : IBottomPanel
     {
         bool inputChanged = currentInput != _lastInput;
         bool selectionChanged = _lastSelectedIndex != SelectedIndex;
+        bool scrollChanged = _lastScrollOffset != ScrollOffset;
 
         // Cache hit: nothing changed
-        if (!inputChanged && !selectionChanged && _lastLines != null)
+        if (!inputChanged && !selectionChanged && !scrollChanged && _lastLines != null)
             return _lastLines;
 
         CurrentSuggestion = null;
@@ -216,8 +239,10 @@ internal class CommandPalette : IBottomPanel
         // Reuse the lines buffer: clear and repopulate
         _linesBuffer.Clear();
 
-        // Status line at index 0 (first line)
-        _linesBuffer.Add("[dim]Tab: autocomplete  \u2191\u2193: selection[/]");
+        // Status line at index 0 (first line) — shows input schema + scroll position
+        int startIdx = ScrollOffset + 1;
+        int endIdx = Math.Min(ScrollOffset + HintCapacity, _matchingBuffer.Count);
+        _linesBuffer.Add($"[dim]Tab: autocomplete  \u2191\u2193: scroll  {startIdx}-{endIdx}/{_matchingBuffer.Count}[/]");
 
         int spaceIndex = query.IndexOf(' ');
 
@@ -295,6 +320,7 @@ internal class CommandPalette : IBottomPanel
 
         _lastInput = currentInput;
         _lastSelectedIndex = SelectedIndex;
+        _lastScrollOffset = ScrollOffset;
         _lastLines = _linesBuffer;
         return _linesBuffer;
     }

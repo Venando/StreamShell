@@ -957,7 +957,8 @@ public class CommandPaletteAdditionalTests
     [Fact]
     public void HintCapacity_ExpectedValue()
     {
-        Assert.Equal(4, CommandPalette.HintCapacity);
+        var palette = new CommandPalette(Array.Empty<Command>());
+        Assert.Equal(7, palette.HintCapacity);
     }
 
     // ── GetLines with no matching commands ───────────────────────────
@@ -967,7 +968,7 @@ public class CommandPaletteAdditionalTests
     {
         var palette = new CommandPalette(Array.Empty<Command>());
         var lines = palette.GetLines("/");
-        Assert.Equal(CommandPalette.MaxHeight, lines.Count);
+        Assert.Equal(palette.MaxHeight, lines.Count);
         Assert.All(lines, line => Assert.Equal(string.Empty, line));
     }
 }

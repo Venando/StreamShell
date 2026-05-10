@@ -8,20 +8,21 @@ namespace StreamShell;
 /// </summary>
 public class EmptyBottomPanel : IBottomPanel
 {
-    int IBottomPanel.LineCount => CommandPalette.MaxHeight;
+    private readonly int _lineCount;
+    int IBottomPanel.LineCount => _lineCount;
 
-    private static readonly IReadOnlyList<string> _emptyLines = BuildEmptyLines();
+    private readonly IReadOnlyList<string> _emptyLines;
 
-    private static IReadOnlyList<string> BuildEmptyLines()
+    public EmptyBottomPanel(int? lineCount = null)
     {
-        var arr = new string[CommandPalette.MaxHeight];
+        _lineCount = lineCount ?? CommandPalette.DefaultMaxHeight;
+        var arr = new string[_lineCount];
         for (int i = 0; i < arr.Length; i++)
             arr[i] = string.Empty;
-        return arr;
+        _emptyLines = arr;
     }
 
     public IReadOnlyList<string> GetLines(string currentInput) => _emptyLines;
 
-    /// <summary>Disposes the panel. No-op for EmptyBottomPanel.</summary>
     public void Dispose() { }
 }

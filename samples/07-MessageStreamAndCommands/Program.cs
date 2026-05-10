@@ -4,13 +4,14 @@ using Spectre.Console;
 // ═════════════════════════════════════════════════════════════════════
 //  07-MessageStreamAndCommands
 //  Tests new features: message replay on resize, command scrolling,
-//  markup in command names, and bottom separator toggle.
+//  markup in command names, configurable palette height, and
+//  bottom separator toggle via custom panels.
 // ═════════════════════════════════════════════════════════════════════
 
 var host = new ConsoleAppHost();
 host.SetTopSeparator(leftText: "[bold cyan]StreamShell[/]", rightText: "[grey]v1.0.1[/]", repeatedCharacter: '-');
 
-// Add many commands to test scrolling (> HintCapacity of 4)
+// Add many commands to test scrolling (> HintCapacity of 7)
 // Some have markup in their names to test markup support
 var commands = new[]
 {
@@ -57,19 +58,26 @@ host.AddCommand("flood", "Floods the message stream with test messages", async (
     await Task.CompletedTask;
 }, null);
 
-// Command that toggles the bottom separator via a custom panel
+bool _defaultPanelHasSeparator = true;
+
+// Toggle between two default panels: one with separator, one without
+var panelWithSep = new InfoBottomPanel(showSeparator: true, host.Settings.CommandPaletteHeight);
+var panelWithoutSep = new InfoBottomPanel(showSeparator: false, host.Settings.CommandPaletteHeight);
+
 host.AddCommand("togglesep", "Toggles the bottom separator on/off", async (args, named) =>
 {
-    // We can't directly toggle from here easily, but we can demonstrate
-    host.AddMessage("[yellow]Use /panel command to toggle a panel without bottom separator.[/]");
-    await Task.CompletedTask;
-}, null);
-
-host.AddCommand("panel", "Switches to a panel without bottom separator", async (args, named) =>
-{
-    // This would need access to host internals, so we just show a message
-    host.AddMessage("[green]Bottom separator toggle is set per-panel via ShowBottomSeparator property.[/]");
-    host.AddMessage("[grey]Custom panels can set ShowBottomSeparator = false to suppress it.[/]");
+    if (_defaultPanelHasSeparator)
+    {
+        host.SetDefaultPanel(panelWithoutSep);
+        _defaultPanelHasSeparator = false;
+        host.AddMessage("[yellow]Bottom separator OFF — panel tight to input.[/]");
+    }
+    else
+    {
+        host.SetDefaultPanel(panelWithSep);
+        _defaultPanelHasSeparator = true;
+        host.AddMessage("[green]Bottom separator ON — panel separated from input.[/]");
+    }
     await Task.CompletedTask;
 }, null);
 
@@ -84,6 +92,34 @@ host.UserInputSubmitted += e =>
 host.AddMessage("[bold green]Welcome to StreamShell Test App![/]");
 host.AddMessage("[grey]Type / and use [bold]↑ ↓[/] to scroll through [yellow]20+ commands[/]. Some have markup in names.[/]");
 host.AddMessage("[grey]Type [bold]/flood[/] to fill the screen, then resize window to test message replay.[/]");
-host.AddMessage("[grey]Tab autocomplete and scroll offset work for all matches, not just the first 4.[/]");
+host.AddMessage("[grey]Tab autocomplete and scroll offset work for all matches, not just the first window.[/]");
+host.AddMessage("[grey]Type [bold]/togglesep[/] to switch default panel with/without bottom separator.[/]");
 
 await host.Run();
+
+// ═════════════════════════════════════════════════════════════════════
+//  Custom bottom panel that shows a timestamped status line.
+//  Demonstrates ShowBottomSeparator toggle.
+// ═════════════════════════════════════════════════════════════════════
+public class InfoBottomPanel : IBottomPanel
+{
+    private readonly bool _showSeparator;
+    private readonly string[] _lines;
+
+    public InfoBottomPanel(bool showSeparator, int height)
+    {
+        _showSeparator = showSeparator;
+        _lines = new string[height];
+        _lines[0] = $"[dim grey]Info panel — separator: {(showSeparator ? "ON" : "OFF")}[/]";
+        for (int i = 1; i < height; i++)
+            _lines[i] = string.Empty;
+    }
+
+    int IBottomPanel.LineCount => _lines.Length;
+    bool IBottomPanel.ShowBottomSeparator => _showSeparator;
+
+    public IReadOnlyList<string> GetLines(string currentInput) => _lines;
+    public bool TryHandleKey(ConsoleKeyInfo key) => false;
+    public void Dispose() { }
+    public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}

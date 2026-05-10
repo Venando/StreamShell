@@ -556,10 +556,10 @@ public class ClipboardHandlerTests
 public class EmptyBottomPanelTests
 {
     [Fact]
-    public void LineCount_MatchesCommandPaletteMaxHeight()
+    public void LineCount_MatchesCommandPaletteDefaultMaxHeight()
     {
         var panel = new EmptyBottomPanel();
-        Assert.Equal(CommandPalette.MaxHeight, ((IBottomPanel)panel).LineCount);
+        Assert.Equal(CommandPalette.DefaultMaxHeight, ((IBottomPanel)panel).LineCount);
     }
 
     [Fact]
@@ -567,7 +567,7 @@ public class EmptyBottomPanelTests
     {
         var panel = new EmptyBottomPanel();
         var lines = panel.GetLines("anything");
-        Assert.Equal(CommandPalette.MaxHeight, lines.Count);
+        Assert.Equal(CommandPalette.DefaultMaxHeight, lines.Count);
         Assert.All(lines, l => Assert.Equal(string.Empty, l));
     }
 

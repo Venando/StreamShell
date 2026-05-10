@@ -59,7 +59,7 @@ public partial class ConsoleAppHost : IDisposable
         _terminal = new SystemTerminal();
         _renderer = new ConsoleRenderer(Settings);
         _inputHandler = new UserInputHandler();
-        _defaultPanel = new EmptyBottomPanel();
+        _defaultPanel = new EmptyBottomPanel(Settings.CommandPaletteHeight);
         _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
         if (_renderer is ConsoleRenderer cr)
@@ -84,7 +84,7 @@ public partial class ConsoleAppHost : IDisposable
         _renderer = renderer;
         _inputHandler = inputHandler;
         _terminal = terminal ?? new SystemTerminal();
-        _defaultPanel = new EmptyBottomPanel();
+        _defaultPanel = new EmptyBottomPanel(Settings.CommandPaletteHeight);
         _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
         if (_renderer is ConsoleRenderer cr)

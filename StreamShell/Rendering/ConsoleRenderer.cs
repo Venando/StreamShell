@@ -32,7 +32,7 @@ internal class ConsoleRenderer : IRenderer
     public int RightMargin { get; set; }
 
     // Line count of the current bottom panel (set by host). Defaults to CommandPalette's size.
-    private int _panelLineCount = CommandPalette.MaxHeight;
+    private int _panelLineCount = CommandPalette.DefaultMaxHeight;
 
     /// <summary>Top separator configuration (between message feed and input block).</summary>
     public SeparatorConfig TopSeparator { get; set; } = SeparatorConfig.Default;

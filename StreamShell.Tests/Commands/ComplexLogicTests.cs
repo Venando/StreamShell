@@ -63,7 +63,7 @@ public class CommandPaletteTests
         var palette = CreatePalette();
         var lines = palette.GetLines("hello");
 
-        Assert.Equal(CommandPalette.MaxHeight, lines.Count);
+        Assert.Equal(palette.MaxHeight, lines.Count);
         Assert.All(lines, line => Assert.Equal(string.Empty, line));
     }
 
@@ -73,7 +73,7 @@ public class CommandPaletteTests
         var palette = CreatePalette();
         var lines = palette.GetLines("");
 
-        Assert.Equal(CommandPalette.MaxHeight, lines.Count);
+        Assert.Equal(palette.MaxHeight, lines.Count);
         Assert.All(lines, line => Assert.Equal(string.Empty, line));
     }
 
@@ -85,7 +85,7 @@ public class CommandPaletteTests
         var palette = CreatePalette();
         var lines = palette.GetLines("/zzzz");
 
-        Assert.Equal(CommandPalette.MaxHeight, lines.Count);
+        Assert.Equal(palette.MaxHeight, lines.Count);
         Assert.All(lines, line => Assert.Equal(string.Empty, line));
     }
 
@@ -95,7 +95,7 @@ public class CommandPaletteTests
         var palette = CreatePalette();
         var lines = palette.GetLines("/");
 
-        Assert.Equal(CommandPalette.MaxHeight, lines.Count);
+        Assert.Equal(palette.MaxHeight, lines.Count);
         // Line 0 = status line
         Assert.Contains("Tab", lines[0]);
         Assert.Contains("\u2191\u2193", lines[0]);
@@ -271,7 +271,7 @@ public class CommandPaletteTests
         var lines = palette.GetLines("/deploy xyz");
 
         // Line 0 is always the status line when input starts with /
-        Assert.Equal(CommandPalette.MaxHeight, lines.Count);
+        Assert.Equal(palette.MaxHeight, lines.Count);
         Assert.All(lines.Skip(1), line => Assert.Equal(string.Empty, line));
     }
 
@@ -301,7 +301,7 @@ public class CommandPaletteTests
         var palette = new CommandPalette(manyCommands);
         var lines = palette.GetLines("/");
 
-        Assert.Equal(CommandPalette.MaxHeight, lines.Count);
+        Assert.Equal(palette.MaxHeight, lines.Count);
     }
 }
 
