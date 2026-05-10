@@ -335,12 +335,15 @@ host.UserInputSubmitted += args =>
 };
 
 _ = Task.Run(async () =>
-{ 
+{
+    var random = new Random();
     int i = 0;
     while (true)
     {
-        await Task.Delay(200);
-        host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
+        await Task.Delay(2500);
+        var lines = random.Next(1, 6);
+        for (int j = 0; j < lines; j++)
+            host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
     }
 });
 
