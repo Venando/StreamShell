@@ -335,11 +335,11 @@ host.UserInputSubmitted += args =>
 };
 
 _ = Task.Run(async () =>
-{
+{ 
     int i = 0;
     while (true)
     {
-        await Task.Delay(2500);
+        await Task.Delay(200);
         host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
     }
 });
@@ -361,6 +361,8 @@ host.AddMessage("[yellow]/load <id>    — restore state into input field[/]");
 host.AddMessage("[yellow]/unsave <id>  — remove a saved state[/]");
 host.AddMessage("[yellow]/clear-saved  — remove all saved states[/]");
 host.AddMessage("[yellow]/saved        — list saved states[/]");
+
+host.SetTopSeparator("left", "right", '-', "white");
 
 await host.Run();
 

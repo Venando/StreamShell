@@ -313,6 +313,16 @@ public class ConsoleAppHost : IDisposable
     /// <summary>Captures the current input handler state and terminal dimensions into a single struct.</summary>
     private TickState CaptureTickState()
     {
+        // Always sync right margins with the current terminal width — the
+        // user may have resized the window since the last tick. Without this,
+        // ConsoleRenderer and UserInputHandler would use stale constructor-time
+        // values, causing text to wrap at the wrong column ("right margin stays
+        // at the same place" after a resize).
+        int windowWidth = _terminal.WindowWidth;
+        _inputHandler.RightMargin = windowWidth;
+        if (_renderer is ConsoleRenderer cr)
+            cr.RightMargin = windowWidth;
+
         _inputHandler.TryGetSelection(out int selStart, out int selLength);
         return new TickState(
             _inputHandler.CurrentInput,
@@ -320,7 +330,7 @@ public class ConsoleAppHost : IDisposable
             _inputHandler.HasSelection,
             selStart,
             selLength,
-            _terminal.WindowWidth,
+            windowWidth,
             _inputHandler.RightMargin
         );
     }
