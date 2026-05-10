@@ -8,7 +8,7 @@ using var host = new ConsoleAppHost();
 
 // ── Commands ──
 
-host.AddCommand(new Command("top-sep", "Set top separator. Usage: /top-sep [left] [right] [char]",
+host.AddCommand(new Command("top-sep", Markup.Escape("Set top separator. Usage: /top-sep [left] [right] [char]"),
     (args, _) =>
     {
         string? left = args.Length > 0 ? args[0] : null;
@@ -19,7 +19,7 @@ host.AddCommand(new Command("top-sep", "Set top separator. Usage: /top-sep [left
         return Task.CompletedTask;
     }));
 
-host.AddCommand(new Command("bot-sep", "Set bottom separator. Usage: /bot-sep [left] [right] [char]",
+host.AddCommand(new Command("bot-sep", Markup.Escape("Set bottom separator. Usage: /bot-sep [left] [right] [char]"),
     (args, _) =>
     {
         string? left = args.Length > 0 ? args[0] : null;
