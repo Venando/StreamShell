@@ -357,41 +357,27 @@ internal class CommandPalette : IBottomPanel
         int spaceIndex = query.IndexOf(' ');
         bool isSpacePresent = spaceIndex > 0;
         ReadOnlySpan<char> cmdPrefix = isSpacePresent ? query[..spaceIndex] : query;
-        int limit = HintCapacity + 1;
 
         if (cmdPrefix.Length == 0)
         {
-            // No filter — take up to limit directly from the enumerable
-            // Avoids the [.. list] full-copy allocation that would occur
-            // when the provider returns an IList<Command>.
             foreach (var cmd in currentCommands)
-            {
                 result.Add(cmd);
-                if (result.Count > limit) break;
-            }
             return;
         }
 
         foreach (var cmd in currentCommands)
         {
-            // Strip markup from name for matching
             string nameForMatch = StripMarkup(cmd.Name);
             ReadOnlySpan<char> nameSpan = nameForMatch.AsSpan();
             if (isSpacePresent)
             {
                 if (nameSpan.Equals(cmdPrefix, StringComparison.OrdinalIgnoreCase))
-                {
                     result.Add(cmd);
-                    if (result.Count > limit) break;
-                }
             }
             else
             {
                 if (nameSpan.StartsWith(cmdPrefix, StringComparison.OrdinalIgnoreCase))
-                {
                     result.Add(cmd);
-                    if (result.Count > limit) break;
-                }
             }
         }
     }
