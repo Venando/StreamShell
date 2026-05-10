@@ -18,6 +18,8 @@ public partial class ConsoleAppHost
         _panelCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
 
         _bottomPanel = panel;
+        if (_renderer is ConsoleRenderer cr)
+            cr.ShowBottomSeparator = panel.ShowBottomSeparator;
         WireUpAutoComplete();
         BottomPanelChanged?.Invoke(this, new BottomPanelChangedEventArgs(panel));
 

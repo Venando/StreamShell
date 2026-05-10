@@ -50,11 +50,13 @@ internal class CommandPalette : IBottomPanel
         return false;
     }
 
-    /// <summary>
-    /// Index of the currently selected hint (0 = first hint, -1 = none).
+    /// <summary>Index of the currently selected hint (0 = first hint, -1 = none).
     /// Only valid while hints are shown (command mode with matches).
     /// </summary>
     internal int SelectedIndex { get; set; }
+
+    /// <summary>Scroll offset into the full match list. 0 means showing the first page.</summary>
+    internal int ScrollOffset { get; set; }
 
     /// <summary>True when there are hints to navigate.</summary>
     internal bool CanNavigate => _lastLines?.Count > 0;
@@ -63,29 +65,63 @@ internal class CommandPalette : IBottomPanel
     /// Adjusts the selection by <paramref name="delta"/> and clamps
     /// to the available hint range. Call when the user presses Up/Down.
     /// Marks the panel as dirty so the host forces a re-render.
+    /// Supports scrolling through all matches (not just the visible window).
     /// </summary>
     internal void AdjustSelection(int delta)
     {
-        int maxVisible = Math.Min(HintCapacity, _lastMatchCount);
-        if (maxVisible <= 0)
+        if (_lastMatchCount <= 0)
         {
             ResetSelection();
             return;
         }
 
         int oldIndex = SelectedIndex;
+        int oldScroll = ScrollOffset;
 
         // On first navigation from -1, start at the closest edge
         if (SelectedIndex < 0)
         {
-            SelectedIndex = delta > 0 ? 0 : maxVisible - 1;
+            SelectedIndex = delta > 0 ? 0 : Math.Min(HintCapacity, _lastMatchCount) - 1;
         }
         else
         {
-            SelectedIndex = Math.Clamp(SelectedIndex + delta, 0, maxVisible - 1);
+            int newIndex = SelectedIndex + delta;
+            int visibleCount = Math.Min(HintCapacity, _lastMatchCount - ScrollOffset);
+
+            if (newIndex >= visibleCount && delta > 0)
+            {
+                // Scroll down if there are more matches below
+                int newScroll = ScrollOffset + delta;
+                if (newScroll < _lastMatchCount)
+                {
+                    ScrollOffset = Math.Min(newScroll, _lastMatchCount - HintCapacity);
+                    if (ScrollOffset < 0) ScrollOffset = 0;
+                    // Keep selection at bottom of visible window
+                    SelectedIndex = Math.Min(HintCapacity, _lastMatchCount - ScrollOffset) - 1;
+                }
+            }
+            else if (newIndex < 0 && delta < 0)
+            {
+                // Scroll up if there are more matches above
+                int newScroll = ScrollOffset + delta;
+                if (newScroll >= 0)
+                {
+                    ScrollOffset = newScroll;
+                    SelectedIndex = 0;
+                }
+                else
+                {
+                    ScrollOffset = 0;
+                    SelectedIndex = 0;
+                }
+            }
+            else
+            {
+                SelectedIndex = Math.Clamp(newIndex, 0, visibleCount - 1);
+            }
         }
 
-        if (SelectedIndex != oldIndex)
+        if (SelectedIndex != oldIndex || ScrollOffset != oldScroll)
             _isDirty = true;
     }
 
@@ -196,47 +232,55 @@ internal class CommandPalette : IBottomPanel
         }
         else
         {
-            // Command hint mode — limit to HintCapacity manually to avoid LINQ Take().ToList()
-            int showCount = Math.Min(_matchingBuffer.Count, HintCapacity);
+            // Command hint mode — show slice based on scroll offset
+            int totalMatches = _matchingBuffer.Count;
+            int effectiveOffset = Math.Min(ScrollOffset, Math.Max(0, totalMatches - HintCapacity));
+            int showCount = Math.Min(HintCapacity, totalMatches - effectiveOffset);
 
             // Determine autocomplete suggestion from the selected command (if any)
             if (showCount > 0)
             {
                 int suggestionIdx = SelectedIndex >= 0 ? SelectedIndex : 0;
-                if (suggestionIdx < showCount)
+                int actualIdx = effectiveOffset + suggestionIdx;
+                if (actualIdx < totalMatches)
                 {
-                    CurrentSuggestion = "/" + _matchingBuffer[suggestionIdx].Name + " ";
+                    // Strip markup from suggestion for clean command path
+                    CurrentSuggestion = "/" + StripMarkup(_matchingBuffer[actualIdx].Name) + " ";
                 }
             }
 
             // Build hint strings with selection highlighting
             // Find max name length manually to avoid LINQ MaxBy allocation
-            int maxSize = 12;
+            int maxSize = 0;
             for (int i = 0; i < showCount; i++)
             {
-                int nameLen = _matchingBuffer[i].Name.Length;
+                int nameLen = GetVisualLength(_matchingBuffer[effectiveOffset + i].Name);
                 if (nameLen > maxSize) maxSize = nameLen;
             }
+            // Cap maxSize to leave room for description (at least 20 chars)
+            int availableForName = 40;
+            if (maxSize > availableForName)
+                maxSize = availableForName;
 
             // Use a reusable StringBuilder for each hint line instead of
             // string interpolation with PadRight (which allocates per line).
             _sb.Clear();
             for (int i = 0; i < showCount; i++)
             {
-                var cmd = _matchingBuffer[i];
+                var cmd = _matchingBuffer[effectiveOffset + i];
                 _sb.Clear();
                 if (i == SelectedIndex)
                 {
                     _sb.Append("> [white]/");
                     _sb.Append(cmd.Name);
-                    PadTo(_sb, cmd.Name.Length, maxSize);
+                    PadTo(_sb, GetVisualLength(cmd.Name), maxSize);
                     _sb.Append("[/] ");
                 }
                 else
                 {
                     _sb.Append("  [grey]/");
                     _sb.Append(cmd.Name);
-                    PadTo(_sb, cmd.Name.Length, maxSize);
+                    PadTo(_sb, GetVisualLength(cmd.Name), maxSize);
                     _sb.Append("[/] ");
                 }
                 _sb.Append(cmd.Description);
@@ -266,9 +310,9 @@ internal class CommandPalette : IBottomPanel
             // Clamp selection when matching count shrinks below current index
             if (SelectedIndex >= 0 && _lastMatchCount > 0)
             {
-                int maxVisible = Math.Min(HintCapacity, _lastMatchCount);
+                int maxVisible = Math.Min(HintCapacity, _lastMatchCount - ScrollOffset);
                 if (SelectedIndex >= maxVisible)
-                    SelectedIndex = maxVisible - 1;
+                    SelectedIndex = Math.Max(0, maxVisible - 1);
             }
 
             try { await Task.Delay(100, cancellationToken); }
@@ -304,7 +348,9 @@ internal class CommandPalette : IBottomPanel
 
         foreach (var cmd in currentCommands)
         {
-            ReadOnlySpan<char> nameSpan = cmd.Name.AsSpan();
+            // Strip markup from name for matching
+            string nameForMatch = StripMarkup(cmd.Name);
+            ReadOnlySpan<char> nameSpan = nameForMatch.AsSpan();
             if (isSpacePresent)
             {
                 if (nameSpan.Equals(cmdPrefix, StringComparison.OrdinalIgnoreCase))
@@ -514,11 +560,60 @@ internal class CommandPalette : IBottomPanel
             sb.Append(' ', pad);
     }
 
+    /// <summary>Strips Spectre.Console markup tags ([...]) from text for matching purposes.</summary>
+    private static string StripMarkup(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        var sb = new System.Text.StringBuilder(text.Length);
+        int i = 0;
+        while (i < text.Length)
+        {
+            if (text[i] == '[')
+            {
+                int close = text.IndexOf(']', i + 1);
+                if (close > i)
+                {
+                    // Check for escaped bracket [[ ]]
+                    if (i + 1 < text.Length && text[i + 1] == '[')
+                    {
+                        sb.Append('[');
+                        i += 2;
+                        continue;
+                    }
+                    i = close + 1;
+                    continue;
+                }
+            }
+            sb.Append(text[i]);
+            i++;
+        }
+        return sb.ToString();
+    }
+
+    private static int GetVisualLength(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+        int len = 0;
+        int i = 0;
+        while (i < text.Length)
+        {
+            if (text[i] == '[')
+            {
+                int close = text.IndexOf(']', i + 1);
+                if (close > i) { i = close + 1; continue; }
+            }
+            len++;
+            i++;
+        }
+        return len;
+    }
+
     private void ResetSelection()
     {
-        if (SelectedIndex != 0)
+        if (SelectedIndex != 0 || ScrollOffset != 0)
         {
             SelectedIndex = 0;
+            ScrollOffset = 0;
             _isDirty = true;
         }
     }

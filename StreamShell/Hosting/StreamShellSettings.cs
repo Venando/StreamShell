@@ -14,6 +14,12 @@ public class StreamShellSettings
     /// <summary>Maximum line count before a paste is treated as a large paste. Default: 4.</summary>
     public int LargePasteLineThreshold { get; set; } = 4;
 
+    /// <summary>
+    /// Number of messages to re-emit after console width decreases and resize settles.
+    /// -1 means auto (Console.WindowHeight + 1). Default: -1.
+    /// </summary>
+    public int MessageReplayCount { get; set; } = -1;
+
     private string _cursorMarkup = "bold black on cyan";
     private string _selectionMarkup = "bold cyan on Grey27";
     private string _commandSlashMarkup = "Red1";

@@ -62,7 +62,14 @@ public partial class ConsoleAppHost : IDisposable
         _defaultPanel = new EmptyBottomPanel();
         _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
-        BottomPanelChanged += (_, e) => _renderer.SetPanelLineCount(e.Panel.LineCount);
+        if (_renderer is ConsoleRenderer cr)
+            cr.ShowBottomSeparator = _bottomPanel.ShowBottomSeparator;
+        BottomPanelChanged += (_, e) =>
+        {
+            _renderer.SetPanelLineCount(e.Panel.LineCount);
+            if (_renderer is ConsoleRenderer cr2)
+                cr2.ShowBottomSeparator = e.Panel.ShowBottomSeparator;
+        };
         Settings.SettingsChanged += OnSettingsChanged;
         ApplySettings();
         WireUpAutoComplete();
@@ -80,7 +87,14 @@ public partial class ConsoleAppHost : IDisposable
         _defaultPanel = new EmptyBottomPanel();
         _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
-        BottomPanelChanged += (_, e) => _renderer.SetPanelLineCount(e.Panel.LineCount);
+        if (_renderer is ConsoleRenderer cr)
+            cr.ShowBottomSeparator = _bottomPanel.ShowBottomSeparator;
+        BottomPanelChanged += (_, e) =>
+        {
+            _renderer.SetPanelLineCount(e.Panel.LineCount);
+            if (_renderer is ConsoleRenderer cr2)
+                cr2.ShowBottomSeparator = e.Panel.ShowBottomSeparator;
+        };
         Settings.SettingsChanged += OnSettingsChanged;
         ApplySettings();
         WireUpAutoComplete();

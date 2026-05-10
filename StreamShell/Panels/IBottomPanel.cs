@@ -42,6 +42,13 @@ public interface IBottomPanel : IDisposable
     string? CurrentSuggestion => null;
 
     /// <summary>
+    /// When true, the bottom separator is printed between the input line and the panel.
+    /// When false, the separator is suppressed (e.g. for panels that need tight spacing).
+    /// Default: true.
+    /// </summary>
+    bool ShowBottomSeparator => true;
+
+    /// <summary>
     /// Runs the panel's own background loop.
     /// Called by the host when the panel is set active.
     /// The host cancels the token when the panel is swapped out or the host stops.

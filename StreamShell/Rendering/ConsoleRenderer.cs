@@ -50,6 +50,9 @@ internal class ConsoleRenderer : IRenderer
         set => _markupBuilder.PlaceholderStrings = value;
     }
 
+    /// <summary>When false, suppresses the bottom separator between input and hints.</summary>
+    public bool ShowBottomSeparator { get; set; } = true;
+
     /// <summary>Updates the panel line count used for block offset calculation.</summary>
     public void SetPanelLineCount(int count) => _panelLineCount = count;
 
@@ -78,6 +81,29 @@ internal class ConsoleRenderer : IRenderer
 
     /// <summary>Maximum number of messages to replay when the block grows. Default: 10.</summary>
     public int MessageBufferReplayCount { get; set; } = 10;
+
+    /// <summary>
+    /// Re-emits the last <paramref name="count"/> messages from the message history.
+    /// Used after console width decreases so messages are re-wrapped correctly.
+    /// </summary>
+    public void ReplayMessages(int count)
+    {
+        if (_messageHistory.Count == 0)
+            return;
+
+        int startIndex = Math.Max(0, _messageHistory.Count - count);
+        for (int i = startIndex; i < _messageHistory.Count; i++)
+        {
+            try
+            {
+                AnsiConsole.MarkupLine(_messageHistory[i]);
+            }
+            catch (InvalidOperationException)
+            {
+                AnsiConsole.MarkupLine(Markup.Escape(_messageHistory[i]));
+            }
+        }
+    }
 
     // ── Message Display ──────────────────────────────────────────────
     public void RenderMessage(string markup)
@@ -362,7 +388,7 @@ internal class ConsoleRenderer : IRenderer
             }
         }
 
-        if (hasNonEmptyHint)
+        if (ShowBottomSeparator && hasNonEmptyHint)
             RenderBottomSeparator();
         else
         {

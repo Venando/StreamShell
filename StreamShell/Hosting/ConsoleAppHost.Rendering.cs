@@ -15,6 +15,10 @@ public partial class ConsoleAppHost
         int LastPanelLineCount
     );
 
+    // ── Resize detection ─────────────────────────────────────────────
+    private int _resizeStableTicks = 0;
+    private bool _resizeDetected = false;
+
     private async Task RunLoop(CancellationToken token)
     {
         var state = new RenderSnapshot(null, 0, false, 0, _terminal.WindowWidth, _bottomPanel.LineCount);
@@ -51,8 +55,7 @@ public partial class ConsoleAppHost
         int Margin
     );
 
-    /// <summary>
-    /// Processes exactly one tick of the render/input loop.
+    /// <summary>Processes exactly one tick of the render/input loop.
     /// Returns (submittedInput, newState) — submittedInput is null if nothing was submitted,
     /// or "__QUIT__" when Ctrl+D was pressed.
     /// For testing: allows controlled single-iteration execution without the infinite loop.
@@ -68,6 +71,56 @@ public partial class ConsoleAppHost
         var tick = CaptureTickState();
         SyncPlaceholderCache();
 
+        // Check for resize that has settled (width decreased and stable for several ticks)
+        bool widthDecreased = tick.WindowWidth < state.LastWindowWidth;
+        bool widthChanged = tick.WindowWidth != state.LastWindowWidth;
+
+        if (widthDecreased)
+        {
+            _resizeDetected = true;
+            _resizeStableTicks = 0;
+        }
+        else if (_resizeDetected && !widthChanged)
+        {
+            _resizeStableTicks++;
+            if (_resizeStableTicks >= 5) // ~50ms of stability
+            {
+                _resizeDetected = false;
+                _resizeStableTicks = 0;
+                // Re-emit last N messages
+                int replayCount = Settings.MessageReplayCount < 0
+                    ? Console.WindowHeight + 1
+                    : Settings.MessageReplayCount;
+                if (_renderer is ConsoleRenderer cr)
+                    cr.ReplayMessages(replayCount);
+                // After replay, we need a full re-render of the input block
+                RenderFullInputBlock(tick);
+                var postReplayState = new RenderSnapshot(tick.Input, tick.Cursor, tick.HasSelection,
+                    _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount);
+
+                if (_inputHandler.QuitRequested)
+                {
+                    _inputHandler.QuitRequested = false;
+                    return ("__QUIT__", postReplayState);
+                }
+
+                string? submittedInput = _inputHandler.ProcessInput();
+                if (submittedInput != null)
+                {
+                    HandleSubmittedInput(submittedInput, tick.WindowWidth);
+                    postReplayState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount);
+                }
+
+                return (submittedInput, postReplayState);
+            }
+        }
+        else if (_resizeDetected && widthChanged && !widthDecreased)
+        {
+            // Width increased during resize — reset
+            _resizeDetected = false;
+            _resizeStableTicks = 0;
+        }
+
         bool rendered = TryRender(state, tick);
         var newState = rendered
             ? new RenderSnapshot(tick.Input, tick.Cursor, tick.HasSelection,
@@ -80,14 +133,14 @@ public partial class ConsoleAppHost
             return ("__QUIT__", newState);
         }
 
-        string? submittedInput = _inputHandler.ProcessInput();
-        if (submittedInput != null)
+        string? submitted = _inputHandler.ProcessInput();
+        if (submitted != null)
         {
-            HandleSubmittedInput(submittedInput, tick.WindowWidth);
+            HandleSubmittedInput(submitted, tick.WindowWidth);
             newState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount);
         }
 
-        return (submittedInput, newState);
+        return (submitted, newState);
     }
 
     /// <summary>Captures the current input handler state and terminal dimensions into a single struct.</summary>
