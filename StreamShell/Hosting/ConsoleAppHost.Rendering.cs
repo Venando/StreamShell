@@ -25,7 +25,14 @@ public partial class ConsoleAppHost
             if (submittedInput == "__QUIT__")
                 break;
 
-            await Task.Delay(10, token);
+            try
+            {
+                await Task.Delay(10, token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
     }
 
