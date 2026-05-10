@@ -108,11 +108,24 @@ class ClockPanel : IBottomPanel
 {
     public int LineCount => 2;
     private string[] _lines = new string[2];
+    private bool _isDirty;
+
+    public bool IsDirty => _isDirty;
+    public void ClearDirty() => _isDirty = false;
 
     public IReadOnlyList<string> GetLines(string currentInput)
     {
         _lines[0] = "";
         _lines[1] = $"[dim]\u23f0 [green]{DateTime.Now:HH:mm:ss}[/] UTC+{TimeZoneInfo.Local.BaseUtcOffset.Hours}[/]";
         return _lines;
+    }
+
+    public async Task RunAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(1000, cancellationToken);
+            _isDirty = true;
+        }
     }
 }
