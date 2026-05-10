@@ -11,14 +11,7 @@
 
 ## Hero Demo
 
-> [!INSERT GIF]
-> **GIF insert request:** Animated demo showing the full StreamShell experience — launching the app, typing text, pressing Enter to submit, typing `/hello` to run a command with rendered output, using Tab for autocomplete, and navigating history with arrow keys. Record at 120×30 chars, ~10s, ~2MB.
->
-> Suggested tool: [VHS](https://github.com/charmbracelet/vhs) or [asciinema](https://asciinema.org/) + [agg](https://github.com/asciinema/agg)
-
-<p align="center">
-  <img src="docs/assets/demo.gif" alt="StreamShell demo" width="700" />
-</p>
+<img width="800" alt="Hero Demo" src="https://github.com/user-attachments/assets/73611c40-19c9-42f2-b8d2-cc2abce623bd" />
 
 ---
 
@@ -53,12 +46,8 @@ host.AddMessage("[green]Success![/]");
 host.AddMessage("[bold][red]Error:[/] something went wrong[/]");
 ```
 
-> [!INSERT GIF]
-> **GIF insert request:** Show multi-line messaging — emit several messages with different colors (green, red, yellow, bold) and watch the input line gracefully move down as messages fill the screen.
+<img width="800" alt="demo-ezgif com-cut(1)" src="https://github.com/user-attachments/assets/1244e8b3-1238-4c80-9be7-930f4086ee5f" />
 
-<p align="center">
-  <img src="docs/assets/markup.gif" alt="Markup rendering demo" width="680" />
-</p>
 
 ### ✨ Command Dispatch with Autocomplete
 
@@ -80,12 +69,7 @@ host.AddCommand("config", "Set a config value",
     ["LargePasteThreshold", "CursorMarkup", "SelectionMarkup"]);
 ```
 
-> [!INSERT GIF]
-> **GIF insert request:** Type `/he`, press Tab to complete to `/hello`, press Enter. Then type `/config` and Tab through argument suggestions. Show the hint palette appearing below the input line.
-
-<p align="center">
-  <img src="docs/assets/autocomplete.gif" alt="Command autocomplete demo" width="680" />
-</p>
+<img width="800" alt="Command autocomplete demo" src="https://github.com/user-attachments/assets/9c5c4f86-6fb4-40ec-ad66-0bafbf0de3eb" />
 
 ### ✨ Inline Text Editing
 
@@ -93,12 +77,8 @@ Full editing experience while typing — cursor movement, text selection with Sh
 
 Paste a large block of text and it's automatically detected and attached as a separate attachment object rather than flooding the input buffer.
 
-> [!INSERT GIF]
-> **GIF insert request:** Show cursor navigation with arrow keys, text selection with Shift+arrows (highlighted in selection color), Ctrl+C to copy, then Ctrl+V to paste at a different position. Then paste a large block and show the attachment placeholder.
+<img width="800" alt="Text Editing" src="https://github.com/user-attachments/assets/cd70306d-a72e-44c5-91e6-0ea34a2a5a4d" />
 
-<p align="center">
-  <img src="docs/assets/editing.gif" alt="Text editing demo" width="680" />
-</p>
 
 ### ✨ Interactive Selection Panels
 
@@ -108,12 +88,8 @@ Prompt users with a navigable selection panel at the bottom of the console. Arro
 var selected = await host.PromptSelection("Pick an OS", osVariants);
 ```
 
-> [!INSERT GIF]
-> **GIF insert request:** Show `/pick` command triggering a selection panel with OS names. Navigate with Up/Down arrows, press Enter on one entry, and see the result printed as a message. Then show `/multi` with tool selection — toggle multiple items, then press Space to submit.
+<img width="800" alt="Interactive Selection Panels" src="https://github.com/user-attachments/assets/40038e51-06ff-46b7-8dfc-96287509fe4b" />
 
-<p align="center">
-  <img src="docs/assets/selection.gif" alt="Selection panel demo" width="680" />
-</p>
 
 ### ✨ Customizable Separators
 
@@ -123,13 +99,6 @@ Add styled separators between the message feed, input block, and hint panel. Eac
 host.SetTopSeparator("Messages", "StreamShell", '-', "white");
 host.SetBottomSeparator("Input", null, '\u2500');
 ```
-
-> [!INSERT GIF]
-> **GIF insert request:** Show separators appearing between message area and input line after calling `SetTopSeparator` and `SetBottomSeparator`. Then change separator text and characters via the `/top-sep` command.
-
-<p align="center">
-  <img src="docs/assets/separators.gif" alt="Separator demo" width="680" />
-</p>
 
 ### ✨ Extensible Bottom Panels
 
@@ -148,12 +117,8 @@ public class StatusPanel : IBottomPanel
 host.SetDefaultPanel(new StatusPanel());
 ```
 
-> [!INSERT GIF]
-> **GIF insert request:** Show a custom bottom panel that displays character count, updating in real-time as the user types. Then toggle back to the default panel.
+<img width="1073" height="694" alt="Extensible Bottom Panels + Customizable Separators" src="https://github.com/user-attachments/assets/55425cc8-a92a-4480-8e68-4e8932cd0893" />
 
-<p align="center">
-  <img src="docs/assets/panels.gif" alt="Custom panel demo" width="680" />
-</p>
 
 ### ✨ Input Field Save/Load
 
@@ -164,13 +129,6 @@ string id = host.InputHandler.SaveInputField();     // save current text
 host.InputHandler.LoadInputField(id);                // restore it later
 host.InputHandler.RemoveSavedInputField(id);         // dispose
 ```
-
-> [!INSERT GIF]
-> **GIF insert request:** Show `/save some text` — then type something else, then `/load <id>` and watch the original text reappear in the input field.
-
-<p align="center">
-  <img src="docs/assets/saveload.gif" alt="Input save/load demo" width="680" />
-</p>
 
 ---
 
