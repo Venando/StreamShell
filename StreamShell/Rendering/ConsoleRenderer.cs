@@ -310,7 +310,7 @@ internal class ConsoleRenderer : IRenderer
                 if (!(isLastSegment && remaining == take + skipAfter))
                     _terminal.WriteLine();
 
-                charOffset += take;
+                charOffset += take + skipAfter;
                 remaining -= take + skipAfter;
                 pos += take + skipAfter;
                 lineIdx++;
