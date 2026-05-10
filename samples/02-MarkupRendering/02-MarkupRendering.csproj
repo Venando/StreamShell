@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="..\..\StreamShell\**\*.cs" />
+    <ProjectReference Include="..\..\StreamShell\StreamShell.csproj" />
+  </ItemGroup>
+
+</Project>
