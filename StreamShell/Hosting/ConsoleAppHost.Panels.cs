@@ -9,6 +9,9 @@ public partial class ConsoleAppHost
     /// </summary>
     public void SetBottomPanel(IBottomPanel panel)
     {
+        // Dispose previous panel before swapping
+        _bottomPanel.Dispose();
+
         // Cancel previous panel's background task
         _panelCts.Cancel();
         _panelCts.Dispose();

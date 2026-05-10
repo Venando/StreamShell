@@ -248,25 +248,93 @@ public static class LineWrappingService
     /// <summary>
     /// Converts a character position in the raw input string to
     /// (visual line index, visual column) at the given <paramref name="margin"/>.
+    /// Uses offset-only computation to avoid allocating a List&lt;string&gt; on the hot path.
     /// </summary>
     public static (int line, int column) GetCursorVisualPosition(
         string input, int cursorPosition, int margin,
         int prefixMargin = 2, int rightMargin = 4)
     {
-        var visualLines = GetInputLines(input, margin, prefixMargin, rightMargin);
+        var offsets = GetVisualLineOffsets(input, margin, prefixMargin, rightMargin);
         int accumulated = 0;
 
-        for (int i = 0; i < visualLines.Count; i++)
+        for (int i = 0; i < offsets.Count; i++)
         {
-            int lineLen = visualLines[i].Length;
+            int lineLen = offsets[i];
             if (accumulated + lineLen > cursorPosition)
                 return (i, cursorPosition - accumulated);
             accumulated += lineLen;
         }
 
-        if (visualLines.Count == 0)
+        if (offsets.Count == 0)
             return (0, 0);
 
-        return (visualLines.Count - 1, visualLines[^1].Length);
+        return (offsets.Count - 1, offsets[^1]);
+    }
+
+    /// <summary>
+    /// Returns the length of each visual line (in characters) for the input at the given margin.
+    /// Allocation-free: computes offsets without creating string objects.
+    /// </summary>
+    internal static List<int> GetVisualLineOffsets(string input, int margin,
+        int prefixMargin = 2, int rightMargin = 4)
+    {
+        var offsets = new List<int>();
+        if (string.IsNullOrEmpty(input))
+        {
+            offsets.Add(0);
+            return offsets;
+        }
+
+        int width = Math.Max(1, margin);
+        int totalMargin = prefixMargin + rightMargin;
+        ReadOnlySpan<char> span = input.AsSpan();
+        bool anyLinesProduced = false;
+        int segStart = 0;
+        int segIdx = 0;
+
+        while (segStart <= span.Length)
+        {
+            int nlPos = segStart < span.Length ? span[segStart..].IndexOf('\n') : -1;
+            int segEnd = nlPos >= 0 ? segStart + nlPos : span.Length;
+            ReadOnlySpan<char> segment = span[segStart..segEnd];
+            bool isFirstSegment = segIdx == 0;
+            bool isLastSegment = segEnd == span.Length;
+
+            // Same logic as WrapSegment but only counts lengths
+            if (isFirstSegment && isLastSegment && segment.Length + totalMargin < width)
+            {
+                offsets.Add(segment.Length);
+            }
+            else
+            {
+                int remaining = segment.Length;
+                int lineIdx = 0;
+                while (remaining > 0)
+                {
+                    int cap = Math.Max(isFirstSegment && !anyLinesProduced && lineIdx == 0 ? 0 : 1,
+                        width - totalMargin);
+                    int take = Math.Min(remaining, cap);
+                    offsets.Add(take);
+                    remaining -= take;
+                    lineIdx++;
+                }
+                if (segment.Length == 0)
+                    offsets.Add(0);
+            }
+
+            if (offsets.Count > 0)
+                anyLinesProduced = true;
+
+            segStart = segEnd + 1;
+            segIdx++;
+
+            if (segEnd >= span.Length)
+                break;
+        }
+
+        if (offsets.Count == 0)
+            offsets.Add(0);
+
+        return offsets;
     }
 }

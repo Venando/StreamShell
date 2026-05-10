@@ -199,4 +199,10 @@ internal class SelectionPanel : IBottomPanel
         }
         return result;
     }
+
+    /// <summary>Disposes the panel. Clears cached lines to release references.</summary>
+    public void Dispose()
+    {
+        _cachedLines.Clear();
+    }
 }

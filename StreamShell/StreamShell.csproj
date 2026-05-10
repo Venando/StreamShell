@@ -12,9 +12,11 @@
     <RepositoryType>git</RepositoryType>
     <PackageTags>spectre;console;terminal;cli;tui;host</PackageTags>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
     <PackageReference Include="Spectre.Console" Version="0.55.2" />
   </ItemGroup>
 

@@ -1,4 +1,5 @@
 using StreamShell;
+using System.Threading;
 
 namespace StreamShell.Tests;
 
@@ -25,8 +26,10 @@ internal sealed class MockInputHandler : IInputHandler
         return false;
     }
 
-    public string? ProcessInput()
+    public string? ProcessInput(CancellationToken cancellationToken = default)
     {
+        if (cancellationToken.IsCancellationRequested)
+            return null;
         if (_submittedInput != null)
         {
             string? result = _submittedInput;

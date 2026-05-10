@@ -5,6 +5,9 @@ namespace StreamShell;
 /// <summary>Configurable settings for the StreamShell host.</summary>
 public class StreamShellSettings
 {
+    /// <summary>Raised when any setting property changes. Subscribers can re-apply settings.</summary>
+    public event Action? SettingsChanged;
+
     /// <summary>Maximum character count before a paste is treated as a large paste. Default: 300.</summary>
     public int LargePasteThreshold { get; set; } = 300;
 
@@ -48,7 +51,7 @@ public class StreamShellSettings
     public string CommandSlashMarkup
     {
         get => _commandSlashMarkup;
-        set { _commandSlashMarkup = value ?? "Red1"; InvalidatePrefixMargin(); }
+        set { _commandSlashMarkup = value ?? "Red1"; InvalidatePrefixMargin(); NotifyChanged(); }
     }
 
     /// <summary>
@@ -58,7 +61,7 @@ public class StreamShellSettings
     public string InputPrefix
     {
         get => _inputPrefix;
-        set { _inputPrefix = value ?? "[bold SkyBlue1]> [/]"; InvalidatePrefixMargin(); }
+        set { _inputPrefix = value ?? "[bold SkyBlue1]> [/]"; InvalidatePrefixMargin(); NotifyChanged(); }
     }
 
     /// <summary>
@@ -68,7 +71,7 @@ public class StreamShellSettings
     public string ContinuationPrefix
     {
         get => _continuationPrefix;
-        set { _continuationPrefix = value ?? "  "; InvalidatePrefixMargin(); }
+        set { _continuationPrefix = value ?? "  "; InvalidatePrefixMargin(); NotifyChanged(); }
     }
 
     /// <summary>
@@ -100,4 +103,6 @@ public class StreamShellSettings
 
     /// <summary>Force recomputation of the prefix margin on the next read.</summary>
     internal void RecomputePrefixMargin() => _prefixMargin = -1;
+
+    private void NotifyChanged() => SettingsChanged?.Invoke();
 }

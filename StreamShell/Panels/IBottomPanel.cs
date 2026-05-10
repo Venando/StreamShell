@@ -6,7 +6,7 @@ namespace StreamShell;
 /// intercept keyboard keys via <see cref="TryHandleKey"/>,
 /// and signal internal state changes via <see cref="IsDirty"/>.
 /// </summary>
-public interface IBottomPanel
+public interface IBottomPanel : IDisposable
 {
     /// <summary>Number of lines this panel returns. Determines vertical space at the bottom.</summary>
     int LineCount { get; }

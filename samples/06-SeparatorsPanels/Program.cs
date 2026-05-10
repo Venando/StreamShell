@@ -102,6 +102,8 @@ class CharacterCounterPanel : IBottomPanel
             : $"[grey]Input length: [green]{currentInput.Length}[/] chars | words: [green]{currentInput.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length}[/][/]";
         return _lines;
     }
+
+    public void Dispose() { }
 }
 
 class ClockPanel : IBottomPanel
@@ -128,4 +130,6 @@ class ClockPanel : IBottomPanel
             _isDirty = true;
         }
     }
+
+    public void Dispose() { }
 }

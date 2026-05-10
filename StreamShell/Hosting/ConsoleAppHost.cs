@@ -63,6 +63,7 @@ public partial class ConsoleAppHost : IDisposable
         _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
         BottomPanelChanged += (_, e) => _renderer.SetPanelLineCount(e.Panel.LineCount);
+        Settings.SettingsChanged += OnSettingsChanged;
         ApplySettings();
         WireUpAutoComplete();
 
@@ -80,6 +81,7 @@ public partial class ConsoleAppHost : IDisposable
         _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
         BottomPanelChanged += (_, e) => _renderer.SetPanelLineCount(e.Panel.LineCount);
+        Settings.SettingsChanged += OnSettingsChanged;
         ApplySettings();
         WireUpAutoComplete();
 
@@ -92,6 +94,12 @@ public partial class ConsoleAppHost : IDisposable
     {
         _inputHandler.LargePasteThreshold = Settings.LargePasteThreshold;
         _inputHandler.LargePasteLineThreshold = Settings.LargePasteLineThreshold;
+    }
+
+    /// <summary>Re-applies settings when they change at runtime.</summary>
+    private void OnSettingsChanged()
+    {
+        ApplySettings();
     }
 
     /// <summary>Queue a markup message to be displayed.</summary>
@@ -208,6 +216,10 @@ public partial class ConsoleAppHost : IDisposable
         try { _panelCts.Cancel(); } catch (ObjectDisposedException) { }
         _panelCts.Dispose();
         _cts.Dispose();
+
+        // Dispose active panel
+        _bottomPanel?.Dispose();
+        _defaultPanel?.Dispose();
 
         // Restore terminal state — may fail in test/headless environments
         try

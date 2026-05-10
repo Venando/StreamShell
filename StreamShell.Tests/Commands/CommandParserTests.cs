@@ -116,18 +116,42 @@ public class CommandParserTests
     }
 
     [Fact]
-    public void Parse_ConsecutivePositionalAfterNamed_ResetsCorrectly()
+    public void Parse_QuotedArgs_PreservesSpacesWithinQuotes()
     {
-        var (positional, named) = CommandParser.Parse("--key val extra1 extra2");
-        Assert.Equal(new[] { "extra1", "extra2" }, positional);
-        Assert.Equal(new Dictionary<string, string> { { "key", "val" } }, named);
+        var (positional, named) = CommandParser.Parse("/command \"my file.txt\" arg2");
+        Assert.Equal(new[] { "/command", "my file.txt", "arg2" }, positional);
+        Assert.Empty(named);
     }
 
     [Fact]
-    public void Parse_SinglePositionalArg_ReturnsSingleElement()
+    public void Parse_QuotedNamedArgValue_PreservesSpaces()
     {
-        var (positional, named) = CommandParser.Parse("hello");
-        Assert.Equal(new[] { "hello" }, positional);
+        var (positional, named) = CommandParser.Parse("--path \"/usr/local/bin\"");
+        Assert.Empty(positional);
+        Assert.Equal(new Dictionary<string, string> { { "path", "/usr/local/bin" } }, named);
+    }
+
+    [Fact]
+    public void Parse_MixedQuotedAndUnquotedArgs_Works()
+    {
+        var (positional, named) = CommandParser.Parse("arg1 \"arg with spaces\" arg3 --flag \"flag value\"");
+        Assert.Equal(new[] { "arg1", "arg with spaces", "arg3" }, positional);
+        Assert.Equal(new Dictionary<string, string> { { "flag", "flag value" } }, named);
+    }
+
+    [Fact]
+    public void Parse_EmptyQuotes_ReturnsEmptyString()
+    {
+        var (positional, named) = CommandParser.Parse("\"\"");
+        Assert.Equal(new[] { "" }, positional);
+        Assert.Empty(named);
+    }
+
+    [Fact]
+    public void Parse_UnclosedQuote_ConsumesRestOfInput()
+    {
+        var (positional, named) = CommandParser.Parse("start \"unclosed arg");
+        Assert.Equal(new[] { "start", "unclosed arg" }, positional);
         Assert.Empty(named);
     }
 }

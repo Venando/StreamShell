@@ -31,7 +31,7 @@ public interface IInputHandler
     int LargePasteLineThreshold { get; set; }
 
     /// <summary>Process buffered keyboard input. Returns submitted text or null.</summary>
-    string? ProcessInput();
+    string? ProcessInput(CancellationToken cancellationToken = default);
 
     /// <summary>Reset input state for a new input cycle.</summary>
     void Reset();

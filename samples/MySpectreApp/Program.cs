@@ -400,4 +400,6 @@ class CharacterCounterPanel : IBottomPanel
             : $"[grey]Input length: [green]{currentInput.Length}[/][/]";
         return _lines;
     }
+
+    public void Dispose() { }
 }

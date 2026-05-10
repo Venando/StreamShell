@@ -522,4 +522,12 @@ internal class CommandPalette : IBottomPanel
             _isDirty = true;
         }
     }
+
+    /// <summary>Disposes the panel. Clears buffers to release references.</summary>
+    public void Dispose()
+    {
+        _linesBuffer.Clear();
+        _matchingBuffer.Clear();
+        _sb.Clear();
+    }
 }

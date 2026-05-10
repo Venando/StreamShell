@@ -21,4 +21,7 @@ public class EmptyBottomPanel : IBottomPanel
     }
 
     public IReadOnlyList<string> GetLines(string currentInput) => _emptyLines;
+
+    /// <summary>Disposes the panel. No-op for EmptyBottomPanel.</summary>
+    public void Dispose() { }
 }

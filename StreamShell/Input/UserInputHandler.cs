@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
+using System.Threading;
 
 namespace StreamShell;
 
@@ -86,12 +87,15 @@ internal class UserInputHandler : IInputHandler
     //  Main Processing Loop
     // ══════════════════════════════════════════════════════════════════
 
-    public string? ProcessInput()
+    public string? ProcessInput(CancellationToken cancellationToken = default)
     {
         string? submitted = null;
 
         while (_terminal.KeyAvailable)
         {
+            if (cancellationToken.IsCancellationRequested)
+                return submitted;
+
             var key = _terminal.ReadKey(intercept: true);
 
             // Give the interceptor first crack at the key (e.g. hint navigation)
@@ -118,6 +122,9 @@ internal class UserInputHandler : IInputHandler
             if (key.KeyChar != '\0')
                 _clipboard.BufferCharacter(key.KeyChar);
         }
+
+        if (cancellationToken.IsCancellationRequested)
+            return submitted;
 
         // Flush buffered input (e.g. from Ctrl+V pastes or fast typing)
         if (_tempInput.Length > 0)

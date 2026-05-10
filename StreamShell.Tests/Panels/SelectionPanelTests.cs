@@ -112,6 +112,63 @@ public class SelectionPanelTests
         Assert.True(cancelled);
     }
 
+    // ── Cache Hit Tests ─────────────────────────────────────────────
+
+    [Fact]
+    public void GetLines_SameState_ReturnsCachedListReference()
+    {
+        var panel = new SelectionPanel("Pick", SampleVariants, null,
+            onSubmit: _ => { },
+            onCancel: () => { });
+
+        var lines1 = panel.GetLines("/");
+        var lines2 = panel.GetLines("/");
+
+        // Same state → should return the same cached list instance
+        Assert.Same(lines1, lines2);
+    }
+
+    [Fact]
+    public void GetLines_AfterNavigation_ContentChanges()
+    {
+        var panel = new SelectionPanel("Pick", SampleVariants, null,
+            onSubmit: _ => { },
+            onCancel: () => { });
+
+        var lines1 = panel.GetLines("/");
+        string before = lines1[2];
+
+        // Navigate down
+        ((IBottomPanel)panel).TryHandleKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+
+        var lines2 = panel.GetLines("/");
+        string after = lines2[2];
+
+        // Content should have changed (Option B now highlighted)
+        Assert.NotEqual(before, after);
+    }
+
+    [Fact]
+    public void GetLines_AfterToggle_ContentChanges()
+    {
+        var info = new SelectionInfo { Min = 0, Max = 3 };
+        var panel = new SelectionPanel("Pick", SampleVariants, info,
+            onSubmit: _ => { },
+            onCancel: () => { });
+
+        var lines1 = panel.GetLines("/");
+        string before = lines1[2];
+
+        // Toggle first variant
+        ((IBottomPanel)panel).TryHandleKey(new ConsoleKeyInfo('\0', ConsoleKey.Enter, false, false, false));
+
+        var lines2 = panel.GetLines("/");
+        string after = lines2[2];
+
+        // Content should have changed (checked symbol)
+        Assert.NotEqual(before, after);
+    }
+
     // ── Multi Select Mode (SelectionInfo provided) ───────────────────
 
     [Fact]

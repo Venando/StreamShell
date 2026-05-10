@@ -50,6 +50,20 @@ public static class CommandParser
             if (i >= span.Length)
                 break;
 
+            // Handle quoted strings
+            if (span[i] == '"')
+            {
+                i++; // skip opening quote
+                int quoteStart = i;
+                while (i < span.Length && span[i] != '"')
+                    i++;
+
+                result.Add(span[quoteStart..i].ToString());
+                if (i < span.Length && span[i] == '"')
+                    i++; // skip closing quote
+                continue;
+            }
+
             int start = i;
             while (i < span.Length && !char.IsWhiteSpace(span[i]))
                 i++;
