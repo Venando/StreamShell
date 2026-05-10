@@ -365,7 +365,7 @@ host.AddMessage("[yellow]/unsave <id>  — remove a saved state[/]");
 host.AddMessage("[yellow]/clear-saved  — remove all saved states[/]");
 host.AddMessage("[yellow]/saved        — list saved states[/]");
 
-host.SetTopSeparator("left", "right", '-', "white");
+host.SetTopSeparator("[white]—[/]", "status:[green]ONLINE[/]———", '—', "white");
 
 await host.Run();
 
