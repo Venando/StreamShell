@@ -190,6 +190,7 @@ internal class ConsoleRenderer : IRenderer
     {
         int bufferHeight = _terminal.BufferHeight;
         int newTop = _terminal.CursorTop - oldBlockOffset;
+        _terminal.CursorLeft = 0;
         _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
 
         RenderTopSeparator();
