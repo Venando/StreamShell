@@ -28,13 +28,13 @@ var commands = new[]
     ("[teal]save[/]", "Saves current state"),
     ("[silver]load[/]", "Loads saved state"),
     ("[fuchsia]exit[/]", "Exits the application"),
-    ("[orange]quit[/]", "Also exits"),
+    ("[DarkOrange]quit[/]", "Also exits"),
     ("[white]about[/]", "About this app"),
     ("[grey]license[/]", "Shows license"),
-    ("[pink]theme[/]", "Changes theme"),
-    ("[gold]search[/]", "Search function"),
-    ("[indigo]filter[/]", "Filter results"),
-    ("[plum]sort[/]", "Sort items"),
+    ("[Pink1]theme[/]", "Changes theme"),
+    ("[Gold1]search[/]", "Search function"),
+    ("[SlateBlue1]filter[/]", "Filter results"),
+    ("[Plum1]sort[/]", "Sort items"),
 };
 
 foreach (var (name, desc) in commands)
