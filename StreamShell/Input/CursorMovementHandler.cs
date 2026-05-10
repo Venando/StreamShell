@@ -16,6 +16,7 @@ internal class CursorMovementHandler
     private readonly SelectionManager _selection;
     private readonly Func<int> _getRightMargin;
     private readonly Func<IReadOnlyList<Attachment>> _getAttachments;
+    private readonly Func<bool> _getWordWrap;
     private int _stickyColumn = -1;
 
     // Reusable visual-line lists — cleared and repopulated per arrow press
@@ -27,12 +28,14 @@ internal class CursorMovementHandler
         TextBuffer buffer,
         SelectionManager selection,
         Func<int> getRightMargin,
-        Func<IReadOnlyList<Attachment>>? getAttachments = null)
+        Func<IReadOnlyList<Attachment>>? getAttachments = null,
+        Func<bool>? getWordWrap = null)
     {
         _buffer = buffer;
         _selection = selection;
         _getRightMargin = getRightMargin;
         _getAttachments = getAttachments ?? (() => Array.Empty<Attachment>());
+        _getWordWrap = getWordWrap ?? (() => false);
     }
 
     /// <summary>Resets sticky column tracking (e.g. when the user presses left/right or home/end).</summary>
@@ -355,7 +358,8 @@ internal class CursorMovementHandler
         string input = _buffer.CurrentInput;
         int width = GetEffectiveWidth();
         LineWrappingService.PopulateVisualLineData(input, width,
-            _visualLinesCache, _visualOffsetsCache);
+            _visualLinesCache, _visualOffsetsCache,
+            wordWrap: _getWordWrap());
         var (visLine, visCol) = GetVisualPosition(input, _visualLinesCache, _visualOffsetsCache);
 
         if (visLine == 0)
@@ -386,7 +390,8 @@ internal class CursorMovementHandler
         string input = _buffer.CurrentInput;
         int width = GetEffectiveWidth();
         LineWrappingService.PopulateVisualLineData(input, width,
-            _visualLinesCache, _visualOffsetsCache);
+            _visualLinesCache, _visualOffsetsCache,
+            wordWrap: _getWordWrap());
         var (visLine, visCol) = GetVisualPosition(input, _visualLinesCache, _visualOffsetsCache);
 
         if (visLine >= _visualLinesCache.Count - 1)

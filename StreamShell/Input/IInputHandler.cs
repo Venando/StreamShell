@@ -30,6 +30,9 @@ public interface IInputHandler
     /// <summary>Maximum line count before a paste is treated as a large paste.</summary>
     int LargePasteLineThreshold { get; set; }
 
+    /// <summary>When true, wraps text at word boundaries rather than fixed character positions.</summary>
+    bool WordWrap { get; set; }
+
     /// <summary>Process buffered keyboard input. Returns submitted text or null.</summary>
     string? ProcessInput(CancellationToken cancellationToken = default);
 

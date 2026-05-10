@@ -73,7 +73,7 @@ internal class ConsoleRenderer : IRenderer
 
     /// <summary>Number of visual lines the input occupies.</summary>
     public int GetInputLineCount(string input) => LineWrappingService.GetInputLineCount(
-        input, RightMargin, _settings.PrefixMargin, _settings.WrappingRightMargin);
+        input, RightMargin, _settings.PrefixMargin, _settings.WrappingRightMargin, _settings.WordWrap);
 
     // ── Message History ──────────────────────────────────────────────
     private readonly List<string> _messageHistory = new();
@@ -269,18 +269,16 @@ internal class ConsoleRenderer : IRenderer
         int selectionLength,
         int width)
     {
-        // Enumerate newline-delimited segments using spans to avoid
-        // allocating a string array via Split('\n') on every render tick.
         ReadOnlySpan<char> inputSpan = input.AsSpan();
         bool isFirstOverallLine = true;
         int charOffset = 0;
         int segIdx = 0;
         int segStart = 0;
         int totalMargin = _settings.PrefixMargin + _settings.WrappingRightMargin;
+        bool wordWrap = _settings.WordWrap;
 
         while (segStart <= inputSpan.Length)
         {
-            // Find the next newline (or end of string for the last segment)
             int nl = segStart < inputSpan.Length
                 ? inputSpan[segStart..].IndexOf('\n')
                 : -1;
@@ -291,8 +289,6 @@ internal class ConsoleRenderer : IRenderer
             bool isFirstSegment = segIdx == 0;
             ReadOnlySpan<char> segment = inputSpan[segStart..segEnd];
 
-            // Inline wrapping: render each visual line as a span slice
-            // of the original segment — zero substring allocation.
             int remaining = segment.Length;
             int pos = 0;
             int lineIdx = 0;
@@ -301,7 +297,9 @@ internal class ConsoleRenderer : IRenderer
                 int takeCap = Math.Max(
                     isFirstSegment && isFirstOverallLine && lineIdx == 0 ? 0 : 1,
                     width - totalMargin);
-                int take = Math.Min(remaining, takeCap);
+                int skipAfter = 0;
+                int take = LineWrappingService.FindWordBreak(segment, pos, takeCap, wordWrap, out skipAfter);
+
                 ReadOnlySpan<char> visualLine = segment.Slice(pos, take);
 
                 RenderSingleVisualLine(
@@ -309,18 +307,16 @@ internal class ConsoleRenderer : IRenderer
                     cursorPosition, hasSelection, selectionStart, selectionLength,
                     isFirstOverallLine);
 
-                if (!(isLastSegment && remaining == take))
+                if (!(isLastSegment && remaining == take + skipAfter))
                     _terminal.WriteLine();
 
                 charOffset += take;
-                remaining -= take;
-                pos += take;
+                remaining -= take + skipAfter;
+                pos += take + skipAfter;
                 lineIdx++;
                 isFirstOverallLine = false;
             }
 
-            // Empty segment: render an empty visual line so the cursor
-            // after a newline has somewhere to appear (Shift+Enter case).
             if (segment.Length == 0)
             {
                 RenderSingleVisualLine(

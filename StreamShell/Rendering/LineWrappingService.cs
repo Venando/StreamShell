@@ -9,6 +9,38 @@ namespace StreamShell;
 public static class LineWrappingService
 {
     /// <summary>
+    /// Finds the number of characters to take from the segment starting at <paramref name="pos"/>,
+    /// up to <paramref name="maxLen"/>, breaking at a word boundary if possible.
+    /// When <paramref name="wordWrap"/> is true and a whitespace is found within the limit,
+    /// returns the position of that whitespace (so the caller can break before it).
+    /// The <paramref name="skipAfter"/> out parameter indicates how many characters
+    /// to skip after the break (typically 1 for the space itself).
+    /// </summary>
+    internal static int FindWordBreak(ReadOnlySpan<char> segment, int pos, int maxLen, bool wordWrap, out int skipAfter)
+    {
+        skipAfter = 0;
+        int available = segment.Length - pos;
+        int take = Math.Min(available, maxLen);
+
+        if (!wordWrap || take >= available || take <= 1)
+            return take;
+
+        // Search backwards for the last whitespace within the take range.
+        // Start at take-1 (last char that fits) and go down to index 1
+        // (we never break at index 0 — that would produce an empty line).
+        for (int i = take - 1; i > 0; i--)
+        {
+            if (char.IsWhiteSpace(segment[pos + i]))
+            {
+                skipAfter = 1; // skip the whitespace character itself
+                return i;      // break before this whitespace
+            }
+        }
+
+        return take; // no word boundary found, fall back to character wrap
+    }
+
+    /// <summary>
     /// Wraps a single segment (no newline characters) into visual lines
     /// at the given terminal <paramref name="width"/>.
     /// Accepts a <see cref="ReadOnlySpan{T}"/> to avoid intermediate string
@@ -21,7 +53,8 @@ public static class LineWrappingService
         bool isLastSegment,
         bool isFirstVisualLine,
         int prefixMargin = 2,
-        int rightMargin = 4)
+        int rightMargin = 4,
+        bool wordWrap = false)
     {
         int totalMargin = prefixMargin + rightMargin;
 
@@ -30,7 +63,7 @@ public static class LineWrappingService
         int estimatedLines = segment.Length == 0 ? 1 : (segment.Length + cap - 1) / cap;
         var lines = new List<string>(estimatedLines);
 
-        WrapSegment(segment, width, isFirstSegment, isLastSegment, isFirstVisualLine, lines, prefixMargin, rightMargin);
+        WrapSegment(segment, width, isFirstSegment, isLastSegment, isFirstVisualLine, lines, prefixMargin, rightMargin, wordWrap);
         return lines;
     }
 
@@ -47,7 +80,8 @@ public static class LineWrappingService
         bool isFirstVisualLine,
         List<string> lines,
         int prefixMargin = 2,
-        int rightMargin = 4)
+        int rightMargin = 4,
+        bool wordWrap = false)
     {
         int totalMargin = prefixMargin + rightMargin;
 
@@ -66,10 +100,11 @@ public static class LineWrappingService
             // First visual line has "> " prefix (2 chars), continuation gets "  " (2 chars)
             // Both use cap = width - 4 for consistent right margin
             int takeCap = Math.Max(isFirstSegment && isFirstVisualLine && lines.Count == 0 ? 0 : 1, width - totalMargin);
-            int take = Math.Min(remaining, takeCap);
+            int skipAfter = 0;
+            int take = FindWordBreak(segment, pos, takeCap, wordWrap, out skipAfter);
             lines.Add(segment.Slice(pos, take).ToString());
-            pos += take;
-            remaining -= take;
+            pos += take + skipAfter;
+            remaining -= take + skipAfter;
         }
 
         // Empty segment produces an empty visual line so the cursor
@@ -83,7 +118,7 @@ public static class LineWrappingService
     /// Called on every render tick — must be allocation-free.
     /// </summary>
     public static int GetInputLineCount(string input, int margin,
-        int prefixMargin = 2, int rightMargin = 4)
+        int prefixMargin = 2, int rightMargin = 4, bool wordWrap = false)
     {
         if (string.IsNullOrEmpty(input))
             return 1;
@@ -112,13 +147,16 @@ public static class LineWrappingService
             else
             {
                 int remaining = segment.Length;
+                int pos = 0;
                 int lineIdx = 0;
                 while (remaining > 0)
                 {
                     int cap = Math.Max(isFirstSegment && !anyLinesProduced && lineIdx == 0 ? 0 : 1,
                         width - totalMargin);
-                    int take = Math.Min(remaining, cap);
-                    remaining -= take;
+                    int skipAfter = 0;
+                    int take = FindWordBreak(segment, pos, cap, wordWrap, out skipAfter);
+                    remaining -= take + skipAfter;
+                    pos += take + skipAfter;
                     count++;
                     lineIdx++;
                 }
@@ -141,9 +179,9 @@ public static class LineWrappingService
 
     /// <summary>Returns the wrapped visual lines for an input string at the given margin.</summary>
     public static List<string> GetInputLines(string input, int margin,
-        int prefixMargin = 2, int rightMargin = 4)
+        int prefixMargin = 2, int rightMargin = 4, bool wordWrap = false)
     {
-        var (lines, _) = GetVisualLineData(input, margin, prefixMargin, rightMargin);
+        var (lines, _) = GetVisualLineData(input, margin, prefixMargin, rightMargin, wordWrap);
         return lines;
     }
 
@@ -153,12 +191,12 @@ public static class LineWrappingService
     /// Needed for up/down cursor navigation.
     /// </summary>
     public static (List<string> lines, List<int> offsets) GetVisualLineData(string input, int margin,
-        int prefixMargin = 2, int rightMargin = 4)
+        int prefixMargin = 2, int rightMargin = 4, bool wordWrap = false)
     {
         int estimatedLines = EstimateVisualLineCount(input, margin, prefixMargin, rightMargin);
         var lines = new List<string>(estimatedLines);
         var offsets = new List<int>(estimatedLines);
-        PopulateVisualLineData(input, margin, lines, offsets, prefixMargin, rightMargin);
+        PopulateVisualLineData(input, margin, lines, offsets, prefixMargin, rightMargin, wordWrap);
         return (lines, offsets);
     }
 
@@ -169,7 +207,8 @@ public static class LineWrappingService
     /// </summary>
     public static void PopulateVisualLineData(string input, int margin,
         List<string> lines, List<int> offsets,
-        int prefixMargin = 2, int rightMargin = 4)
+        int prefixMargin = 2, int rightMargin = 4,
+        bool wordWrap = false)
     {
         lines.Clear();
         offsets.Clear();
@@ -209,7 +248,7 @@ public static class LineWrappingService
             int linesBefore = lines.Count;
 
             WrapSegment(segment, width, isFirstSegment, isLastSegment, !anyLinesProduced,
-                lines, prefixMargin, rightMargin);
+                lines, prefixMargin, rightMargin, wordWrap);
 
             for (int lineIdx = linesBefore; lineIdx < lines.Count; lineIdx++)
             {
@@ -252,9 +291,9 @@ public static class LineWrappingService
     /// </summary>
     public static (int line, int column) GetCursorVisualPosition(
         string input, int cursorPosition, int margin,
-        int prefixMargin = 2, int rightMargin = 4)
+        int prefixMargin = 2, int rightMargin = 4, bool wordWrap = false)
     {
-        var offsets = GetVisualLineOffsets(input, margin, prefixMargin, rightMargin);
+        var offsets = GetVisualLineOffsets(input, margin, prefixMargin, rightMargin, wordWrap);
         int accumulated = 0;
 
         for (int i = 0; i < offsets.Count; i++)
@@ -276,7 +315,7 @@ public static class LineWrappingService
     /// Allocation-free: computes offsets without creating string objects.
     /// </summary>
     internal static List<int> GetVisualLineOffsets(string input, int margin,
-        int prefixMargin = 2, int rightMargin = 4)
+        int prefixMargin = 2, int rightMargin = 4, bool wordWrap = false)
     {
         var offsets = new List<int>();
         if (string.IsNullOrEmpty(input))
@@ -308,14 +347,17 @@ public static class LineWrappingService
             else
             {
                 int remaining = segment.Length;
+                int pos = 0;
                 int lineIdx = 0;
                 while (remaining > 0)
                 {
                     int cap = Math.Max(isFirstSegment && !anyLinesProduced && lineIdx == 0 ? 0 : 1,
                         width - totalMargin);
-                    int take = Math.Min(remaining, cap);
+                    int skipAfter = 0;
+                    int take = FindWordBreak(segment, pos, cap, wordWrap, out skipAfter);
                     offsets.Add(take);
-                    remaining -= take;
+                    remaining -= take + skipAfter;
+                    pos += take + skipAfter;
                     lineIdx++;
                 }
                 if (segment.Length == 0)

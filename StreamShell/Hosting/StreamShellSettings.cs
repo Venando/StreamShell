@@ -26,6 +26,12 @@ public class StreamShellSettings
     /// </summary>
     public int MessageReplayCount { get; set; } = -1;
 
+    /// <summary>
+    /// When true, wraps text at word boundaries (spaces) rather than fixed
+    /// character positions. Default: true.
+    /// </summary>
+    public bool WordWrap { get; set; } = true;
+
     private string _cursorMarkup = "bold black on cyan";
     private string _selectionMarkup = "bold cyan on Grey27";
     private string _commandSlashMarkup = "Red1";

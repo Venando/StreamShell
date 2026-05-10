@@ -108,6 +108,7 @@ public partial class ConsoleAppHost : IDisposable
     {
         _inputHandler.LargePasteThreshold = Settings.LargePasteThreshold;
         _inputHandler.LargePasteLineThreshold = Settings.LargePasteLineThreshold;
+        _inputHandler.WordWrap = Settings.WordWrap;
     }
 
     /// <summary>Re-applies settings when they change at runtime.</summary>
