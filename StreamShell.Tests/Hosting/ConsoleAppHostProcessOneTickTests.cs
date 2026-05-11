@@ -370,6 +370,31 @@ public class ConsoleAppHostProcessOneTickTests
         Assert.NotNull(_host);
     }
 
+    [Fact]
+    public void ProcessOneTick_SelectionPanelActive_SlashDoesNotSwap()
+    {
+        CreateHost();
+        _host.AddCommand(new Command("help", "Help", (_, _) => Task.CompletedTask));
+
+        // Activate a SelectionPanel via PromptSelection
+        var variants = new IVariant[] { new TestVariant("Option A"), new TestVariant("Option B") };
+        var selectionTask = _host.PromptSelection("Pick", variants);
+
+        // Verify SelectionPanel is active
+        Assert.IsType<SelectionPanel>(_host.CurrentBottomPanel);
+
+        // Now simulate user typing "/" — this should NOT remove the SelectionPanel
+        _inputHandler.CurrentInput = "/help";
+        _inputHandler.CursorPosition = 5;
+
+        _host.ProcessOneTick(_state);
+
+        // SelectionPanel must still be active
+        Assert.IsType<SelectionPanel>(_host.CurrentBottomPanel);
+    }
+
+    private sealed record TestVariant(string Name) : IVariant;
+
     // ══════════════════════════════════════════════════════════════════
     //  Multiple ticks: message then submit
     // ══════════════════════════════════════════════════════════════════
