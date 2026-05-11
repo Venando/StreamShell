@@ -389,4 +389,134 @@ public class ConsoleAppHostProcessOneTickTests
         var (result2, state2) = _host.ProcessOneTick(state1);
         Assert.Equal("reported", result2);
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Replay Width Tracking
+    // ══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void ProcessOneTick_WidthDecreaseBelowLastReplay_FiresReplay()
+    {
+        // _lastReplayWidth starts at initial width (80).
+        // Decrease to 60 → 60 < 80 → replay fires.
+        CreateHost();
+        _inputHandler.CurrentInput = "some text";
+        var (_, state1) = _host.ProcessOneTick(_state);
+
+        Assert.Equal(0, _host.ReplayTriggerCount);
+
+        // Increase width first to set up state.LastWindowWidth > target
+        _terminal.WindowWidth = 100;
+        var (_, state2) = _host.ProcessOneTick(state1);
+
+        // Decrease width below _lastReplayWidth (80)
+        _terminal.WindowWidth = 60;
+        // System.Windows might be used, so reduce width 60 < 80 (_lastReplayWidth)
+        var (_, state3) = _host.ProcessOneTick(state2); // tick 1: decrease detected
+
+        // 5 more stable ticks at same width for stabilization
+        var (_, stateFinal) = _host.ProcessOneTick(state3);
+        stateFinal = _host.ProcessOneTick(stateFinal).NewState;
+        stateFinal = _host.ProcessOneTick(stateFinal).NewState;
+        stateFinal = _host.ProcessOneTick(stateFinal).NewState;
+        (_, stateFinal) = _host.ProcessOneTick(stateFinal); // 5th stable → fires
+
+        Assert.Equal(1, _host.ReplayTriggerCount);
+    }
+
+    [Fact]
+    public void ProcessOneTick_WidthDecreaseAboveLastReplay_SkipsReplay()
+    {
+        // _lastReplayWidth starts at initial width (80).
+        // Increase to 130, then decrease to 110.
+        // 110 > 80 → no replay (still wider than last emission).
+        CreateHost();
+        _inputHandler.CurrentInput = "some text";
+        var (_, state1) = _host.ProcessOneTick(_state);
+
+        Assert.Equal(0, _host.ReplayTriggerCount);
+
+        // Increase width
+        _terminal.WindowWidth = 130;
+        var (_, state2) = _host.ProcessOneTick(state1);
+
+        // Decrease width but stay above _lastReplayWidth (80)
+        _terminal.WindowWidth = 110;
+        var (_, state3) = _host.ProcessOneTick(state2); // tick 1: decrease detected
+
+        // 5 stable ticks
+        var (_, stateFinal) = _host.ProcessOneTick(state3);
+        stateFinal = _host.ProcessOneTick(stateFinal).NewState;
+        stateFinal = _host.ProcessOneTick(stateFinal).NewState;
+        stateFinal = _host.ProcessOneTick(stateFinal).NewState;
+        (_, stateFinal) = _host.ProcessOneTick(stateFinal); // 5th stable → should NOT replay
+
+        Assert.Equal(0, _host.ReplayTriggerCount);
+    }
+
+    [Fact]
+    public void ProcessOneTick_AfterReplay_DeeperDecreaseFiresNewReplay()
+    {
+        // _lastReplayWidth starts at 80.
+        // Decrease to 60 → replay fires, _lastReplayWidth = 60.
+        // Decrease to 50 → 50 < 60 → another replay fires.
+        CreateHost();
+        _inputHandler.CurrentInput = "some text";
+        var (_, state1) = _host.ProcessOneTick(_state);
+
+        // Increase, then decrease to 60 (below initial _lastReplayWidth=80)
+        _terminal.WindowWidth = 100;
+        var (_, stateWide) = _host.ProcessOneTick(state1);
+
+        _terminal.WindowWidth = 60;
+        var (_, stateDown1) = _host.ProcessOneTick(stateWide);
+
+        var s = stateDown1;
+        for (int i = 0; i < 5; i++)
+            (_, s) = _host.ProcessOneTick(s);
+
+        Assert.Equal(1, _host.ReplayTriggerCount);
+
+        // Now _lastReplayWidth = 60. Decrease further to 50.
+        _terminal.WindowWidth = 80; // widen again to set up state
+        (_, s) = _host.ProcessOneTick(s);
+
+        _terminal.WindowWidth = 50;
+        (_, s) = _host.ProcessOneTick(s); // decrease detected
+
+        for (int i = 0; i < 5; i++)
+            (_, s) = _host.ProcessOneTick(s);
+
+        Assert.Equal(2, _host.ReplayTriggerCount);
+    }
+
+    [Fact]
+    public void ProcessOneTick_WidthIncreaseDuringResize_ResetsDetection()
+    {
+        // Start at width 80. Increase to 120 (no decrease).
+        // Then decrease to 90 (above _lastReplayWidth=80).
+        // During the stabilization, increase to 100 → resets detection.
+        // Decrease to 70 (below 80) → should start fresh detection.
+        CreateHost();
+        _inputHandler.CurrentInput = "some text";
+        var (_, state1) = _host.ProcessOneTick(_state);
+
+        // Wide then narrow (but above _lastReplayWidth=80)
+        _terminal.WindowWidth = 120;
+        var (_, stateWide) = _host.ProcessOneTick(state1);
+
+        _terminal.WindowWidth = 90;
+        var (_, stateNarrow) = _host.ProcessOneTick(stateWide); // decrease detected
+
+        // Increase during stabilization (simulates user overshoot)
+        _terminal.WindowWidth = 100;
+        var (_, stateReset) = _host.ProcessOneTick(stateNarrow); // width increased: reset
+
+        // 5 stable ticks at 100 — should NOT fire replay
+        var s = stateReset;
+        for (int i = 0; i < 5; i++)
+            (_, s) = _host.ProcessOneTick(s);
+
+        Assert.Equal(0, _host.ReplayTriggerCount);
+    }
 }
