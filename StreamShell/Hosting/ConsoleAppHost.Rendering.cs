@@ -19,6 +19,17 @@ public partial class ConsoleAppHost
     private int _resizeStableTicks = 0;
     private bool _resizeDetected = false;
 
+    /// <summary>
+    /// Console width at the last replay emission.
+    /// Messages visible at this width are already correctly wrapped.
+    /// A new replay only fires when the settled width is narrower than this value.
+    /// Initialized to the starting terminal width in constructors.
+    /// </summary>
+    private int _lastReplayWidth;
+
+    /// <summary>For testing: tracks how many times replay was triggered.</summary>
+    internal int ReplayTriggerCount { get; private set; }
+
     private async Task RunLoop(CancellationToken token)
     {
         var state = new RenderSnapshot(null, 0, false, 0, _terminal.WindowWidth, _bottomPanel.LineCount);
@@ -87,13 +98,26 @@ public partial class ConsoleAppHost
             {
                 _resizeDetected = false;
                 _resizeStableTicks = 0;
-                // Re-emit last N messages
-                int replayCount = Settings.MessageReplayCount < 0
-                    ? Console.WindowHeight + 1
-                    : Settings.MessageReplayCount;
-                if (_renderer is ConsoleRenderer cr)
-                    cr.ReplayMessages(replayCount);
-                // After replay, we need a full re-render of the input block
+
+                // Only replay if the settled width is narrower than the last replay width.
+                // If the user increased the console (e.g. +50) then decreased (-20),
+                // the settled width may still be wider than when messages were last
+                // emitted — in that case no replay is needed.
+                bool shouldReplay = tick.WindowWidth < _lastReplayWidth;
+                if (shouldReplay)
+                {
+                    _lastReplayWidth = tick.WindowWidth;
+                    ReplayTriggerCount++;
+
+                    // Re-emit last N messages
+                    int replayCount = Settings.MessageReplayCount < 0
+                        ? Console.WindowHeight + 1
+                        : Settings.MessageReplayCount;
+                    if (_renderer is ConsoleRenderer cr)
+                        cr.ReplayMessages(replayCount);
+                }
+
+                // After replay (or skip), we need a full re-render of the input block
                 RenderFullInputBlock(tick);
                 var postReplayState = new RenderSnapshot(tick.Input, tick.Cursor, tick.HasSelection,
                     _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount);

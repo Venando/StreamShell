@@ -73,6 +73,7 @@ public partial class ConsoleAppHost : IDisposable
         Settings.SettingsChanged += OnSettingsChanged;
         ApplySettings();
         WireUpAutoComplete();
+        _lastReplayWidth = _terminal.WindowWidth;
 
         // Start the default panel's background loop
         _ = _bottomPanel.RunAsync(_panelCts.Token);
@@ -98,6 +99,7 @@ public partial class ConsoleAppHost : IDisposable
         Settings.SettingsChanged += OnSettingsChanged;
         ApplySettings();
         WireUpAutoComplete();
+        _lastReplayWidth = _terminal.WindowWidth;
 
         // Start the default panel's background loop
         _ = _bottomPanel.RunAsync(_panelCts.Token);
