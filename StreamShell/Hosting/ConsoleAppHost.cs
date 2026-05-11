@@ -167,6 +167,9 @@ public partial class ConsoleAppHost : IDisposable
         _commandManager.Add(new Command(name, description, handler, argumentSuggestions));
     }
 
+    /// <summary>Unregisters a command that can be triggered with /command-name.</summary>
+    public void RemoveCommand(Command command) => _commandManager.Remove(command);
+
     /// <summary>Run the main input/render loop until cancelled or Ctrl+D is pressed.</summary>
     public async Task Run(CancellationToken cancellationToken = default)
     {

@@ -20,6 +20,9 @@ internal class CommandManager
     /// <summary>Register a command.</summary>
     public void Add(Command command) => _commands[command.Name] = command;
 
+    /// <summary>Unregisters a command.</summary>
+    public void Remove(Command command) => _commands.TryRemove(command.Name, out _);
+
     /// <summary>
     /// Extracts the command name and argument string from a /command input.
     /// Returns false if the input doesn't look like a valid command reference.
