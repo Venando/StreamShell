@@ -60,13 +60,95 @@ internal class ClipboardHandler
     //  Clipboard Operations
     // ══════════════════════════════════════════════════════════════════
 
-    /// <summary>Returns the selected text, or the full buffer if no selection is active.</summary>
+    /// <summary>Returns the selected text (or full buffer if no selection), with attachment
+    /// placeholders resolved to their actual content so that copy/cut captures the
+    /// original pasted data rather than the inline placeholder string.</summary>
     private string GetClipboardText()
     {
         int cursor = _buffer.CursorPosition;
-        return _selection.IsActiveAt(cursor)
-            ? _selection.SelectedText(cursor, _buffer.CurrentInput)
-            : _buffer.CurrentInput;
+        int textStart;
+        string text;
+
+        if (_selection.IsActiveAt(cursor))
+        {
+            text = _selection.SelectedText(cursor, _buffer.CurrentInput);
+            textStart = _selection.SelectionStart(cursor);
+        }
+        else
+        {
+            text = _buffer.CurrentInput;
+            textStart = 0;
+        }
+
+        return ResolvePlaceholdersInText(text, textStart);
+    }
+
+    /// <summary>
+    /// Replaces attachment placeholder strings within <paramref name="text"/>
+    /// with the actual attachment content. <paramref name="textStart"/> is the
+    /// start position of <paramref name="text"/> within the full buffer, used
+    /// to locate overlapping placeholders.
+    /// </summary>
+    private string ResolvePlaceholdersInText(string text, int textStart)
+    {
+        if (Attachments.Count == 0 || string.IsNullOrEmpty(text))
+            return text;
+
+        string fullInput = _buffer.CurrentInput;
+        int textEnd = textStart + text.Length;
+
+        // Collect attachments whose placeholder overlaps [textStart, textEnd)
+        // Store as (bufferPos, placeholder, content) for replacement.
+        var overlapping = new List<(int pos, string placeholder, string content)>();
+
+        foreach (var attachment in Attachments)
+        {
+            string ph = attachment.Placeholder;
+            if (string.IsNullOrEmpty(ph))
+                continue;
+
+            int phPos = fullInput.IndexOf(ph, StringComparison.Ordinal);
+            if (phPos < 0)
+                continue;
+
+            int phEnd = phPos + ph.Length;
+
+            // Overlap check: placeholder range intersects [textStart, textEnd)
+            if (phPos < textEnd && phEnd > textStart)
+            {
+                overlapping.Add((phPos, ph, attachment.Content));
+            }
+        }
+
+        if (overlapping.Count == 0)
+            return text;
+
+        // Sort descending by buffer position so replacements don't shift earlier indices
+        overlapping.Sort((a, b) => b.pos.CompareTo(a.pos));
+
+        string resolved = text;
+        int offset = 0;
+
+        foreach (var (pos, placeholder, content) in overlapping)
+        {
+            int localStart = pos - textStart + offset;
+            int localEnd = localStart + placeholder.Length;
+
+            // Clip replacement to the bounds of the resolved string
+            int clipStart = Math.Max(0, localStart);
+            int clipEnd = Math.Min(resolved.Length, localEnd);
+
+            if (clipStart < clipEnd)
+            {
+                resolved = string.Concat(
+                    resolved.AsSpan(0, clipStart),
+                    content.AsSpan(),
+                    resolved.AsSpan(clipEnd));
+                offset += content.Length - (clipEnd - clipStart);
+            }
+        }
+
+        return resolved;
     }
 
     public void CopyToClipboard()
