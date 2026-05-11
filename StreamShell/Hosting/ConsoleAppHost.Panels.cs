@@ -65,6 +65,11 @@ public partial class ConsoleAppHost
     /// </summary>
     private void EnsureProperPanel()
     {
+        // SelectionPanel is modal — never swap it out for command palette or default.
+        // It must remain active until its workflow completes (submit/cancel).
+        if (_bottomPanel is SelectionPanel)
+            return;
+
         string input = _inputHandler.CurrentInput;
         bool isCommand = input.Length > 0 && input[0] == '/';
 

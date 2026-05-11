@@ -45,6 +45,9 @@ public partial class ConsoleAppHost : IDisposable
     /// <summary>Exposes the input handler for save/load/reset operations.</summary>
     public IInputHandler InputHandler => _inputHandler;
 
+    /// <summary>Exposes the current bottom panel for testing.</summary>
+    internal IBottomPanel CurrentBottomPanel => _bottomPanel;
+
     /// <summary>
     /// Raised when the user submits input (Enter without modifiers).
     /// Provides the raw text, whether it is a command or plain text,
