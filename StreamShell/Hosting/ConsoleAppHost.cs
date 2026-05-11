@@ -203,13 +203,15 @@ public partial class ConsoleAppHost : IDisposable
         var panel = new SelectionPanel(title, variants, info,
             onSubmit: result =>
             {
-                tcs.TrySetResult(result);
+                // Reset panel BEFORE completing the task — continuations run synchronously
+                // and may call PromptSelection again, which would be overwritten by ResetBottomPanel.
                 ResetBottomPanel();
+                tcs.TrySetResult(result);
             },
             onCancel: () =>
             {
-                tcs.TrySetResult(null);
                 ResetBottomPanel();
+                tcs.TrySetResult(null);
             });
         SetBottomPanel(panel);
         return tcs.Task;
