@@ -156,7 +156,8 @@ internal class UserInputHandler : IInputHandler
                 return EnterHandleResult.Continue; // keep processing buffered keys
             }
 
-            if (_tempInput.Length == 0 && _buffer.Length > 0)
+            // Submit even for empty input (single Enter on empty line)
+        if (_tempInput.Length == 0)
             {
                 submitted = _buffer.CurrentInput;
                 ResetState();

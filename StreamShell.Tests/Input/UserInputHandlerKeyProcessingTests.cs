@@ -104,14 +104,16 @@ public class UserInputHandlerKeyProcessingTests
     }
 
     [Fact]
-    public void ProcessInput_Enter_WithEmptyBuffer_DoesNotSubmit()
+    public void ProcessInput_Enter_WithEmptyBuffer_SubmitsEmptyString()
     {
         _terminal.EnqueueEnter();
 
         var handler = CreateHandler();
         var result = handler.ProcessInput();
 
-        Assert.Null(result);
+        Assert.Equal("", result);
+        Assert.Equal("", handler.CurrentInput); // reset after submit
+        Assert.Equal(0, handler.CursorPosition);
     }
 
     [Fact]
