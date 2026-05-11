@@ -13,6 +13,7 @@ internal class SelectionPanel : IBottomPanel
     private readonly Action _onCancel;
 
     private readonly bool[] _toggled;
+    private readonly bool _preventCancel;
     private int _toggledVersion;
     private int _highlightIndex;
     private int _lastRenderHighlight;
@@ -41,6 +42,7 @@ internal class SelectionPanel : IBottomPanel
         _onSubmit = onSubmit;
         _onCancel = onCancel;
         _toggled = new bool[variants.Length];
+        _preventCancel = info?.PreventCancel ?? false;
     }
 
     // ── Interface: GetLines ──────────────────────────────────────────
@@ -60,8 +62,12 @@ internal class SelectionPanel : IBottomPanel
 
         // Line 0: control scheme (varies by mode)
         string controls = IsMulti
-            ? "[dim]\u2191\u2193: navigate  Enter: toggle  Space: submit  Esc: cancel[/]"
-            : "[dim]\u2191\u2193: navigate  Enter/Space: submit  Esc: cancel[/]";
+            ? _preventCancel
+                ? "[dim]\u2191\u2193: navigate  Enter: toggle  Space: submit[/]"
+                : "[dim]\u2191\u2193: navigate  Enter: toggle  Space: submit  Esc: cancel[/]"
+            : _preventCancel
+                ? "[dim]\u2191\u2193: navigate  Enter/Space: submit[/]"
+                : "[dim]\u2191\u2193: navigate  Enter/Space: submit  Esc: cancel[/]";
         _cachedLines.Add(controls);
 
         // Line 1: title
@@ -117,7 +123,8 @@ internal class SelectionPanel : IBottomPanel
                 return HandleSubmit();
 
             case ConsoleKey.Escape:
-                _onCancel();
+                if (!_preventCancel)
+                    _onCancel();
                 return true;
         }
 

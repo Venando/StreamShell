@@ -310,4 +310,48 @@ public class SelectionPanelTests
 
         Assert.True(cancelled);
     }
+
+    // ── PreventCancel Mode ─────────────────────────────────────────
+
+    [Fact]
+    public void MultiSelect_PreventCancel_Escape_DoesNotCancel()
+    {
+        bool cancelled = false;
+        var info = new SelectionInfo { Min = 1, Max = 3, PreventCancel = true };
+        var panel = new SelectionPanel("Pick", SampleVariants, info,
+            onSubmit: _ => { },
+            onCancel: () => cancelled = true);
+
+        ((IBottomPanel)panel).TryHandleKey(new ConsoleKeyInfo('\0', ConsoleKey.Escape, false, false, false));
+
+        Assert.False(cancelled);
+    }
+
+    [Fact]
+    public void MultiSelect_PreventCancel_HintsOmitEscape()
+    {
+        var info = new SelectionInfo { Min = 1, Max = 3, PreventCancel = true };
+        var panel = new SelectionPanel("Pick", SampleVariants, info,
+            onSubmit: _ => { },
+            onCancel: () => { });
+
+        var lines = panel.GetLines("/");
+
+        Assert.DoesNotContain("Esc: cancel", lines[0]);
+        Assert.Contains("Space: submit", lines[0]);
+    }
+
+    [Fact]
+    public void MultiSelect_PreventCancel_MaxOne_HintsOmitEscape()
+    {
+        var info = new SelectionInfo { Min = 1, Max = 1, PreventCancel = true };
+        var panel = new SelectionPanel("Pick", SampleVariants, info,
+            onSubmit: _ => { },
+            onCancel: () => { });
+
+        var lines = panel.GetLines("/");
+
+        Assert.DoesNotContain("Esc: cancel", lines[0]);
+        Assert.Contains("Enter: toggle", lines[0]);
+    }
 }
