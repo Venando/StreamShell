@@ -127,11 +127,13 @@ internal class ClipboardHandler
         overlapping.Sort((a, b) => b.pos.CompareTo(a.pos));
 
         string resolved = text;
-        int offset = 0;
 
+        // Process in descending buffer position (right-to-left) so that each
+        // replacement's span in 'resolved' hasn't been shifted by earlier
+        // processing — changes to the right don't affect positions to the left.
         foreach (var (pos, placeholder, content) in overlapping)
         {
-            int localStart = pos - textStart + offset;
+            int localStart = pos - textStart;
             int localEnd = localStart + placeholder.Length;
 
             // Clip replacement to the bounds of the resolved string
@@ -144,7 +146,6 @@ internal class ClipboardHandler
                     resolved.AsSpan(0, clipStart),
                     content.AsSpan(),
                     resolved.AsSpan(clipEnd));
-                offset += content.Length - (clipEnd - clipStart);
             }
         }
 
