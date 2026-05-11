@@ -14,4 +14,7 @@ public class SelectionInfo
 
     /// <summary>Maximum number of items that can be selected. 0 = unlimited.</summary>
     public int Max { get; set; }
+
+    /// <summary>When true, the user cannot cancel the prompt with Escape.</summary>
+    public bool PreventCancel { get; set; }
 }
