@@ -18,6 +18,13 @@ internal class ConsoleRenderer : IRenderer
     /// </summary>
     private readonly System.Text.StringBuilder _separatorSb = new(capacity: 512);
 
+    // Cached separator lines — invalidated when config or width changes.
+    private string? _cachedTopSepLine;
+    private string? _cachedBottomSepLine;
+    private SeparatorConfig? _cachedTopSepConfig;
+    private SeparatorConfig? _cachedBottomSepConfig;
+    private int _cachedSepWidth;
+
     /// <summary>
     /// Reserve one column from terminal width for separator rendering.
     /// Prevents wrapping caused by the cursor position at the rightmost column.
@@ -488,20 +495,23 @@ internal class ConsoleRenderer : IRenderer
 
     /// <summary>Renders the top separator (between message feed and input block).</summary>
     private void RenderTopSeparator()
-    {
-        int width = _terminal.WindowWidth - TerminalWidthMargin;
-        string line = BuildSeparatorLine(TopSeparator, width);
-        AnsiConsole.Markup(line);
-        _terminal.Write("\x1b[K");
-        _terminal.WriteLine();
-    }
+        => RenderSeparator(TopSeparator, ref _cachedTopSepLine, ref _cachedTopSepConfig);
 
     /// <summary>Renders the bottom separator (between input line and hints block).</summary>
     private void RenderBottomSeparator()
+        => RenderSeparator(BottomSeparator, ref _cachedBottomSepLine, ref _cachedBottomSepConfig);
+
+    /// <summary>Renders a separator line, caching the built string when config and width are stable.</summary>
+    private void RenderSeparator(SeparatorConfig config, ref string? cachedLine, ref SeparatorConfig? cachedConfig)
     {
         int width = _terminal.WindowWidth - TerminalWidthMargin;
-        string line = BuildSeparatorLine(BottomSeparator, width);
-        AnsiConsole.Markup(line);
+        if (cachedLine == null || _cachedSepWidth != width || cachedConfig != config)
+        {
+            cachedLine = BuildSeparatorLine(config, width);
+            cachedConfig = config;
+            _cachedSepWidth = width;
+        }
+        AnsiConsole.Markup(cachedLine);
         _terminal.Write("\x1b[K");
         _terminal.WriteLine();
     }
