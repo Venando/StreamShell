@@ -302,13 +302,15 @@ public class CommandPaletteTests
     }
 
     [Fact]
-    public void ArgumentSuggestions_CommonNextWord_CompressesHints()
+    public void ArgumentSuggestions_CommonPrefix_ShowsIndividualHints()
     {
         var palette = new CommandPalette(ArgSuggestionCommands);
         var lines = palette.GetLines("/deploy li");
 
-        // Should show a single compressed hint for "linux" common prefix
-        Assert.Contains(lines.Skip(1), l => l.Contains("linux"));
+        // Should show individual hints with full path, never compress
+        Assert.Equal("> [white]/deploy linux ubuntu[/]", lines[1]);
+        Assert.Equal("  [grey]/deploy linux debian[/]", lines[2]);
+        Assert.All(lines.Skip(3), line => Assert.Equal(string.Empty, line));
     }
 
     // ── Property-style suggestions (bug report scenario) ─────────────
@@ -334,19 +336,21 @@ public class CommandPaletteTests
     }
 
     [Fact]
-    public void ArgumentSuggestions_TypedPrefixIsShorterThanCommonPrefix_Compresses()
+    public void ArgumentSuggestions_TypedPrefixIsShorterThanCommonPrefix_ShowsIndividualHints()
     {
-        // Typing "/appconfig Direc" should compress because
-        // commonPrefix "DirectLlm" (9 chars) > typed "Direc" (5 chars)
+        // Typing "/appconfig Direc" should show all individual hints,
+        // never compress to a common prefix.
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/appconfig Direc");
 
-        // Should show a single compressed hint selected with white markup
-        Assert.Equal("> [white]/appconfig DirectLlm [/]", lines[1]);
-        Assert.All(lines.Skip(2), line => Assert.Equal(string.Empty, line));
+        Assert.Equal("> [white]/appconfig DirectLlmApiType[/]", lines[1]);
+        Assert.Equal("  [grey]/appconfig DirectLlmModelName[/]", lines[2]);
+        Assert.Equal("  [grey]/appconfig DirectLlmToken[/]", lines[3]);
+        Assert.Equal("  [grey]/appconfig DirectLlmUrl[/]", lines[4]);
+        Assert.All(lines.Skip(5), line => Assert.Equal(string.Empty, line));
 
-        // The CurrentSuggestion should point to the compressed entry
-        Assert.Equal("/appconfig DirectLlm ", palette.CurrentSuggestion);
+        // The CurrentSuggestion should be the first match
+        Assert.Equal("/appconfig DirectLlmApiType ", palette.CurrentSuggestion);
     }
 
     [Fact]
