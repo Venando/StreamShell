@@ -425,10 +425,11 @@ public class ConsoleRendererRenderingTests
 
     private static string InvokeBuildSeparatorLine(SeparatorConfig config, int width)
     {
+        var renderer = new ConsoleRenderer();
         var method = typeof(ConsoleRenderer).GetMethod(
             "BuildSeparatorLine",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        return (string)method.Invoke(null, [config, width])!;
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        return (string)method.Invoke(renderer, [config, width])!;
     }
 
     // ── RightMargin ─────────────────────────────────────────────────

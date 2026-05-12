@@ -129,6 +129,13 @@ public partial class ConsoleAppHost : IDisposable
     public void SetTopSeparator(string? leftText = null, string? rightText = null,
         char repeatedCharacter = '-', string? repeatedCharMarkup = null)
     {
+        var current = _renderer.TopSeparator;
+        if (current.LeftText == leftText &&
+            current.RightText == rightText &&
+            current.RepeatedChar == repeatedCharacter &&
+            current.RepeatedCharMarkup == repeatedCharMarkup)
+            return; // nothing changed — skip alloc and re-render
+
         _renderer.TopSeparator = new SeparatorConfig
         {
             LeftText = leftText,
@@ -142,6 +149,13 @@ public partial class ConsoleAppHost : IDisposable
     public void SetBottomSeparator(string? leftText = null, string? rightText = null,
         char repeatedCharacter = '-', string? repeatedCharMarkup = null)
     {
+        var current = _renderer.BottomSeparator;
+        if (current.LeftText == leftText &&
+            current.RightText == rightText &&
+            current.RepeatedChar == repeatedCharacter &&
+            current.RepeatedCharMarkup == repeatedCharMarkup)
+            return; // nothing changed — skip alloc and re-render
+
         _renderer.BottomSeparator = new SeparatorConfig
         {
             LeftText = leftText,

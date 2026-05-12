@@ -12,6 +12,18 @@ internal class ConsoleRenderer : IRenderer
     private readonly ITerminal _terminal;
     private readonly StreamShellSettings _settings;
 
+    /// <summary>
+    /// Reusable StringBuilder for separator line rendering.
+    /// Pooled on the renderer to avoid per-render GC pressure.
+    /// </summary>
+    private readonly System.Text.StringBuilder _separatorSb = new(capacity: 512);
+
+    /// <summary>
+    /// Reserve one column from terminal width for separator rendering.
+    /// Prevents wrapping caused by the cursor position at the rightmost column.
+    /// </summary>
+    private const int TerminalWidthMargin = 1;
+
     /// <summary>Creates a renderer with default settings and the real terminal.</summary>
     public ConsoleRenderer() : this(new StreamShellSettings(), new SystemTerminal()) { }
 
@@ -394,7 +406,7 @@ internal class ConsoleRenderer : IRenderer
             _terminal.WriteLine();
         }
 
-        int maxWidth = _terminal.WindowWidth - 1;
+        int maxWidth = _terminal.WindowWidth - TerminalWidthMargin;
         for (int i = 0; i < hints.Count; i++)
         {
             _terminal.CursorLeft = 0;
@@ -477,7 +489,7 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>Renders the top separator (between message feed and input block).</summary>
     private void RenderTopSeparator()
     {
-        int width = _terminal.WindowWidth - 1;
+        int width = _terminal.WindowWidth - TerminalWidthMargin;
         string line = BuildSeparatorLine(TopSeparator, width);
         AnsiConsole.Markup(line);
         _terminal.Write("\x1b[K");
@@ -487,7 +499,7 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>Renders the bottom separator (between input line and hints block).</summary>
     private void RenderBottomSeparator()
     {
-        int width = _terminal.WindowWidth - 1;
+        int width = _terminal.WindowWidth - TerminalWidthMargin;
         string line = BuildSeparatorLine(BottomSeparator, width);
         AnsiConsole.Markup(line);
         _terminal.Write("\x1b[K");
@@ -496,19 +508,20 @@ internal class ConsoleRenderer : IRenderer
 
     /// <summary>
     /// Counts visible characters in a markup string without allocating.
-    /// Strips Spectre markup tags ([...]) to compute the display length.
+    /// Walks the span directly, stripping Spectre markup tags ([...])
+    /// to compute the display length. No string copies or Markup.Remove calls.
     /// </summary>
-    private static int GetVisualLength(string? text)
+    private static int GetVisualLength(ReadOnlySpan<char> text)
     {
-        if (string.IsNullOrEmpty(text)) return 0;
+        if (text.IsEmpty) return 0;
         int len = 0;
         int i = 0;
         while (i < text.Length)
         {
             if (text[i] == '[')
             {
-                int close = text.IndexOf(']', i + 1);
-                if (close > i) { i = close + 1; continue; }
+                int close = text.Slice(i + 1).IndexOf(']');
+                if (close >= 0) { i += close + 2; continue; }
             }
             len++;
             i++;
@@ -517,15 +530,15 @@ internal class ConsoleRenderer : IRenderer
     }
 
     /// <summary>Builds the separator string from the given config and available width.</summary>
-    private static string BuildSeparatorLine(SeparatorConfig config, int width)
+    private string BuildSeparatorLine(SeparatorConfig config, int width)
     {
         string left = config.LeftText ?? string.Empty;
         string right = config.RightText ?? string.Empty;
         char fill = config.RepeatedChar;
 
         // Measure display length without allocating (span-based, no Markup.Remove)
-        int leftLen = GetVisualLength(left);
-        int rightLen = GetVisualLength(right);
+        int leftLen = GetVisualLength(left.AsSpan());
+        int rightLen = GetVisualLength(right.AsSpan());
 
         int fillCount = width - leftLen - rightLen;
         if (fillCount < 0) fillCount = 0;
@@ -536,9 +549,9 @@ internal class ConsoleRenderer : IRenderer
                 : string.IsNullOrEmpty(right) ? left : left + right;
         }
 
-        // Build with StringBuilder::Append(char, int) to avoid
-        // allocating a large repeated-char string on every render.
-        var sb = new System.Text.StringBuilder(capacity: left.Length + fillCount + right.Length);
+        // Reuse the pooled StringBuilder to avoid per-render allocation.
+        var sb = _separatorSb;
+        sb.Clear();
         sb.Append(left);
 
         string? fillMarkup = config.RepeatedCharMarkup;
