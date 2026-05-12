@@ -318,15 +318,16 @@ public class CommandPaletteTests
     {
         // Bug report: typing "/appconfig DirectLlm" should show each
         // sub-property as a separate hint, not a single compressed entry.
-        // The common prefix "DirectLlm" equals what was typed (9 chars each),
+        // The common prefix "DirectLlm" equals what was typed (8 chars each),
         // so no compression should occur.
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/appconfig DirectLlm");
 
-        Assert.Contains(lines.Skip(1), l => l.Contains("DirectLlmApiType"));
-        Assert.Contains(lines.Skip(1), l => l.Contains("DirectLlmModelName"));
-        Assert.Contains(lines.Skip(1), l => l.Contains("DirectLlmToken"));
-        Assert.Contains(lines.Skip(1), l => l.Contains("DirectLlmUrl"));
+        Assert.Equal("> [white]/appconfig DirectLlmApiType[/]", lines[1]);
+        Assert.Equal("  [grey]/appconfig DirectLlmModelName[/]", lines[2]);
+        Assert.Equal("  [grey]/appconfig DirectLlmToken[/]", lines[3]);
+        Assert.Equal("  [grey]/appconfig DirectLlmUrl[/]", lines[4]);
+        Assert.All(lines.Skip(5), line => Assert.Equal(string.Empty, line));
 
         // CurrentSuggestion should be the first match
         Assert.Equal("/appconfig DirectLlmApiType ", palette.CurrentSuggestion);
@@ -340,13 +341,12 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/appconfig Direc");
 
-        // Should show a single compressed hint "DirectLlm "
-        string compressedEntry = "/appconfig DirectLlm ";
-        Assert.Contains(lines.Skip(1), l => l.Contains(compressedEntry));
+        // Should show a single compressed hint with grey markup
+        Assert.Equal("  [grey]/appconfig DirectLlm [/]", lines[1]);
+        Assert.All(lines.Skip(2), line => Assert.Equal(string.Empty, line));
 
         // The CurrentSuggestion should point to the compressed entry
-        Assert.Equal(compressedEntry, palette.CurrentSuggestion);
-        Assert.Equal(1, lines.Skip(1).Count(l => !string.IsNullOrEmpty(l)));
+        Assert.Equal("/appconfig DirectLlm ", palette.CurrentSuggestion);
     }
 
     [Fact]
@@ -356,8 +356,9 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/appconfig DirectLlmApiType");
 
-        // Should show exactly one hint for the complete entry
-        Assert.Contains(lines.Skip(1), l => l.Contains("DirectLlmApiType"));
+        // Should show exactly one selected hint for the complete entry
+        Assert.Equal("> [white]/appconfig DirectLlmApiType[/]", lines[1]);
+        Assert.All(lines.Skip(2), line => Assert.Equal(string.Empty, line));
         Assert.Equal("/appconfig DirectLlmApiType ", palette.CurrentSuggestion);
     }
 
@@ -383,9 +384,10 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/other Alpha");
 
-        Assert.Contains(lines.Skip(1), l => l.Contains("AlphaConfig"));
-        Assert.Contains(lines.Skip(1), l => l.Contains("AlphaMode"));
-        Assert.Contains(lines.Skip(1), l => l.Contains("AlphaValue"));
+        Assert.Equal("> [white]/other AlphaConfig[/]", lines[1]);
+        Assert.Equal("  [grey]/other AlphaMode[/]", lines[2]);
+        Assert.Equal("  [grey]/other AlphaValue[/]", lines[3]);
+        Assert.All(lines.Skip(4), line => Assert.Equal(string.Empty, line));
 
         // Should NOT show BetaConfig or BetaMode
         Assert.DoesNotContain(lines.Skip(1), l => l.Contains("BetaConfig"));
@@ -400,8 +402,11 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/appconfig directllm");
 
-        Assert.Contains(lines.Skip(1), l => l.Contains("DirectLlmUrl"));
-        Assert.NotNull(palette.CurrentSuggestion);
+        Assert.Equal("> [white]/appconfig DirectLlmApiType[/]", lines[1]);
+        Assert.Equal("  [grey]/appconfig DirectLlmModelName[/]", lines[2]);
+        Assert.Equal("  [grey]/appconfig DirectLlmToken[/]", lines[3]);
+        Assert.Equal("  [grey]/appconfig DirectLlmUrl[/]", lines[4]);
+        Assert.Equal("/appconfig DirectLlmApiType ", palette.CurrentSuggestion);
     }
 
     [Fact]
@@ -412,9 +417,10 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/other Alpha");
 
-        Assert.Contains(lines.Skip(1), l => l.Contains("/other AlphaConfig"));
-        Assert.Contains(lines.Skip(1), l => l.Contains("/other AlphaMode"));
-        Assert.Contains(lines.Skip(1), l => l.Contains("/other AlphaValue"));
+        Assert.Equal("> [white]/other AlphaConfig[/]", lines[1]);
+        Assert.Equal("  [grey]/other AlphaMode[/]", lines[2]);
+        Assert.Equal("  [grey]/other AlphaValue[/]", lines[3]);
+        Assert.All(lines.Skip(4), line => Assert.Equal(string.Empty, line));
         Assert.Equal("/other AlphaConfig ", palette.CurrentSuggestion);
     }
 
