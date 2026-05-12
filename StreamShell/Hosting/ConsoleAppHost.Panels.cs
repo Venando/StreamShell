@@ -10,7 +10,8 @@ public partial class ConsoleAppHost
     public void SetBottomPanel(IBottomPanel panel)
     {
         // Dispose previous panel before swapping
-        _bottomPanel.Dispose();
+        if (_bottomPanel != _defaultPanel)
+            _bottomPanel.Dispose();
 
         // Cancel previous panel's background task
         _panelCts.Cancel();
@@ -37,6 +38,7 @@ public partial class ConsoleAppHost
     /// <summary>Replaces the default bottom panel with a custom one. Used when no command is active.</summary>
     public void SetDefaultPanel(IBottomPanel panel)
     {
+        _defaultPanel?.Dispose();
         _defaultPanel = panel;
         // If we're currently on the old default, swap to the new one
         if (_bottomPanel is not CommandPalette && _bottomPanel is not SelectionPanel)
