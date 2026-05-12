@@ -327,7 +327,7 @@ var suggestions = new string[] {"DirectLlmApiType",
 "DirectLlmToken",
 "DirectLlmUrl"};
 
-var appConfigCommand = new Command("appconfig", "Configuring app", (_, _) => { return Task.CompletedTask; }, suggestions);
+var appConfigCommand = new Command("[yellow]appconfig[/]", "Configuring app", (_, _) => { return Task.CompletedTask; }, suggestions);
 
 host.AddCommand(appConfigCommand);
 

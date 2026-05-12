@@ -482,16 +482,16 @@ internal class CommandPalette : IBottomPanel
         int suggestionIdx = SelectedIndex >= 0 ? SelectedIndex : 0;
         if (suggestionIdx < entries.Count)
         {
-            CurrentSuggestion = entries[suggestionIdx] + " ";
+            CurrentSuggestion = StripMarkup(entries[suggestionIdx]) + " ";
         }
 
         // Build hint strings with selection highlighting
         for (int i = 0; i < entries.Count; i++)
         {
             if (i == SelectedIndex)
-                lines.Add($"> [white]{Markup.Escape(entries[i])}[/]");
+                lines.Add($"> [white]{entries[i]}[/]");
             else
-                lines.Add($"  [grey]{Markup.Escape(entries[i])}[/]");
+                lines.Add($"  [grey]{entries[i]}[/]");
             if (lines.Count >= MaxHeight) break;
         }
     }
@@ -531,33 +531,36 @@ internal class CommandPalette : IBottomPanel
     }
 
     /// <summary>Strips Spectre.Console markup tags ([...]) from text for matching purposes.</summary>
-    private static string StripMarkup(string text)
+    private static string StripMarkup(ReadOnlySpan<char> text)
     {
-        if (string.IsNullOrEmpty(text)) return text;
-        var sb = new System.Text.StringBuilder(text.Length);
-        int i = 0;
-        while (i < text.Length)
+        if (text.IsEmpty) return string.Empty;
+
+        Span<char> result = stackalloc char[text.Length];
+        int pos = 0;
+
+        for (int i = 0; i < text.Length; i++)
         {
             if (text[i] == '[')
             {
-                int close = text.IndexOf(']', i + 1);
-                if (close > i)
+                int close = i + 1;
+                while (close < text.Length && text[close] != ']') close++;
+
+                if (close < text.Length)
                 {
-                    // Check for escaped bracket [[ ]]
-                    if (i + 1 < text.Length && text[i + 1] == '[')
+                    if (close + 1 < text.Length && text[i + 1] == '[')
                     {
-                        sb.Append('[');
-                        i += 2;
+                        result[pos++] = '[';
+                        i = close + 1;
                         continue;
                     }
-                    i = close + 1;
+                    i = close;
                     continue;
                 }
             }
-            sb.Append(text[i]);
-            i++;
+            result[pos++] = text[i];
         }
-        return sb.ToString();
+
+        return result[..pos].ToString();
     }
 
     private static int GetVisualLength(string text)
