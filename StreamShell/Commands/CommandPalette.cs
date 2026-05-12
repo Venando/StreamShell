@@ -464,7 +464,9 @@ internal class CommandPalette : IBottomPanel
             _lastMatchCount = 1;
             string entry = fullPrefix + info.CommonNextWord + " ";
             CurrentSuggestion = entry;
-            lines.Add($"  [grey]{Markup.Escape(entry)}[/]");
+            // Single compressed entry is always selected
+            SelectedIndex = 0;
+            lines.Add($"> [white]{Markup.Escape(entry)}[/]");
             return;
         }
 

@@ -341,8 +341,8 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/appconfig Direc");
 
-        // Should show a single compressed hint with grey markup
-        Assert.Equal("  [grey]/appconfig DirectLlm [/]", lines[1]);
+        // Should show a single compressed hint selected with white markup
+        Assert.Equal("> [white]/appconfig DirectLlm [/]", lines[1]);
         Assert.All(lines.Skip(2), line => Assert.Equal(string.Empty, line));
 
         // The CurrentSuggestion should point to the compressed entry
