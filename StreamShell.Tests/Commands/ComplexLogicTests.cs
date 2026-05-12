@@ -23,6 +23,32 @@ public class CommandPaletteTests
             ["linux ubuntu", "linux debian", "windows server", "windows desktop"]),
     };
 
+    /// <summary>
+    /// Commands with property-name-style suggestions (no spaces) where
+    /// multiple entries share a common prefix equal to the typed text.
+    /// Represents the /appconfig DirectLlm* scenario from the bug report.
+    /// </summary>
+    private static readonly Command[] PropertyStyleSuggestions =
+    [
+        new("appconfig", "Get/set app config",
+            (_, _) => Task.CompletedTask,
+            [
+                "DirectLlmApiType",
+                "DirectLlmModelName",
+                "DirectLlmToken",
+                "DirectLlmUrl",
+            ]),
+        new("other", "Other command with sub-props",
+            (_, _) => Task.CompletedTask,
+            [
+                "AlphaConfig",
+                "AlphaMode",
+                "AlphaValue",
+                "BetaConfig",
+                "BetaMode",
+            ]),
+    ];
+
     private static CommandPalette CreatePalette(Command[]? commands = null)
         => new(commands ?? SampleCommands);
 
@@ -276,13 +302,130 @@ public class CommandPaletteTests
     }
 
     [Fact]
-    public void ArgumentSuggestions_CommonNextWord_CompressesHints()
+    public void ArgumentSuggestions_CommonPrefix_ShowsIndividualHints()
     {
         var palette = new CommandPalette(ArgSuggestionCommands);
         var lines = palette.GetLines("/deploy li");
 
-        // Should show a single compressed hint for "linux" common prefix
-        Assert.Contains(lines.Skip(1), l => l.Contains("linux"));
+        // Should show individual hints with full path, never compress
+        Assert.Equal("> [white]/deploy linux ubuntu[/]", lines[1]);
+        Assert.Equal("  [grey]/deploy linux debian[/]", lines[2]);
+        Assert.All(lines.Skip(3), line => Assert.Equal(string.Empty, line));
+    }
+
+    // ── Property-style suggestions (bug report scenario) ─────────────
+
+    [Fact]
+    public void ArgumentSuggestions_TypedPrefixEqualsCommonPrefix_ShowsIndividualHints()
+    {
+        // Bug report: typing "/appconfig DirectLlm" should show each
+        // sub-property as a separate hint, not a single compressed entry.
+        // The common prefix "DirectLlm" equals what was typed (8 chars each),
+        // so no compression should occur.
+        var palette = new CommandPalette(PropertyStyleSuggestions);
+        var lines = palette.GetLines("/appconfig DirectLlm");
+
+        Assert.Equal("> [white]/appconfig DirectLlmApiType[/]", lines[1]);
+        Assert.Equal("  [grey]/appconfig DirectLlmModelName[/]", lines[2]);
+        Assert.Equal("  [grey]/appconfig DirectLlmToken[/]", lines[3]);
+        Assert.Equal("  [grey]/appconfig DirectLlmUrl[/]", lines[4]);
+        Assert.All(lines.Skip(5), line => Assert.Equal(string.Empty, line));
+
+        // CurrentSuggestion should be the first match
+        Assert.Equal("/appconfig DirectLlmApiType ", palette.CurrentSuggestion);
+    }
+
+    [Fact]
+    public void ArgumentSuggestions_TypedPrefixIsShorterThanCommonPrefix_ShowsIndividualHints()
+    {
+        // Typing "/appconfig Direc" should show all individual hints,
+        // never compress to a common prefix.
+        var palette = new CommandPalette(PropertyStyleSuggestions);
+        var lines = palette.GetLines("/appconfig Direc");
+
+        Assert.Equal("> [white]/appconfig DirectLlmApiType[/]", lines[1]);
+        Assert.Equal("  [grey]/appconfig DirectLlmModelName[/]", lines[2]);
+        Assert.Equal("  [grey]/appconfig DirectLlmToken[/]", lines[3]);
+        Assert.Equal("  [grey]/appconfig DirectLlmUrl[/]", lines[4]);
+        Assert.All(lines.Skip(5), line => Assert.Equal(string.Empty, line));
+
+        // The CurrentSuggestion should be the first match
+        Assert.Equal("/appconfig DirectLlmApiType ", palette.CurrentSuggestion);
+    }
+
+    [Fact]
+    public void ArgumentSuggestions_TypedFullPropertyName_ShowsOneHint()
+    {
+        // Typing "/appconfig DirectLlmApiType" matches only one suggestion
+        var palette = new CommandPalette(PropertyStyleSuggestions);
+        var lines = palette.GetLines("/appconfig DirectLlmApiType");
+
+        // Should show exactly one selected hint for the complete entry
+        Assert.Equal("> [white]/appconfig DirectLlmApiType[/]", lines[1]);
+        Assert.All(lines.Skip(2), line => Assert.Equal(string.Empty, line));
+        Assert.Equal("/appconfig DirectLlmApiType ", palette.CurrentSuggestion);
+    }
+
+    [Fact]
+    public void ArgumentSuggestions_TrailingSpaceOnSingleToken_ShowsNoHints()
+    {
+        // Typing "/appconfig DirectLlm " (with trailing space) after a single-token
+        // property name: the space makes "DirectLlm " the prefix, but none of the
+        // property suggestions start with "DirectLlm " (space after the word).
+        // Since each suggestion is a single word (no spaces), there are no matches.
+        var palette = new CommandPalette(PropertyStyleSuggestions);
+        var lines = palette.GetLines("/appconfig DirectLlm ");
+
+        // No hints should be shown (all argument lines empty)
+        Assert.All(lines.Skip(1), line => Assert.Equal(string.Empty, line));
+        Assert.Null(palette.CurrentSuggestion);
+    }
+
+    [Fact]
+    public void ArgumentSuggestions_FilteringByFirstWord_ShowsSubset()
+    {
+        // Typing "/other Alpha" should match AlphaConfig, AlphaMode, AlphaValue
+        var palette = new CommandPalette(PropertyStyleSuggestions);
+        var lines = palette.GetLines("/other Alpha");
+
+        Assert.Equal("> [white]/other AlphaConfig[/]", lines[1]);
+        Assert.Equal("  [grey]/other AlphaMode[/]", lines[2]);
+        Assert.Equal("  [grey]/other AlphaValue[/]", lines[3]);
+        Assert.All(lines.Skip(4), line => Assert.Equal(string.Empty, line));
+
+        // Should NOT show BetaConfig or BetaMode
+        Assert.DoesNotContain(lines.Skip(1), l => l.Contains("BetaConfig"));
+        Assert.DoesNotContain(lines.Skip(1), l => l.Contains("BetaMode"));
+
+        Assert.Equal("/other AlphaConfig ", palette.CurrentSuggestion);
+    }
+
+    [Fact]
+    public void ArgumentSuggestions_CaseInsensitiveMatch_OnPropertyName()
+    {
+        var palette = new CommandPalette(PropertyStyleSuggestions);
+        var lines = palette.GetLines("/appconfig directllm");
+
+        Assert.Equal("> [white]/appconfig DirectLlmApiType[/]", lines[1]);
+        Assert.Equal("  [grey]/appconfig DirectLlmModelName[/]", lines[2]);
+        Assert.Equal("  [grey]/appconfig DirectLlmToken[/]", lines[3]);
+        Assert.Equal("  [grey]/appconfig DirectLlmUrl[/]", lines[4]);
+        Assert.Equal("/appconfig DirectLlmApiType ", palette.CurrentSuggestion);
+    }
+
+    [Fact]
+    public void ArgumentSuggestions_GroupedPrefix_ShowsIndividualHints()
+    {
+        // Typing "/other Alpha" where commonPrefix "Alpha" equals typed text
+        // → no compression, shows individual hints for each sub-property
+        var palette = new CommandPalette(PropertyStyleSuggestions);
+        var lines = palette.GetLines("/other Alpha");
+
+        Assert.Equal("> [white]/other AlphaConfig[/]", lines[1]);
+        Assert.Equal("  [grey]/other AlphaMode[/]", lines[2]);
+        Assert.Equal("  [grey]/other AlphaValue[/]", lines[3]);
+        Assert.All(lines.Skip(4), line => Assert.Equal(string.Empty, line));
+        Assert.Equal("/other AlphaConfig ", palette.CurrentSuggestion);
     }
 
     // ── MaxHeight / Capacity ─────────────────────────────────────────

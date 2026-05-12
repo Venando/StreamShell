@@ -383,14 +383,11 @@ internal class CommandPalette : IBottomPanel
     }
 
     /// <summary>Result of matching argument suggestions against typed args.</summary>
-    private sealed record ArgMatchInfo(
-        string[] Matches,
-        string? CommonNextWord);
+    private sealed record ArgMatchInfo(string[] Matches);
 
     /// <summary>
-    /// Matches argument suggestions against the typed args part and determines
-    /// whether all matching suggestions share a common next word. Shared by both
-    /// hint display and Tab completion for a single source of truth.
+    /// Matches argument suggestions against the typed args part.
+    /// Shared by both hint display and Tab completion for a single source of truth.
     /// </summary>
     private static ArgMatchInfo GetArgMatchInfo(ReadOnlySpan<char> argsPart, string[] suggestions)
     {
@@ -411,36 +408,7 @@ internal class CommandPalette : IBottomPanel
                 matches[idx++] = s;
         }
 
-        if (matches.Length <= 1)
-            return new ArgMatchInfo(matches, null);
-
-        // Only relevant mid-word (not at a word boundary)
-        if (argsPart.Length == 0 || argsPart.EndsWith(' '))
-            return new ArgMatchInfo(matches, null);
-
-        // Find the longest common prefix across all matching suggestions
-        // using spans to avoid substring allocations during comparison
-        ReadOnlySpan<char> commonPrefix = matches[0].AsSpan();
-        for (int i = 1; i < matches.Length; i++)
-        {
-            int j = 0;
-            ReadOnlySpan<char> mi = matches[i].AsSpan();
-            while (j < commonPrefix.Length && j < mi.Length &&
-                   char.ToLowerInvariant(commonPrefix[j]) == char.ToLowerInvariant(mi[j]))
-                j++;
-            commonPrefix = commonPrefix[..j];
-        }
-
-        // Trim to the first space boundary — we only care about completing one word
-        int spaceIdx = commonPrefix.IndexOf(' ');
-        if (spaceIdx >= 0)
-            commonPrefix = commonPrefix[..spaceIdx];
-
-        // Only report a common next word if it actually extends what was typed
-        if (commonPrefix.Length > argsPart.Length)
-            return new ArgMatchInfo(matches, commonPrefix.ToString());
-
-        return new ArgMatchInfo(matches, null);
+        return new ArgMatchInfo(matches);
     }
 
     /// <summary>
@@ -455,16 +423,6 @@ internal class CommandPalette : IBottomPanel
         if (info.Matches.Length == 0)
         {
             _lastMatchCount = 0;
-            return;
-        }
-
-        // Mid-word with a common next word → show just one compressed entry
-        if (info.CommonNextWord is not null)
-        {
-            _lastMatchCount = 1;
-            string entry = fullPrefix + info.CommonNextWord + " ";
-            CurrentSuggestion = entry;
-            lines.Add($"  [grey]{Markup.Escape(entry)}[/]");
             return;
         }
 

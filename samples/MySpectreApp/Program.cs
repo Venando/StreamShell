@@ -322,6 +322,17 @@ host.AddCommand(new Command("saved", "List all saved input field states", (_, _)
     return Task.CompletedTask;
 }));
 
+var suggestions = new string[] {"DirectLlmApiType",
+"DirectLlmModelName",
+"DirectLlmToken",
+"DirectLlmUrl"};
+
+var appConfigCommand = new Command("appconfig", "Configuring app", (_, _) => { return Task.CompletedTask; }, suggestions);
+
+host.AddCommand(appConfigCommand);
+
+
+
 // ════════════════════════════════════════════════════════════════
 
 host.UserInputSubmitted += args =>
