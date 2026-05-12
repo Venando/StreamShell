@@ -43,6 +43,7 @@ internal class SelectionPanel : IBottomPanel
         _onCancel = onCancel;
         _toggled = new bool[variants.Length];
         _preventCancel = info?.PreventCancel ?? false;
+        _isDirty = true;
     }
 
     // ── Interface: GetLines ──────────────────────────────────────────
