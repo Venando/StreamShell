@@ -36,6 +36,10 @@ public partial class ConsoleAppHost : IDisposable
     private CancellationTokenSource _panelCts = new();
     private readonly CancellationTokenSource _cts = new();
 
+    // Set when SetTopSeparator or SetBottomSeparator is called outside the render loop.
+    // Checked during the next render tick so separator-only changes still redraw the screen.
+    private bool _separatorDirty;
+
     /// <summary>Raised when the bottom panel is swapped. Lets the renderer update its line count.</summary>
     public event EventHandler<BottomPanelChangedEventArgs>? BottomPanelChanged;
 
@@ -143,6 +147,8 @@ public partial class ConsoleAppHost : IDisposable
             RepeatedChar = repeatedCharacter,
             RepeatedCharMarkup = repeatedCharMarkup
         };
+
+        _separatorDirty = true;
     }
 
     /// <summary>Sets the bottom separator (between input line and hints block).</summary>
@@ -163,6 +169,8 @@ public partial class ConsoleAppHost : IDisposable
             RepeatedChar = repeatedCharacter,
             RepeatedCharMarkup = repeatedCharMarkup
         };
+
+        _separatorDirty = true;
     }
 
     /// <summary>Register a command that can be triggered with /command-name.</summary>
