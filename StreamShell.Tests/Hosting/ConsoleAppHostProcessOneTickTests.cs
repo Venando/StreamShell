@@ -377,7 +377,7 @@ public class ConsoleAppHostProcessOneTickTests
         _host.AddCommand(new Command("help", "Help", (_, _) => Task.CompletedTask));
 
         // Activate a SelectionPanel via PromptSelection
-        var variants = new IVariant[] { new TestVariant("Option A"), new TestVariant("Option B") };
+        var variants = new IVariantEntry[] { new TestVariant("Option A"), new TestVariant("Option B") };
         var selectionTask = _host.PromptSelection("Pick", variants);
 
         // Verify SelectionPanel is active

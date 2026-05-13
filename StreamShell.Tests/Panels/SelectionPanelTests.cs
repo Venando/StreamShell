@@ -8,7 +8,7 @@ namespace StreamShell.Tests;
 
 public class SelectionPanelTests
 {
-    private static readonly IVariant[] SampleVariants =
+    private static readonly IVariantEntry[] SampleVariants =
     {
         new TestVariant("Option A"),
         new TestVariant("Option B"),
@@ -222,22 +222,26 @@ public class SelectionPanelTests
     [Fact]
     public void MultiSelect_MaxLimit_BlocksAdditionalToggle()
     {
-        var info = new SelectionInfo { Min = 0, Max = 1 };
+        var info = new SelectionInfo { Min = 0, Max = 2 };
         var panel = new SelectionPanel("Pick", SampleVariants, info,
             onSubmit: _ => { },
             onCancel: () => { });
 
-        // Toggle Option A (first)
+        // Toggle Option A and B
         panel.GetLines("/");
-        ((IBottomPanel)panel).TryHandleKey(new ConsoleKeyInfo('\0', ConsoleKey.Enter, false, false, false));
+        ((IBottomPanel)panel).TryHandleKey(new ConsoleKeyInfo('\0', ConsoleKey.Enter, false, false, false)); // A
 
         // Navigate down
         ((IBottomPanel)panel).TryHandleKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+        ((IBottomPanel)panel).TryHandleKey(new ConsoleKeyInfo('\0', ConsoleKey.Enter, false, false, false)); // B
+
+        // Navigate to C, try toggle — blocked at max 2
+        ((IBottomPanel)panel).TryHandleKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
         ((IBottomPanel)panel).TryHandleKey(new ConsoleKeyInfo('\0', ConsoleKey.Enter, false, false, false));
 
-        // Option B should not be toggled (max = 1)
+        // Option C should not be toggled (max = 2)
         var lines = panel.GetLines("/");
-        Assert.Contains("\u2610", lines[3]); // B still unchecked
+        Assert.Contains("\u2610", lines[4]); // C still unchecked
     }
 
     [Fact]
@@ -352,6 +356,6 @@ public class SelectionPanelTests
         var lines = panel.GetLines("/");
 
         Assert.DoesNotContain("Esc: cancel", lines[0]);
-        Assert.Contains("Enter: toggle", lines[0]);
+        Assert.Contains("submit", lines[0]);
     }
 }

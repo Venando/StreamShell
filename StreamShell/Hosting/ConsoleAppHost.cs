@@ -221,13 +221,13 @@ public partial class ConsoleAppHost : IDisposable
     /// The previous panel is restored after selection or cancellation.
     /// </summary>
     /// <param name="title">Header line, supports Spectre markup.</param>
-    /// <param name="variants">Options to pick from.</param>
+    /// <param name="variants">Options to pick from. May include <see cref="IDecoration"/> entries.</param>
     /// <param name="info">
-    /// When null — single-select mode: Enter on a variant selects and submits immediately.
-    /// When set — multi-select mode: Enter toggles variants, Space submits.
+    /// When null or Max &lt;= 1 — single-select mode: Enter on a variant selects and submits immediately.
+    /// When set with Max &gt; 1 — multi-select mode: Enter toggles variants, Space submits.
     /// </param>
     /// <returns>Array of selected variants, or null if cancelled.</returns>
-    public Task<IVariant[]?> PromptSelection(string title, IVariant[] variants, SelectionInfo? info = null)
+    public Task<IVariant[]?> PromptSelection(string title, IVariantEntry[] variants, SelectionInfo? info = null)
     {
         var tcs = new TaskCompletionSource<IVariant[]?>();
         var panel = new SelectionPanel(title, variants, info,

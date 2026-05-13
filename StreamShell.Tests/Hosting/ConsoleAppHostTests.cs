@@ -398,7 +398,7 @@ public class ConsoleAppHostTests : IDisposable
     [Fact]
     public void PromptSelection_ReturnsTask()
     {
-        var variants = new IVariant[]
+        var variants = new IVariantEntry[]
         {
             new TestVariant("A"),
             new TestVariant("B"),
@@ -412,7 +412,7 @@ public class ConsoleAppHostTests : IDisposable
     [Fact]
     public void PromptSelection_WithSelectionInfo_ReturnsTask()
     {
-        var variants = new IVariant[]
+        var variants = new IVariantEntry[]
         {
             new TestVariant("A"),
             new TestVariant("B"),
@@ -426,14 +426,14 @@ public class ConsoleAppHostTests : IDisposable
     [Fact]
     public void PromptSelection_EmptyVariants_DoesNotThrow()
     {
-        var task = _host.PromptSelection("Pick", Array.Empty<IVariant>());
+        var task = _host.PromptSelection("Pick", Array.Empty<IVariantEntry>());
         Assert.NotNull(task);
     }
 
     [Fact]
     public void PromptSelection_SingleVariant_ReturnsTask()
     {
-        var variants = new IVariant[] { new TestVariant("Only") };
+        var variants = new IVariantEntry[] { new TestVariant("Only") };
         var task = _host.PromptSelection("Pick", variants);
         Assert.NotNull(task);
     }

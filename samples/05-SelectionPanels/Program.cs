@@ -6,7 +6,7 @@ using StreamShell;
 
 using var host = new ConsoleAppHost();
 
-var planets = new IVariant[]
+var planets = new IVariantEntry[]
 {
     new Variant("[red]Mars[/]"),
     new Variant("[yellow]Venus[/]"),
@@ -14,7 +14,7 @@ var planets = new IVariant[]
     new Variant("[grey]Mercury[/]"),
 };
 
-var toppings = new IVariant[]
+var toppings = new IVariantEntry[]
 {
     new Variant("[yellow]Cheese[/]"),
     new Variant("[red]Pepperoni[/]"),
@@ -24,7 +24,7 @@ var toppings = new IVariant[]
     new Variant("[orange1]Pineapple[/]"),
 };
 
-var difficulty = new IVariant[]
+var difficulty = new IVariantEntry[]
 {
     new Variant("[green]Easy[/]"),
     new Variant("[yellow]Medium[/]"),
@@ -67,7 +67,7 @@ host.AddCommand(new Command("difficulty", "Pick difficulty (single-select)", asy
 
 host.AddCommand(new Command("colors", "Pick colors (multi-select, min 2)", async (_, _) =>
 {
-    var colors = new IVariant[]
+    var colors = new IVariantEntry[]
     {
         new Variant("[red]Red[/]"),
         new Variant("[green]Green[/]"),
