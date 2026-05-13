@@ -57,13 +57,14 @@ internal class CommandPalette : IBottomPanel
         return false;
     }
 
-    /// <summary>Index of the currently selected hint (0 = first hint, -1 = none).
-    /// Only valid while hints are shown (command mode with matches).
-    /// </summary>
-    internal int SelectedIndex { get; set; }
+    /// <summary>Shared scroll navigator tracking selection and viewport position.</summary>
+    private readonly ScrollNavigator _nav = new();
+
+    /// <summary>Index of the currently selected hint within the visible window (0 = first hint).</summary>
+    internal int SelectedIndex => _nav.SelectedIndex;
 
     /// <summary>Scroll offset into the full match list. 0 means showing the first page.</summary>
-    internal int ScrollOffset { get; set; }
+    internal int ScrollOffset => _nav.ScrollOffset;
 
     /// <summary>True when there are hints to navigate.</summary>
     internal bool CanNavigate => _lastLines?.Count > 0;
@@ -73,6 +74,7 @@ internal class CommandPalette : IBottomPanel
     /// to the available hint range. Call when the user presses Up/Down.
     /// Marks the panel as dirty so the host forces a re-render.
     /// Supports scrolling through all matches (not just the visible window).
+    /// Delegates scroll math to <see cref="ScrollNavigator"/>.
     /// </summary>
     internal void AdjustSelection(int delta)
     {
@@ -82,55 +84,11 @@ internal class CommandPalette : IBottomPanel
             return;
         }
 
-        int oldIndex = SelectedIndex;
-        int oldScroll = ScrollOffset;
+        // Sync navigator state before adjustment
+        _nav.TotalItems = _lastMatchCount;
+        _nav.VisibleCapacity = HintCapacity;
 
-        // On first navigation from -1, start at the closest edge
-        if (SelectedIndex < 0)
-        {
-            SelectedIndex = delta > 0 ? 0 : Math.Min(HintCapacity, _lastMatchCount) - 1;
-        }
-        else
-        {
-            int newIndex = SelectedIndex + delta;
-            int visibleCount = Math.Min(HintCapacity, _lastMatchCount - ScrollOffset);
-
-            if (newIndex >= visibleCount && delta > 0)
-            {
-                // Scroll down if there are more matches than fit on screen
-                if (_lastMatchCount > HintCapacity)
-                {
-                    int newScroll = ScrollOffset + delta;
-                    ScrollOffset = Math.Max(0, Math.Min(newScroll, _lastMatchCount - HintCapacity));
-                    // Keep selection at bottom of visible window
-                    SelectedIndex = Math.Min(HintCapacity, _lastMatchCount - ScrollOffset) - 1;
-                }
-            }
-            else if (newIndex < 0 && delta < 0)
-            {
-                // Scroll up if there are more matches than fit on screen
-                if (_lastMatchCount > HintCapacity)
-                {
-                    int newScroll = ScrollOffset + delta;
-                    if (newScroll >= 0)
-                    {
-                        ScrollOffset = newScroll;
-                        SelectedIndex = 0;
-                    }
-                    else
-                    {
-                        ScrollOffset = 0;
-                        SelectedIndex = 0;
-                    }
-                }
-            }
-            else
-            {
-                SelectedIndex = Math.Clamp(newIndex, 0, visibleCount - 1);
-            }
-        }
-
-        if (SelectedIndex != oldIndex || ScrollOffset != oldScroll)
+        if (_nav.AdjustSelection(delta))
             _isDirty = true;
     }
 
@@ -334,11 +292,11 @@ internal class CommandPalette : IBottomPanel
         while (!cancellationToken.IsCancellationRequested)
         {
             // Clamp selection when matching count shrinks below current index
-            if (SelectedIndex >= 0 && _lastMatchCount > 0)
+            if (_lastMatchCount > 0)
             {
-                int maxVisible = Math.Min(HintCapacity, _lastMatchCount - ScrollOffset);
-                if (SelectedIndex >= maxVisible)
-                    SelectedIndex = Math.Max(0, maxVisible - 1);
+                _nav.TotalItems = _lastMatchCount;
+                _nav.VisibleCapacity = HintCapacity;
+                _nav.ClampToBounds();
             }
 
             try { await Task.Delay(100, cancellationToken); }
@@ -583,10 +541,9 @@ internal class CommandPalette : IBottomPanel
 
     private void ResetSelection()
     {
-        if (SelectedIndex != 0 || ScrollOffset != 0)
+        if (_nav.SelectedIndex != 0 || _nav.ScrollOffset != 0)
         {
-            SelectedIndex = 0;
-            ScrollOffset = 0;
+            _nav.Reset();
             _isDirty = true;
         }
     }

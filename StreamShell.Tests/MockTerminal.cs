@@ -57,6 +57,7 @@ internal sealed class MockTerminal : ITerminal
 
     // ── Terminal Properties ──────────────────────────────────────────
     public int WindowWidth { get; set; } = 80;
+    public int WindowHeight { get; set; } = 24;
     public int BufferHeight { get; set; } = 200;
 
     // ── Cursor Position ──────────────────────────────────────────────
