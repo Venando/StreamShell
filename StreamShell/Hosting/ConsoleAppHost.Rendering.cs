@@ -265,11 +265,13 @@ public partial class ConsoleAppHost
     private bool RenderInputChanges(RenderSnapshot state, TickState tick)
     {
         bool panelDirty = _bottomPanel.IsDirty;
-        if (!StateDiffersFromRender(state, tick) && !panelDirty)
+        bool sepDirty = _separatorDirty;
+        if (!StateDiffersFromRender(state, tick) && !panelDirty && !sepDirty)
             return false;
 
         if (panelDirty)
             _bottomPanel.ClearDirty();
+        _separatorDirty = false;
 
         // Always use the flicker-free overwrite approach:
         // position at old block top and render over existing content.
