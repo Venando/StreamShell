@@ -7,7 +7,7 @@ namespace StreamShell;
 internal class SelectionPanel : IBottomPanel
 {
     private readonly string _title;
-    private readonly IVariant[] _variants;
+    private readonly IVariantEntry[] _variants;
     private readonly SelectionInfo? _info;
     private readonly Action<IVariant[]> _onSubmit;
     private readonly Action _onCancel;
@@ -24,19 +24,22 @@ internal class SelectionPanel : IBottomPanel
     bool IBottomPanel.IsDirty => _isDirty;
     void IBottomPanel.ClearDirty() => _isDirty = false;
 
-    /// <summary>Total lines: controls + title + variants.</summary>
+    /// <summary>Total lines: controls + title + entries.</summary>
     public int LineCount => 2 + _variants.Length;
 
     /// <summary>Hides the input field while selection is active.</summary>
     bool IBottomPanel.AllowUserField => false;
 
-    /// <summary>True in multi-select mode.</summary>
-    private bool IsMulti => _info is not null;
+    /// <summary>True in multi-select mode (info provided with Max > 1).</summary>
+    private bool IsMulti => _info is not null && _info.Max > 1;
+
+    /// <summary>Returns true if the entry is a selectable variant (not a decoration).</summary>
+    private static bool IsSelectable(IVariantEntry entry) => entry is IVariant;
 
     /// <summary>
     /// Creates a selection panel.
     /// </summary>
-    public SelectionPanel(string title, IVariant[] variants, SelectionInfo? info,
+    public SelectionPanel(string title, IVariantEntry[] variants, SelectionInfo? info,
         Action<IVariant[]> onSubmit, Action onCancel)
     {
         _title = title;
@@ -77,9 +80,16 @@ internal class SelectionPanel : IBottomPanel
         // Line 1: title
         _cachedLines.Add($"[bold]{_title}[/]");
 
-        // Variant lines
+        // Entry lines
         for (int i = 0; i < _variants.Length; i++)
         {
+            if (_variants[i] is IDecoration)
+            {
+                // Decorations: dimmed grey, no arrow, no checkbox
+                _cachedLines.Add($"[grey]{_variants[i].Name}[/]");
+                continue;
+            }
+
             bool highlighted = i == _highlightIndex;
             bool selected = IsMulti && _toggled[i];
 
@@ -105,20 +115,30 @@ internal class SelectionPanel : IBottomPanel
         switch (key.Key)
         {
             case ConsoleKey.UpArrow:
-                if (_highlightIndex > 0)
+            {
+                int prev = _highlightIndex - 1;
+                while (prev >= 0 && !IsSelectable(_variants[prev]))
+                    prev--;
+                if (prev >= 0)
                 {
-                    _highlightIndex--;
+                    _highlightIndex = prev;
                     _isDirty = true;
                 }
                 return true;
+            }
 
             case ConsoleKey.DownArrow:
-                if (_highlightIndex < _variants.Length - 1)
+            {
+                int next = _highlightIndex + 1;
+                while (next < _variants.Length && !IsSelectable(_variants[next]))
+                    next++;
+                if (next < _variants.Length)
                 {
-                    _highlightIndex++;
+                    _highlightIndex = next;
                     _isDirty = true;
                 }
                 return true;
+            }
 
             case ConsoleKey.Enter:
                 return HandleEnter();
@@ -139,6 +159,10 @@ internal class SelectionPanel : IBottomPanel
 
     private bool HandleEnter()
     {
+        // Defensive: if a decoration somehow got highlighted, ignore
+        if (!IsSelectable(_variants[_highlightIndex]))
+            return true;
+
         if (IsMulti)
         {
             // Toggle the highlighted variant
@@ -164,7 +188,7 @@ internal class SelectionPanel : IBottomPanel
         }
 
         // Single — select highlighted and submit
-        _onSubmit([_variants[_highlightIndex]]);
+        _onSubmit([(IVariant)_variants[_highlightIndex]]);
         return true;
     }
 
@@ -180,7 +204,7 @@ internal class SelectionPanel : IBottomPanel
 
         var result = IsMulti
             ? BuildSelectedArray(_variants, _toggled)
-            : [_variants[_highlightIndex]];
+            : [(IVariant)_variants[_highlightIndex]];
 
         _onSubmit(result);
         return true;
@@ -197,8 +221,8 @@ internal class SelectionPanel : IBottomPanel
         return count;
     }
 
-    /// <summary>Builds a result array from toggled variants without LINQ allocation.</summary>
-    private static IVariant[] BuildSelectedArray(IVariant[] variants, bool[] toggled)
+    /// <summary>Builds a result array from toggled entries without LINQ allocation. Only IVariant entries are included.</summary>
+    private static IVariant[] BuildSelectedArray(IVariantEntry[] entries, bool[] toggled)
     {
         int count = CountSelected(toggled);
         var result = new IVariant[count];
@@ -206,7 +230,7 @@ internal class SelectionPanel : IBottomPanel
         for (int i = 0; i < toggled.Length; i++)
         {
             if (toggled[i])
-                result[idx++] = variants[i];
+                result[idx++] = (IVariant)entries[i];
         }
         return result;
     }
