@@ -173,7 +173,7 @@ host.AddCommand(new Command("default", Markup.Escape("Toggle default panel (Empt
 //  Selection test commands (PromptSelection)
 // ════════════════════════════════════════════════════════════════
 
-var osVariants = new IVariant[]
+var osVariants = new IVariantEntry[]
 {
     new Variant("[bold]Windows[/] 11"),
     new Variant("[bold][green]Linux[/][/] Ubuntu"),
@@ -181,7 +181,7 @@ var osVariants = new IVariant[]
     new Variant("[grey]FreeBSD[/]"),
 };
 
-var toolVariants = new IVariant[]
+var toolVariants = new IVariantEntry[]
 {
     new Variant("Sword"),
     new Variant("Shield"),
@@ -190,7 +190,7 @@ var toolVariants = new IVariant[]
     new Variant("Staff"),
 };
 
-var colorVariants = new IVariant[]
+var colorVariants = new IVariantEntry[]
 {
     new Variant("[red]Red[/]"),
     new Variant("[green]Green[/]"),
