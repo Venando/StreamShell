@@ -72,12 +72,18 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>When false, suppresses the bottom separator between input and hints.</summary>
     public bool ShowBottomSeparator { get; set; } = true;
 
+    /// <summary>When false, the input field and top separator are not rendered.
+    /// Only the panel's hint lines display. Default: true.</summary>
+    public bool ShowUserField { get; set; } = true;
+
     /// <summary>Updates the panel line count used for block offset calculation.</summary>
     public void SetPanelLineCount(int count) => _panelLineCount = count;
 
     /// <summary>Total vertical space taken by the input block using the current panel line count.</summary>
     public int GetBlockOffset(string input)
     {
+        if (!ShowUserField)
+            return _panelLineCount;
         // 1 (separator) + BlankAfterInput + HintsSep + _panelLineCount = 1 + 1 + 1 + _panelLineCount = 3 + _panelLineCount
         // Plus input line count
         return (1 + _panelLineCount) + GetInputLineCount(input);
@@ -86,6 +92,8 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>Total vertical space taken by the input block with a given panel line count.</summary>
     private int GetBlockOffset(string input, int panelLineCount)
     {
+        if (!ShowUserField)
+            return panelLineCount;
         return (1 + panelLineCount) + LineWrappingService.GetInputLineCount(
             input, _terminal.WindowWidth, 2, 4);
     }
@@ -187,9 +195,12 @@ internal class ConsoleRenderer : IRenderer
         int selectionLength,
         int margin)
     {
-        RenderTopSeparator();
-        RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
-        _terminal.WriteLine();
+        if (ShowUserField)
+        {
+            RenderTopSeparator();
+            RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
+            _terminal.WriteLine();
+        }
         RenderHintsBlock(hints);
     }
 
@@ -208,9 +219,12 @@ internal class ConsoleRenderer : IRenderer
         int newTop = _terminal.CursorTop - (blockOffset - 1);
         _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
 
-        RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
-        _terminal.Write("\x1b[K");
-        _terminal.WriteLine();
+        if (ShowUserField)
+        {
+            RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
+            _terminal.Write("\x1b[K");
+            _terminal.WriteLine();
+        }
         RenderHintsBlock(hints);
     }
 
@@ -238,10 +252,13 @@ internal class ConsoleRenderer : IRenderer
         _terminal.CursorLeft = 0;
         _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
 
-        RenderTopSeparator();
-        RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
-        _terminal.Write("\x1b[K");
-        _terminal.WriteLine();
+        if (ShowUserField)
+        {
+            RenderTopSeparator();
+            RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
+            _terminal.Write("\x1b[K");
+            _terminal.WriteLine();
+        }
         RenderHintsBlock(hints);
     }
 

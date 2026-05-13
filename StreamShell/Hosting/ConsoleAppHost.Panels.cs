@@ -20,7 +20,10 @@ public partial class ConsoleAppHost
 
         _bottomPanel = panel;
         if (_renderer is ConsoleRenderer cr)
+        {
             cr.ShowBottomSeparator = panel.ShowBottomSeparator;
+            cr.ShowUserField = panel.AllowUserField;
+        }
         WireUpAutoComplete();
         BottomPanelChanged?.Invoke(this, new BottomPanelChangedEventArgs(panel));
 
