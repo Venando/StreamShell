@@ -22,6 +22,8 @@ var toppings = new IVariantEntry[]
     new Variant("[cyan]Olives[/]"),
     new Variant("[magenta]Onions[/]"),
     new Variant("[orange1]Pineapple[/]"),
+    new Decoration("-- Spicy --"),
+    new Variant("[orange1]Spice[/]"),
 };
 
 var difficulty = new IVariantEntry[]
@@ -96,7 +98,10 @@ host.AddCommand(new Command("weapon", "Choose weapon (decorations demo)", async 
         new Variant("[cyan]Axe[/]"),
     };
 
-    var result = await host.PromptSelection("Choose your weapon", weapons);
+    var result = await host.PromptSelection("Choose your weapon", weapons, new SelectionInfo()
+    {
+        PreventCancel = false,
+    });
     if (result is null)
         host.AddMessage("[yellow]No weapon chosen[/]");
     else
