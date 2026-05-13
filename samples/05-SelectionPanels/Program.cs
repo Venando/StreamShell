@@ -84,9 +84,29 @@ host.AddCommand(new Command("colors", "Pick colors (multi-select, min 2)", async
         host.AddMessage($"[green]Colors: {string.Join(", ", result.Select(v => v.Name))}[/]");
 }));
 
+host.AddCommand(new Command("weapon", "Choose weapon (decorations demo)", async (_, _) =>
+{
+    var weapons = new IVariantEntry[]
+    {
+        new Decoration("-- Range weapons --"),
+        new Variant("[yellow]Bow[/]"),
+        new Variant("[yellow]Gun[/]"),
+        new Decoration("-- Melee weapons --"),
+        new Variant("[cyan]Sword[/]"),
+        new Variant("[cyan]Axe[/]"),
+    };
+
+    var result = await host.PromptSelection("Choose your weapon", weapons);
+    if (result is null)
+        host.AddMessage("[yellow]No weapon chosen[/]");
+    else
+        host.AddMessage($"[green]Weapon: {result[0].Name}[/]");
+}));
+
 host.AddCommand(new Command("help", "Show available commands", (_, _) =>
 {
     host.AddMessage("[bold underline]Selection Panel Demos[/]");
+    host.AddMessage("  [cyan]/weapon[/]     — Decorations demo (categories between variants)");
     host.AddMessage("  [cyan]/planet[/]     — Single-select (Enter to choose)");
     host.AddMessage("  [cyan]/pizza[/]       — Multi-select (Enter toggle, Space submit)");
     host.AddMessage("  [cyan]/difficulty[/]  — Single-select difficulty");
@@ -97,15 +117,21 @@ host.AddCommand(new Command("help", "Show available commands", (_, _) =>
 host.AddCommand(new Command("exit", "Exit", (_, _) => { host.Stop(); return Task.CompletedTask; }));
 
 host.AddMessage("[bold]Selection Panel Demo[/]");
-host.AddMessage("[yellow]Try [cyan]/planet[/] for single-select, [cyan]/pizza[/] for multi-select[/]");
+host.AddMessage("[yellow]Try [cyan]/weapon[/] for decorations, [cyan]/planet[/] for single-select, [cyan]/pizza[/] for multi-select[/]");
 host.AddMessage("[yellow]Navigate with arrows, Enter to pick, Escape to cancel[/]");
 host.AddMessage("[yellow]Multi-select: Enter toggles, Space submits[/]");
 
 await host.Run();
 
-// ── Variants ──
+// ── Variants & Decorations ──
 class Variant : IVariant
 {
     public string Name { get; }
     public Variant(string name) => Name = name;
+}
+
+class Decoration : IDecoration
+{
+    public string Name { get; }
+    public Decoration(string name) => Name = name;
 }
