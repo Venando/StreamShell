@@ -250,6 +250,13 @@ public partial class ConsoleAppHost : IDisposable
     /// <summary>Signal the host to stop after the current loop iteration.</summary>
     public void Stop() => _cts.Cancel();
 
+    /// <summary>
+    /// Replaces the current input field content with the given text.
+    /// Clears selection, moves cursor to end of text, and clears undo history.
+    /// Attachments are not affected.
+    /// </summary>
+    public void SetInputField(string text) => _inputHandler.SetInputFieldContent(text);
+
     private bool _disposed;
 
     /// <summary>Dispose the host, cancelling the run loop and restoring terminal state.</summary>
