@@ -79,11 +79,11 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>Updates the panel line count used for block offset calculation.</summary>
     public void SetPanelLineCount(int count) => _panelLineCount = count;
 
-    /// <summary>Total vertical space taken by the input block using the current panel line count.</summary>
+    /// <summary>Total vertical space taken by the input block using the current panel line count.
+    /// Always includes separator + input lines even when <see cref="ShowUserField"/> is false —
+    /// the rendering methods emit empty lines instead so the block height stays stable.</summary>
     public int GetBlockOffset(string input)
     {
-        if (!ShowUserField)
-            return _panelLineCount;
         // 1 (separator) + BlankAfterInput + HintsSep + _panelLineCount = 1 + 1 + 1 + _panelLineCount = 3 + _panelLineCount
         // Plus input line count
         return (1 + _panelLineCount) + GetInputLineCount(input);
@@ -92,8 +92,6 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>Total vertical space taken by the input block with a given panel line count.</summary>
     private int GetBlockOffset(string input, int panelLineCount)
     {
-        if (!ShowUserField)
-            return panelLineCount;
         return (1 + panelLineCount) + LineWrappingService.GetInputLineCount(
             input, _terminal.WindowWidth, 2, 4);
     }
@@ -201,6 +199,14 @@ internal class ConsoleRenderer : IRenderer
             RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
             _terminal.WriteLine();
         }
+        else
+        {
+            // Emit empty lines in place of separator + input to keep block height stable
+            _terminal.WriteLine();
+            int inputLines = GetInputLineCount(input);
+            for (int i = 0; i < inputLines; i++)
+                _terminal.WriteLine();
+        }
         RenderHintsBlock(hints);
     }
 
@@ -224,6 +230,16 @@ internal class ConsoleRenderer : IRenderer
             RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
             _terminal.Write("\x1b[K");
             _terminal.WriteLine();
+        }
+        else
+        {
+            // Emit empty lines in place of input to keep block height stable
+            int inputLines = GetInputLineCount(input);
+            for (int i = 0; i < inputLines; i++)
+            {
+                _terminal.Write("\x1b[K");
+                _terminal.WriteLine();
+            }
         }
         RenderHintsBlock(hints);
     }
@@ -258,6 +274,18 @@ internal class ConsoleRenderer : IRenderer
             RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
             _terminal.Write("\x1b[K");
             _terminal.WriteLine();
+        }
+        else
+        {
+            // Emit empty lines in place of separator + input to keep block height stable
+            _terminal.Write("\x1b[K");
+            _terminal.WriteLine();
+            int inputLines = GetInputLineCount(input);
+            for (int i = 0; i < inputLines; i++)
+            {
+                _terminal.Write("\x1b[K");
+                _terminal.WriteLine();
+            }
         }
         RenderHintsBlock(hints);
     }
