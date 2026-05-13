@@ -49,6 +49,12 @@ public interface IBottomPanel : IDisposable
     bool ShowBottomSeparator => true;
 
     /// <summary>
+    /// When false, the input field and top separator are not rendered.
+    /// Only the panel's hint lines are shown. Default: true.
+    /// </summary>
+    bool AllowUserField => true;
+
+    /// <summary>
     /// Runs the panel's own background loop.
     /// Called by the host when the panel is set active.
     /// The host cancels the token when the panel is swapped out or the host stops.

@@ -72,10 +72,16 @@ internal class ConsoleRenderer : IRenderer
     /// <summary>When false, suppresses the bottom separator between input and hints.</summary>
     public bool ShowBottomSeparator { get; set; } = true;
 
+    /// <summary>When false, the input field and top separator are not rendered.
+    /// Only the panel's hint lines display. Default: true.</summary>
+    public bool ShowUserField { get; set; } = true;
+
     /// <summary>Updates the panel line count used for block offset calculation.</summary>
     public void SetPanelLineCount(int count) => _panelLineCount = count;
 
-    /// <summary>Total vertical space taken by the input block using the current panel line count.</summary>
+    /// <summary>Total vertical space taken by the input block using the current panel line count.
+    /// Always includes separator + input lines even when <see cref="ShowUserField"/> is false —
+    /// the rendering methods emit empty lines instead so the block height stays stable.</summary>
     public int GetBlockOffset(string input)
     {
         // 1 (separator) + BlankAfterInput + HintsSep + _panelLineCount = 1 + 1 + 1 + _panelLineCount = 3 + _panelLineCount
@@ -187,9 +193,20 @@ internal class ConsoleRenderer : IRenderer
         int selectionLength,
         int margin)
     {
-        RenderTopSeparator();
-        RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
-        _terminal.WriteLine();
+        if (ShowUserField)
+        {
+            RenderTopSeparator();
+            RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
+            _terminal.WriteLine();
+        }
+        else
+        {
+            // Emit empty lines in place of separator + input to keep block height stable
+            _terminal.WriteLine();
+            int inputLines = GetInputLineCount(input);
+            for (int i = 0; i < inputLines; i++)
+                _terminal.WriteLine();
+        }
         RenderHintsBlock(hints);
     }
 
@@ -208,9 +225,22 @@ internal class ConsoleRenderer : IRenderer
         int newTop = _terminal.CursorTop - (blockOffset - 1);
         _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
 
-        RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
-        _terminal.Write("\x1b[K");
-        _terminal.WriteLine();
+        if (ShowUserField)
+        {
+            RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
+            _terminal.Write("\x1b[K");
+            _terminal.WriteLine();
+        }
+        else
+        {
+            // Emit empty lines in place of input to keep block height stable
+            int inputLines = GetInputLineCount(input);
+            for (int i = 0; i < inputLines; i++)
+            {
+                _terminal.Write("\x1b[K");
+                _terminal.WriteLine();
+            }
+        }
         RenderHintsBlock(hints);
     }
 
@@ -238,10 +268,25 @@ internal class ConsoleRenderer : IRenderer
         _terminal.CursorLeft = 0;
         _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
 
-        RenderTopSeparator();
-        RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
-        _terminal.Write("\x1b[K");
-        _terminal.WriteLine();
+        if (ShowUserField)
+        {
+            RenderTopSeparator();
+            RenderInputLine(input, cursorPosition, hasSelection, selectionStart, selectionLength, margin);
+            _terminal.Write("\x1b[K");
+            _terminal.WriteLine();
+        }
+        else
+        {
+            // Emit empty lines in place of separator + input to keep block height stable
+            _terminal.Write("\x1b[K");
+            _terminal.WriteLine();
+            int inputLines = GetInputLineCount(input);
+            for (int i = 0; i < inputLines; i++)
+            {
+                _terminal.Write("\x1b[K");
+                _terminal.WriteLine();
+            }
+        }
         RenderHintsBlock(hints);
     }
 
