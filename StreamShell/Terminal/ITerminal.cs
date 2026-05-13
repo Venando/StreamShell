@@ -19,6 +19,9 @@ public interface ITerminal
     /// <summary>Console.WindowWidth — current console window width in characters.</summary>
     int WindowWidth { get; }
 
+    /// <summary>Console.WindowHeight — current console window height in lines.</summary>
+    int WindowHeight { get; }
+
     /// <summary>Console.BufferHeight — current buffer height in lines.</summary>
     int BufferHeight { get; }
 

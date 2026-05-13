@@ -231,6 +231,7 @@ public partial class ConsoleAppHost : IDisposable
     {
         var tcs = new TaskCompletionSource<IVariant[]?>();
         var panel = new SelectionPanel(title, variants, info,
+            consoleHeight: _terminal.WindowHeight,
             onSubmit: result =>
             {
                 // Reset panel BEFORE completing the task — continuations run synchronously

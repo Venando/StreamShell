@@ -19,6 +19,15 @@ internal sealed class SystemTerminal : ITerminal
         }
     }
 
+    public int WindowHeight
+    {
+        get
+        {
+            try { return Console.WindowHeight; }
+            catch (IOException) { return 24; } // headless/test fallback
+        }
+    }
+
     public int BufferHeight
     {
         get
