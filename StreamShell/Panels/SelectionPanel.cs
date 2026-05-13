@@ -27,6 +27,9 @@ internal class SelectionPanel : IBottomPanel
     /// <summary>Total lines: controls + title + variants.</summary>
     public int LineCount => 2 + _variants.Length;
 
+    /// <summary>Hides the input field while selection is active.</summary>
+    bool IBottomPanel.AllowUserField => false;
+
     /// <summary>True in multi-select mode.</summary>
     private bool IsMulti => _info is not null;
 
