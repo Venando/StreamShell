@@ -289,7 +289,9 @@ public partial class ConsoleAppHost
         {
             cr2.ResetScrollRegion();
             int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
-            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight;
+            // GetBlockOffset omits the blank WriteLine between input and hints,
+            // so subtract 1 more to reach the actual input block top.
+            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 1;
             _terminal.CursorTop = Math.Max(0, Math.Min(inputBlockTop, _terminal.BufferHeight - 1));
             _terminal.CursorLeft = 0;
         }
