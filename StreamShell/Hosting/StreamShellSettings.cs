@@ -32,6 +32,13 @@ public class StreamShellSettings
     /// </summary>
     public bool WordWrap { get; set; } = true;
 
+    /// <summary>
+    /// Maximum number of queued messages to render in a single tick.
+    /// Higher values reduce flicker by batching output into fewer screen updates.
+    /// Default: 999 (effectively unlimited for practical purposes).
+    /// </summary>
+    public int RenderChunkSize { get; set; } = 999;
+
     private string _cursorMarkup = "bold black on cyan";
     private string _selectionMarkup = "bold cyan on Grey27";
     private string _commandSlashMarkup = "Red1";

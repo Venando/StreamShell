@@ -55,18 +55,39 @@ public class ConsoleAppHostProcessOneTickTests
     }
 
     [Fact]
-    public void ProcessOneTick_MultipleMessages_AllRendered()
+    public void ProcessOneTick_MultipleMessages_AllRenderedInOneTick()
     {
         CreateHost();
         _host.AddMessage("first");
         _host.AddMessage("second");
 
-        _host.ProcessOneTick(_state); // processes first message
-        _host.ProcessOneTick(_state); // processes second message
+        // Single tick renders all queued messages (RenderChunkSize defaults to 999)
+        _host.ProcessOneTick(_state);
 
         Assert.Equal(2, _renderer.RenderedMessages.Count);
         Assert.Contains("first", _renderer.RenderedMessages);
         Assert.Contains("second", _renderer.RenderedMessages);
+    }
+
+    [Fact]
+    public void ProcessOneTick_BoundedChunk_RequiresMultipleTicks()
+    {
+        CreateHost();
+        _host.Settings.RenderChunkSize = 2;
+        _host.AddMessage("a");
+        _host.AddMessage("b");
+        _host.AddMessage("c");
+
+        // First tick renders up to 2 messages
+        _host.ProcessOneTick(_state);
+        Assert.Equal(2, _renderer.RenderedMessages.Count);
+
+        // Second tick renders the remaining message
+        _host.ProcessOneTick(_state);
+        Assert.Equal(3, _renderer.RenderedMessages.Count);
+        Assert.Contains("a", _renderer.RenderedMessages);
+        Assert.Contains("b", _renderer.RenderedMessages);
+        Assert.Contains("c", _renderer.RenderedMessages);
     }
 
     // ══════════════════════════════════════════════════════════════════

@@ -234,18 +234,37 @@ public partial class ConsoleAppHost
         return RenderInputChanges(state, tick);
     }
 
-    /// <summary>Renders a queued message then re-renders the input block. Returns true if a message was rendered.</summary>
+    /// <summary>
+    /// Renders up to <see cref="StreamShellSettings.RenderChunkSize"/> queued messages
+    /// in one go, then re-renders the input block. Batching reduces flicker and improves
+    /// throughput for bulk output. Returns true when at least one message was rendered.
+    /// </summary>
     private bool RenderQueuedMessages(RenderSnapshot state, TickState tick)
     {
-        if (!_messages.TryDequeue(out var message))
+        int chunkSize = Settings.RenderChunkSize;
+        bool cleared = false;
+        bool anyRendered = false;
+        int messageCount = 0;
+
+        while (messageCount < chunkSize && _messages.TryDequeue(out var message))
+        {
+            if (!cleared)
+            {
+                if (state.LastInput is not null)
+                    _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
+                else
+                    _renderer.ClearInputLine();
+                cleared = true;
+            }
+
+            _renderer.RenderMessage(message);
+            anyRendered = true;
+            messageCount++;
+        }
+
+        if (!anyRendered)
             return false;
 
-        if (state.LastInput is not null)
-            _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
-        else
-            _renderer.ClearInputLine();
-
-        _renderer.RenderMessage(message);
         RenderFullInputBlock(tick);
 
         if (state.LastInput is not null)
