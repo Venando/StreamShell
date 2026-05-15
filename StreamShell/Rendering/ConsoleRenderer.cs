@@ -625,6 +625,41 @@ internal class ConsoleRenderer : IRenderer
         return sb.ToString();
     }
 
+    // ── Scroll Region ────────────────────────────────────────────
+    /// <summary>
+    /// Sets the terminal's scroll region (DECSTBM) to exclude the input block area,
+    /// so message rendering scrolls only within the message area while the input
+    /// block stays visually locked at the bottom.
+    /// After messages are rendered, call <see cref="ResetScrollRegion"/>.
+    /// </summary>
+    /// <param name="inputBlockHeight">
+    /// Total vertical space taken by the input block
+    /// (separator + input lines + blank + hints).
+    /// </param>
+    public void SetMessageScrollRegion(int inputBlockHeight)
+    {
+        int terminalHeight = _terminal.BufferHeight;
+        // Reserve bottom lines for input block + 1 buffer line to prevent
+        // boundary issues when the message area is exactly the top portion.
+        int scrollBottom = terminalHeight - inputBlockHeight - 1;
+        if (scrollBottom < 1)
+            return; // terminal too small for effective scroll region
+
+        // DECSTBM: \x1b[top;bottomr where top=0, bottom is last scrollable line
+        _terminal.Write($"\x1b[0;{scrollBottom}r");
+
+        // Position cursor at the bottom of the scroll region so
+        // MarkupLine() calls scroll within the region rather than writing
+        // past it and having no visual effect.
+        _terminal.CursorTop = Math.Max(0, scrollBottom - 1);
+    }
+
+    /// <summary>Resets the scroll region back to the full terminal (default).</summary>
+    public void ResetScrollRegion()
+    {
+        _terminal.Write("\x1b[r");
+    }
+
     /// <summary>
     /// After the input block was re-rendered and the block shrunk
     /// (<paramref name="newBlockOffset"/> &lt; <paramref name="oldBlockOffset"/>),

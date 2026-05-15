@@ -245,6 +245,7 @@ public partial class ConsoleAppHost
         bool cleared = false;
         bool anyRendered = false;
         int messageCount = 0;
+        bool scrollRegionSet = false;
 
         while (messageCount < chunkSize && _messages.TryDequeue(out var message))
         {
@@ -255,6 +256,15 @@ public partial class ConsoleAppHost
                 else
                     _renderer.ClearInputLine();
                 cleared = true;
+
+                // Set scroll region to prevent the input block area from
+                // scrolling while messages render (eliminates ghosting).
+                if (_renderer is ConsoleRenderer cr)
+                {
+                    int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
+                    cr.SetMessageScrollRegion(inputBlockHeight);
+                    scrollRegionSet = true;
+                }
             }
 
             _renderer.RenderMessage(message);
@@ -264,6 +274,17 @@ public partial class ConsoleAppHost
 
         if (!anyRendered)
             return false;
+
+        // Reset scroll region before rendering the input block.
+        // Position cursor at the start of where the input block should render.
+        if (scrollRegionSet && _renderer is ConsoleRenderer cr2)
+        {
+            cr2.ResetScrollRegion();
+            int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
+            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight;
+            _terminal.CursorTop = Math.Max(0, Math.Min(inputBlockTop, _terminal.BufferHeight - 1));
+            _terminal.CursorLeft = 0;
+        }
 
         RenderFullInputBlock(tick);
 
