@@ -57,3 +57,4 @@ Thumbs.db
 # Demo recordings (asciicast + GIF)
 samples/**/*.cast
 samples/**/*.gif
+*.lscache
