@@ -5,6 +5,7 @@ using var host = new ConsoleAppHost();
 
 // Lower threshold for testing large paste detection
 host.Settings.LargePasteThreshold = 200;
+host.Settings.RenderChunkSize = 5;
 
 host.AddCommand(new Command("context", "Shows context info", (args, named) =>
 {
@@ -323,7 +324,7 @@ host.AddCommand(new Command("saved", "List all saved input field states", (_, _)
 }));
 
 var suggestions = new string[] {"DirectLlmApiType",
-"DirectLlmModelName",
+"DirectLlmModelName",   
 "DirectLlmToken",
 "DirectLlmUrl"};
 
@@ -351,8 +352,8 @@ _ = Task.Run(async () =>
     int i = 0;
     while (true)
     {
-        await Task.Delay(2500);
-        var lines = random.Next(1, 6);
+        await Task.Delay(1000);
+        var lines = random.Next(11, 20);
         for (int j = 0; j < lines; j++)
             host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
     }
