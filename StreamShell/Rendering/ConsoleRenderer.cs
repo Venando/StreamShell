@@ -135,11 +135,19 @@ internal class ConsoleRenderer : IRenderer
     {
         try
         {
-            AnsiConsole.MarkupLine(markup);
+            // Render markup without automatic newline, then clear to
+            // end of line to prevent separator/ghost characters from
+            // leaking into the message area (critical for scroll-region
+            // mode where old input block content can bleed through).
+            AnsiConsole.Markup(markup);
+            _terminal.Write("\x1b[K");
+            _terminal.WriteLine();
         }
         catch (InvalidOperationException)
         {
-            AnsiConsole.MarkupLine(Markup.Escape(markup));
+            AnsiConsole.Markup(Markup.Escape(markup));
+            _terminal.Write("\x1b[K");
+            _terminal.WriteLine();
         }
 
         _messageHistory.Add(markup);
