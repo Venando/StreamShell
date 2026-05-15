@@ -251,20 +251,28 @@ public partial class ConsoleAppHost
         {
             if (!cleared)
             {
-                if (state.LastInput is not null)
-                    _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
-                else
-                    _renderer.ClearInputLine();
-                cleared = true;
-
-                // Set scroll region to prevent the input block area from
-                // scrolling while messages render (eliminates ghosting).
                 if (_renderer is ConsoleRenderer cr)
                 {
+                    // Scroll region isolates the input block — clearing is redundant.
+                    // Messages render at the bottom of the scroll region and scroll up
+                    // within it. The input block is overwritten by RenderFullInputBlock
+                    // afterwards, so no pre-clearing is needed.
                     int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
                     cr.SetMessageScrollRegion(inputBlockHeight);
                     scrollRegionSet = true;
+
+                    // Position cursor at the bottom of the scroll region
+                    _terminal.CursorTop = _terminal.BufferHeight - inputBlockHeight - 2;
+                    _terminal.CursorLeft = 0;
                 }
+                else
+                {
+                    if (state.LastInput is not null)
+                        _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
+                    else
+                        _renderer.ClearInputLine();
+                }
+                cleared = true;
             }
 
             _renderer.RenderMessage(message);
