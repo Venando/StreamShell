@@ -245,15 +245,33 @@ public partial class ConsoleAppHost
         bool cleared = false;
         bool anyRendered = false;
         int messageCount = 0;
+        bool scrollRegionSet = false;
 
         while (messageCount < chunkSize && _messages.TryDequeue(out var message))
         {
             if (!cleared)
             {
-                if (state.LastInput is not null)
-                    _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
+                if (_renderer is ConsoleRenderer cr)
+                {
+                    // Scroll region isolates the input block — clearing is redundant.
+                    // Messages render at the bottom of the scroll region and scroll up
+                    // within it. The input block is overwritten by RenderFullInputBlock
+                    // afterwards, so no pre-clearing is needed.
+                    int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
+                    cr.SetMessageScrollRegion(inputBlockHeight);
+                    scrollRegionSet = true;
+
+                    // Position cursor at the bottom of the scroll region
+                    _terminal.CursorTop = _terminal.BufferHeight - inputBlockHeight - 3;
+                    _terminal.CursorLeft = 0;
+                }
                 else
-                    _renderer.ClearInputLine();
+                {
+                    if (state.LastInput is not null)
+                        _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
+                    else
+                        _renderer.ClearInputLine();
+                }
                 cleared = true;
             }
 
@@ -264,6 +282,20 @@ public partial class ConsoleAppHost
 
         if (!anyRendered)
             return false;
+
+        // Reset scroll region before rendering the input block.
+        // Position cursor at the start of where the input block should render.
+        if (scrollRegionSet && _renderer is ConsoleRenderer cr2)
+        {
+            cr2.ResetScrollRegion();
+            int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
+            // GetBlockOffset omits the blank WriteLine between input and hints,
+            // and AnsiConsole.MarkupLine cursor tracking adds a 1-line offset,
+            // so subtract 2 to reach the actual input block top.
+            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 2;
+            _terminal.CursorTop = Math.Max(0, Math.Min(inputBlockTop, _terminal.BufferHeight - 1));
+            _terminal.CursorLeft = 0;
+        }
 
         RenderFullInputBlock(tick);
 

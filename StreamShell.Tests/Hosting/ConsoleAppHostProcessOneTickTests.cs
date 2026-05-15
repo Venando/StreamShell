@@ -90,6 +90,22 @@ public class ConsoleAppHostProcessOneTickTests
         Assert.Contains("c", _renderer.RenderedMessages);
     }
 
+    [Fact]
+    public void ProcessOneTick_BatchMessages_RendersAllWithoutError()
+    {
+        // Verifies that batch rendering many messages works correctly
+        // (no exceptions, all messages rendered in a single tick)
+        CreateHost();
+        for (int i = 0; i < 30; i++)
+            _host.AddMessage($"message {i}");
+
+        _host.ProcessOneTick(_state);
+
+        Assert.Equal(30, _renderer.RenderedMessages.Count);
+        Assert.Contains("message 0", _renderer.RenderedMessages);
+        Assert.Contains("message 29", _renderer.RenderedMessages);
+    }
+
     // ══════════════════════════════════════════════════════════════════
     //  Input Changes Trigger Render
     // ══════════════════════════════════════════════════════════════════

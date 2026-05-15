@@ -135,11 +135,19 @@ internal class ConsoleRenderer : IRenderer
     {
         try
         {
-            AnsiConsole.MarkupLine(markup);
+            // Render markup without automatic newline, then clear to
+            // end of line to prevent separator/ghost characters from
+            // leaking into the message area (critical for scroll-region
+            // mode where old input block content can bleed through).
+            AnsiConsole.Markup(markup);
+            _terminal.Write("\x1b[K");
+            _terminal.WriteLine();
         }
         catch (InvalidOperationException)
         {
-            AnsiConsole.MarkupLine(Markup.Escape(markup));
+            AnsiConsole.Markup(Markup.Escape(markup));
+            _terminal.Write("\x1b[K");
+            _terminal.WriteLine();
         }
 
         _messageHistory.Add(markup);
@@ -623,6 +631,36 @@ internal class ConsoleRenderer : IRenderer
 
         sb.Append(right);
         return sb.ToString();
+    }
+
+    // ── Scroll Region ────────────────────────────────────────────
+    /// <summary>
+    /// Sets the terminal's scroll region (DECSTBM) to exclude the input block area,
+    /// so message rendering scrolls only within the message area while the input
+    /// block stays visually locked at the bottom.
+    /// After messages are rendered, call <see cref="ResetScrollRegion"/>.
+    /// </summary>
+    /// <param name="inputBlockHeight">
+    /// Total vertical space taken by the input block
+    /// (separator + input lines + blank + hints).
+    /// </param>
+    public void SetMessageScrollRegion(int inputBlockHeight)
+    {
+        int terminalHeight = _terminal.BufferHeight;
+        // Reserve bottom lines for input block + 1 buffer line to prevent
+        // boundary issues when the message area is exactly the top portion.
+        int scrollBottom = terminalHeight - inputBlockHeight - 1;
+        if (scrollBottom < 1)
+            return; // terminal too small for effective scroll region
+
+        // DECSTBM: \x1b[top;bottomr where top=0, bottom is last scrollable line
+        _terminal.Write($"\x1b[0;{scrollBottom}r");
+    }
+
+    /// <summary>Resets the scroll region back to the full terminal (default).</summary>
+    public void ResetScrollRegion()
+    {
+        _terminal.Write("\x1b[r");
     }
 
     /// <summary>
