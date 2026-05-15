@@ -655,11 +655,6 @@ internal class ConsoleRenderer : IRenderer
 
         // DECSTBM: \x1b[top;bottomr where top=0, bottom is last scrollable line
         _terminal.Write($"\x1b[0;{scrollBottom}r");
-
-        // Position cursor at the bottom of the scroll region so
-        // MarkupLine() calls scroll within the region rather than writing
-        // past it and having no visual effect.
-        _terminal.CursorTop = Math.Max(0, scrollBottom - 1);
     }
 
     /// <summary>Resets the scroll region back to the full terminal (default).</summary>
