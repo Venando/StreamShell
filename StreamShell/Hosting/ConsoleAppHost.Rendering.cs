@@ -280,7 +280,7 @@ public partial class ConsoleAppHost
 
                 int offset = (blockHeightDelta < 0 && _messages.Count > 0) ? blockHeightDelta : 0;
                 // Position cursor at the bottom of the scroll region
-                _terminal.CursorTop = Math.Max(_terminal.BufferHeight - inputBlockHeight - 1 - _emptyBlocksNumberAfterClearing + offset, 0);
+                _terminal.CursorTop = Math.Max(_terminal.BufferHeight - inputBlockHeight - 2 - _emptyBlocksNumberAfterClearing + offset, 0);
                 _terminal.CursorLeft = 0;
             }
             else
@@ -316,8 +316,9 @@ public partial class ConsoleAppHost
         {
             cr2.ResetScrollRegion();
             // GetBlockOffset omits the blank WriteLine between input and hints,
-            // so subtract 1 to reach the actual input block top.
-            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 1;
+            // and AnsiConsole.MarkupLine cursor tracking adds a 1-line offset,
+            // so subtract 2 to reach the actual input block top.
+            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 2;
             _terminal.CursorTop = Math.Max(0, Math.Min(inputBlockTop, _terminal.BufferHeight - 1));
             _terminal.CursorLeft = 0;
         }
