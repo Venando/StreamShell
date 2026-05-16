@@ -480,7 +480,7 @@ internal class CommandPalette : IBottomPanel
             _sb.Append(p.SelectedCursorColor);
             _sb.Append(']');
             _sb.Append(p.SelectedCursorSymbol);
-            _sb.Append("[/][");
+            _sb.Append(" [/][");
             _sb.Append(p.SelectedNameColor);
             _sb.Append(']');
             if (includeSlash) _sb.Append('/');
@@ -517,6 +517,7 @@ internal class CommandPalette : IBottomPanel
             _sb.Append('[');
             _sb.Append(p.NormalNameColor);
             _sb.Append(']');
+            _sb.Append(' ');
             if (includeSlash) _sb.Append('/');
             _sb.Append(content);
             PadTo(_sb, GetVisualLength(content), namePadTo);

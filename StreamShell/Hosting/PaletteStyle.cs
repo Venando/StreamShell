@@ -13,7 +13,7 @@ public class PaletteStyle
     public string SelectedCursorColor { get; set; } = "black";
 
     /// <summary>Cursor arrow symbol for selected row. Default: "→ ".</summary>
-    public string SelectedCursorSymbol { get; set; } = "→ ";
+    public string SelectedCursorSymbol { get; set; } = "→";
 
     /// <summary>Text color for the slash and name in selected row. Default: "gray27".</summary>
     public string SelectedNameColor { get; set; } = "gray27";
