@@ -1,5 +1,8 @@
 namespace StreamShell;
 
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Runtime.InteropServices;
 using Spectre.Console;
 
 /// <summary>
@@ -153,6 +156,14 @@ internal class ConsoleRenderer : IRenderer
         _messageHistory.Add(markup);
         if (_messageHistory.Count > MessageHistoryCapacity)
             _messageHistory.RemoveRange(0, _messageHistory.Count - MessageHistoryCapacity);
+    }
+
+    public void RetrieveMessagesFromHistory(int count, Action<Span<string>> callback)
+    {
+        Span<string> totalSpan = CollectionsMarshal.AsSpan(_messageHistory);
+        count = Math.Min(_messageHistory.Count, count);
+        callback?.Invoke(totalSpan[^count..]);
+        _messageHistory.RemoveRange(_messageHistory.Count - count, count);
     }
 
     // ── Block Clearing ───────────────────────────────────────────────
@@ -319,6 +330,7 @@ internal class ConsoleRenderer : IRenderer
                 cursorPosition, hasSelection, selectionStart, selectionLength);
             AnsiConsole.Markup(_settings.InputPrefix);
             AnsiConsole.Markup(lineMarkup);
+            _terminal.Write("\x1b[K");
             return;
         }
 
@@ -676,13 +688,13 @@ internal class ConsoleRenderer : IRenderer
         if (delta >= 0)
             return;
 
-        ClearLinesBelow(-delta);
+        ClearLinesBelowCursor(-delta);
     }
 
     /// <summary>Clears <paramref name="count"/> lines below the new block that were
     /// part of the old block but not re-filled (block shrank). These are uncleared
     /// gaps between the new block bottom and the old clear area end.</summary>
-    private void ClearLinesBelow(int count)
+    public void ClearLinesBelowCursor(int count)
     {
         if (count <= 0)
             return;

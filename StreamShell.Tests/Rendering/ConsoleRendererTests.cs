@@ -1,3 +1,4 @@
+using Spectre.Console;
 using StreamShell;
 
 namespace StreamShell.Tests;
@@ -318,5 +319,67 @@ public class ConsoleRendererTests
         var result = ConsoleRenderer.GetInputLines("hello world\nfoobar", margin: 10);
         Assert.True(result.Count >= 4);
         Assert.Equal("hell", result[0]);
+    }
+
+    // ── GetTruncationIndex ────────────────────────────────────────────
+
+    [Fact]
+    public void GetTruncationIndex_TextFits_ReturnsNegativeOne()
+    {
+        var result = ConsoleRenderer.GetTruncationIndex("hello", 10);
+        Assert.Equal(-1, result);
+    }
+
+    [Fact]
+    public void GetTruncationIndex_TextExceeds_ReturnsTruncationIndex()
+    {
+        var result = ConsoleRenderer.GetTruncationIndex("hello world!!", 10);
+        Assert.Equal(5, result); // "hello" = 5 chars, 6th char exceeds
+    }
+
+    [Fact]
+    public void GetTruncationIndex_WithSpectreMarkup_StripsTags()
+    {
+        // "[red]hello[/] world" - tags should be stripped, "hello world" = 11 chars
+        var result = ConsoleRenderer.GetTruncationIndex("[red]hello[/] world", 10);
+        Assert.Equal(7, result); // index of ' ' after "hello " (tags stripped)
+    }
+
+    [Fact]
+    public void GetTruncationIndex_UserProvidedText_ReturnsCorrectIndex()
+    {
+        // maxWidth: 119
+        // Text: [on white][default]> [/][white]/longtest [/] Long hind description test...
+        // The visible text (stripped): "> /longtest Long hind description test..."
+        var text = "[on white][default]> [/][white]/longtest [/] Long hind description test I'm wring right here to test how would it behave. Long hind description test I'm wring right here to test how would it behave.[/]";
+        int truncIdx = ConsoleRenderer.GetTruncationIndex(text, 119);
+        string displayHint = truncIdx < 0 ? text : text[..truncIdx];
+        Console.WriteLine($"DEBUG: truncIdx={truncIdx}, text.Length={text.Length}, displayHint='{displayHint}'");
+        MarkupValidationResult validateResult = MarkupValidator.Validate(displayHint);
+
+        Assert.True(validateResult.IsValid, validateResult.ToString());
+        Assert.True(truncIdx > 0, $"Expected positive truncation index, got {truncIdx}");
+        Assert.True(truncIdx < text.Length, $"Truncation index {truncIdx} should be less than text length {text.Length}");
+    }
+
+    [Fact]
+    public void GetTruncationIndex_ExactWidth_ReturnsNegativeOne()
+    {
+        var result = ConsoleRenderer.GetTruncationIndex("abcde", 5);
+        Assert.Equal(-1, result);
+    }
+
+    [Fact]
+    public void GetTruncationIndex_OneCharOver_ReturnsIndexOfFirstExcess()
+    {
+        var result = ConsoleRenderer.GetTruncationIndex("abcdef", 5);
+        Assert.Equal(5, result); // index of 'f' that makes it 6 chars
+    }
+
+    [Fact]
+    public void GetTruncationIndex_EmptyText_ReturnsNegativeOne()
+    {
+        var result = ConsoleRenderer.GetTruncationIndex("", 10);
+        Assert.Equal(-1, result);
     }
 }

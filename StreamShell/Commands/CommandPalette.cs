@@ -200,7 +200,7 @@ internal class CommandPalette : IBottomPanel
         // Status line at index 0 (first line) — shows input schema + scroll position
         int startIdx = ScrollOffset + 1;
         int endIdx = Math.Min(ScrollOffset + HintCapacity, _matchingBuffer.Count);
-        _linesBuffer.Add($"[dim]Tab: autocomplete  \u2191\u2193: scroll  {startIdx}-{endIdx}/{_matchingBuffer.Count}[/]");
+        _linesBuffer.Add($"  [dim gray]\u2191\u2193: scroll, tab: autocomplete, {startIdx}-{endIdx}/{_matchingBuffer.Count}[/]");
 
         int spaceIndex = query.IndexOf(' ');
 
@@ -245,6 +245,7 @@ internal class CommandPalette : IBottomPanel
             if (maxSize > availableForName)
                 maxSize = availableForName;
 
+            var descriptionWidth = Console.BufferWidth - maxSize - 1;
             // Use a reusable StringBuilder for each hint line instead of
             // string interpolation with PadRight (which allocates per line).
             _sb.Clear();
@@ -254,10 +255,16 @@ internal class CommandPalette : IBottomPanel
                 _sb.Clear();
                 if (i == SelectedIndex)
                 {
-                    _sb.Append("> [white]/");
+                    _sb.Append("[on white]");
+                    _sb.Append("[default]> [/][white]/");
                     _sb.Append(cmd.Name);
                     PadTo(_sb, GetVisualLength(cmd.Name), maxSize);
                     _sb.Append("[/] ");
+
+                    _sb.Append(cmd.Description);
+                    //PadTo(_sb, GetVisualLength(cmd.Description), descriptionWidth);
+                    //_sb.Append(cmd.Description);
+                    _sb.Append("[/]");
                 }
                 else
                 {
@@ -265,8 +272,11 @@ internal class CommandPalette : IBottomPanel
                     _sb.Append(cmd.Name);
                     PadTo(_sb, GetVisualLength(cmd.Name), maxSize);
                     _sb.Append("[/] ");
+
+                    _sb.Append(cmd.Description);
                 }
-                _sb.Append(cmd.Description);
+
+
                 _linesBuffer.Add(_sb.ToString());
                 if (_linesBuffer.Count >= MaxHeight) break;
             }

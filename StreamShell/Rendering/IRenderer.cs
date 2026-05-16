@@ -71,4 +71,11 @@ public interface IRenderer
     /// <param name="oldBlockOffset">Block offset before the change.</param>
     /// <param name="newBlockOffset">Block offset after the change.</param>
     void HandleBlockHeightChange(int oldBlockOffset, int newBlockOffset);
+
+
+    /// <summary>Clears <paramref name="count"/> lines below the new block that were
+    /// part of the old block but not re-filled (block shrank). These are uncleared
+    /// gaps between the new block bottom and the old clear area end.</summary>
+    public void ClearLinesBelowCursor(int count);
+    void RetrieveMessagesFromHistory(int count, Action<Span<string>> callback);
 }

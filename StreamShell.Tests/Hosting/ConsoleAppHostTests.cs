@@ -174,6 +174,16 @@ internal sealed class MockRenderer : IRenderer
     {
         LastBlockOffset = newBlockOffset;
     }
+
+    public void ClearLinesBelowCursor(int count)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void RetrieveMessagesFromHistory(int count, Action<Span<string>> callback)
+    {
+        throw new NotImplementedException();
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════
