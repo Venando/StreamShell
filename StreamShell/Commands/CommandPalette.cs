@@ -256,14 +256,14 @@ internal class CommandPalette : IBottomPanel
                 if (i == SelectedIndex)
                 {
                     _sb.Append("[on white]");
-                    _sb.Append("[default]> [/][white]/");
+                    _sb.Append("[black]→ [/][gray27]/");
                     _sb.Append(cmd.Name);
                     PadTo(_sb, GetVisualLength(cmd.Name), maxSize);
                     _sb.Append("[/] ");
-
+                    _sb.Append("[gray15]");
                     _sb.Append(cmd.Description);
-                    //PadTo(_sb, GetVisualLength(cmd.Description), descriptionWidth);
-                    //_sb.Append(cmd.Description);
+                    _sb.Append("[/]");
+                    PadTo(_sb, GetVisualLength(cmd.Description), descriptionWidth);
                     _sb.Append("[/]");
                 }
                 else
@@ -272,7 +272,6 @@ internal class CommandPalette : IBottomPanel
                     _sb.Append(cmd.Name);
                     PadTo(_sb, GetVisualLength(cmd.Name), maxSize);
                     _sb.Append("[/] ");
-
                     _sb.Append(cmd.Description);
                 }
 

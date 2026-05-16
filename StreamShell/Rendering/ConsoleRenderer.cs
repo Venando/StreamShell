@@ -32,7 +32,7 @@ internal class ConsoleRenderer : IRenderer
     /// Reserve one column from terminal width for separator rendering.
     /// Prevents wrapping caused by the cursor position at the rightmost column.
     /// </summary>
-    private const int TerminalWidthMargin = 1;
+    private const int TerminalWidthMargin = 0;
 
     /// <summary>Creates a renderer with default settings and the real terminal.</summary>
     public ConsoleRenderer() : this(new StreamShellSettings(), new SystemTerminal()) { }
