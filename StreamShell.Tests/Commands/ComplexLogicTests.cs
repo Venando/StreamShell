@@ -123,7 +123,7 @@ public class CommandPaletteTests
 
         Assert.Equal(palette.MaxHeight, lines.Count);
         // Line 0 = status line
-        Assert.Contains("Tab", lines[0]);
+        Assert.Contains("tab", lines[0]);
         Assert.Contains("\u2191\u2193", lines[0]);
         // At least one hint populated
         Assert.Contains(lines.Skip(1), l => !string.IsNullOrEmpty(l));

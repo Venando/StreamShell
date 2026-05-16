@@ -253,7 +253,12 @@ public partial class ConsoleAppHost
         int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
 
         bool isBlockHeightUpdated = _lastInputBlockHeight != inputBlockHeight;
-        int blockHeightDelta = inputBlockHeight - _lastInputBlockHeight;
+        // On the initial tick (_lastInputBlockHeight == -1) the delta is
+        // artificial — skip message retrieval to avoid re-enqueuing freshly
+        // rendered messages.
+        int blockHeightDelta = _lastInputBlockHeight >= 0
+            ? inputBlockHeight - _lastInputBlockHeight
+            : 0;
         _lastInputBlockHeight = inputBlockHeight;
 
         if (isBlockHeightUpdated)

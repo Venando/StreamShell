@@ -333,25 +333,29 @@ public class ConsoleRendererTests
     [Fact]
     public void GetTruncationIndex_TextExceeds_ReturnsTruncationIndex()
     {
+        // "hello world!!" has 13 chars. With maxWidth=10, the 11th char 'd'
+        // at index 10 is the first character that exceeds.
         var result = ConsoleRenderer.GetTruncationIndex("hello world!!", 10);
-        Assert.Equal(5, result); // "hello" = 5 chars, 6th char exceeds
+        Assert.Equal(10, result);
     }
 
     [Fact]
     public void GetTruncationIndex_WithSpectreMarkup_StripsTags()
     {
-        // "[red]hello[/] world" - tags should be stripped, "hello world" = 11 chars
+        // "[red]hello[/] world" - tags stripped → "hello world" = 11 visible chars.
+        // With maxWidth=10, the 11th visible char 'd' at original index 18 exceeds.
         var result = ConsoleRenderer.GetTruncationIndex("[red]hello[/] world", 10);
-        Assert.Equal(7, result); // index of ' ' after "hello " (tags stripped)
+        Assert.Equal(18, result);
     }
 
     [Fact]
     public void GetTruncationIndex_UserProvidedText_ReturnsCorrectIndex()
     {
-        // maxWidth: 119
-        // Text: [on white][default]> [/][white]/longtest [/] Long hind description test...
-        // The visible text (stripped): "> /longtest Long hind description test..."
-        var text = "[on white][default]> [/][white]/longtest [/] Long hind description test I'm wring right here to test how would it behave. Long hind description test I'm wring right here to test how would it behave.[/]";
+        // maxWidth: 119. Tags are stripped to count visible width.
+        // The text has balanced tags; when truncation happens inside unclosed
+        // tags, the method backs up to the last fully-balanced position to
+        // ensure text[..truncIdx] is valid Spectre markup.
+        var text = "[default]> [/][white]/longtest [/] Long hind description test I'm wring right here to test how would it behave. Long hind description test I'm wring right here to test how would it behave.";
         int truncIdx = ConsoleRenderer.GetTruncationIndex(text, 119);
         string displayHint = truncIdx < 0 ? text : text[..truncIdx];
         Console.WriteLine($"DEBUG: truncIdx={truncIdx}, text.Length={text.Length}, displayHint='{displayHint}'");

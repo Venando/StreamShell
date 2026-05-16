@@ -530,10 +530,14 @@ internal class ConsoleRenderer : IRenderer
     /// Returns the truncation index at which <paramref name="text"/> first exceeds
     /// <paramref name="maxWidth"/> visible characters, or <c>-1</c> if it fits.
     /// Strips Spectre markup tags to compute display length without allocation.
+    /// When truncation would leave unclosed markup tags, backs up to the last
+    /// fully-balanced position to ensure <c>text[..result]</c> is valid markup.
     /// </summary>
-    private static int GetTruncationIndex(string text, int maxWidth)
+    public static int GetTruncationIndex(string text, int maxWidth)
     {
         int visualWidth = 0;
+        int tagDepth = 0;
+        int lastBalancedIndex = 0;
         int i = 0;
 
         while (i < text.Length)
@@ -543,14 +547,33 @@ internal class ConsoleRenderer : IRenderer
                 int close = text.IndexOf(']', i);
                 if (close > i)
                 {
-                    i = close + 1;
-                    continue;
+                    ReadOnlySpan<char> tagContent = text.AsSpan(i + 1, close - i - 1).Trim();
+                    if (tagContent.Length > 0 && tagContent[0] == '/')
+                    {
+                        tagDepth--;
+                        i = close + 1;
+                        if (tagDepth == 0)
+                            lastBalancedIndex = i;
+                        continue;
+                    }
+                    else
+                    {
+                        tagDepth++;
+                        i = close + 1;
+                        continue;
+                    }
                 }
             }
 
             visualWidth++;
             if (visualWidth > maxWidth)
-                return i;
+            {
+                if (tagDepth == 0)
+                    return i;
+                // Truncation would leave unclosed tags.
+                // Back up to the last fully-balanced position.
+                return lastBalancedIndex;
+            }
 
             i++;
         }
