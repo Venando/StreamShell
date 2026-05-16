@@ -486,8 +486,7 @@ internal class ConsoleRenderer : IRenderer
             string hint = hints[i];
             if (!string.IsNullOrEmpty(hint))
             {
-                int truncIdx = GetTruncationIndex(hint, maxWidth);
-                string displayHint = truncIdx < 0 ? hint : hint[..truncIdx];
+                string displayHint = GetTruncatedString(hint, maxWidth);
                 try
                 {
                     AnsiConsole.Markup(displayHint);
@@ -527,17 +526,17 @@ internal class ConsoleRenderer : IRenderer
 
     // ── Helpers ───────────────────────────────────────────────────────
     /// <summary>
-    /// Returns the truncation index at which <paramref name="text"/> first exceeds
-    /// <paramref name="maxWidth"/> visible characters, or <c>-1</c> if it fits.
-    /// Strips Spectre markup tags to compute display length without allocation.
-    /// When truncation would leave unclosed markup tags, backs up to the last
-    /// fully-balanced position to ensure <c>text[..result]</c> is valid markup.
+    /// <summary>
+    /// Returns <paramref name="text"/> truncated to at most <paramref name="maxWidth"/>
+    /// visible characters (Spectre markup tags are stripped during counting).
+    /// When truncation would leave unclosed markup tags, appends <c>[/]</c> closers
+    /// so the returned string is always valid Spectre markup.
+    /// Returns the original string if it fits within <paramref name="maxWidth"/>.
     /// </summary>
-    public static int GetTruncationIndex(string text, int maxWidth)
+    public static string GetTruncatedString(string text, int maxWidth)
     {
         int visualWidth = 0;
         int tagDepth = 0;
-        int lastBalancedIndex = 0;
         int i = 0;
 
         while (i < text.Length)
@@ -549,36 +548,28 @@ internal class ConsoleRenderer : IRenderer
                 {
                     ReadOnlySpan<char> tagContent = text.AsSpan(i + 1, close - i - 1).Trim();
                     if (tagContent.Length > 0 && tagContent[0] == '/')
-                    {
                         tagDepth--;
-                        i = close + 1;
-                        if (tagDepth == 0)
-                            lastBalancedIndex = i;
-                        continue;
-                    }
                     else
-                    {
                         tagDepth++;
-                        i = close + 1;
-                        continue;
-                    }
+                    i = close + 1;
+                    continue;
                 }
             }
 
             visualWidth++;
             if (visualWidth > maxWidth)
             {
-                if (tagDepth == 0)
-                    return i;
-                // Truncation would leave unclosed tags.
-                // Back up to the last fully-balanced position.
-                return lastBalancedIndex;
+                string truncated = text[..i];
+                // Append closing tags for any unclosed markup.
+                for (int j = 0; j < tagDepth; j++)
+                    truncated += "[/]";
+                return truncated;
             }
 
             i++;
         }
 
-        return -1; // fits within maxWidth
+        return text; // fits within maxWidth
     }
 
     /// <summary>Renders the top separator (between message feed and input block).</summary>

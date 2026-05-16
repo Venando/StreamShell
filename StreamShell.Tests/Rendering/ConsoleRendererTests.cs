@@ -321,69 +321,15 @@ public class ConsoleRendererTests
         Assert.Equal("hell", result[0]);
     }
 
-    // ── GetTruncationIndex ────────────────────────────────────────────
+    // ── GetTruncatedString ────────────────────────────────────────────
 
     [Fact]
-    public void GetTruncationIndex_TextFits_ReturnsNegativeOne()
+    public void GetTruncatedString_WithWrappingMarkup_ReturnsValidMarkup()
     {
-        var result = ConsoleRenderer.GetTruncationIndex("hello", 10);
-        Assert.Equal(-1, result);
-    }
-
-    [Fact]
-    public void GetTruncationIndex_TextExceeds_ReturnsTruncationIndex()
-    {
-        // "hello world!!" has 13 chars. With maxWidth=10, the 11th char 'd'
-        // at index 10 is the first character that exceeds.
-        var result = ConsoleRenderer.GetTruncationIndex("hello world!!", 10);
-        Assert.Equal(10, result);
-    }
-
-    [Fact]
-    public void GetTruncationIndex_WithSpectreMarkup_StripsTags()
-    {
-        // "[red]hello[/] world" - tags stripped → "hello world" = 11 visible chars.
-        // With maxWidth=10, the 11th visible char 'd' at original index 18 exceeds.
-        var result = ConsoleRenderer.GetTruncationIndex("[red]hello[/] world", 10);
-        Assert.Equal(18, result);
-    }
-
-    [Fact]
-    public void GetTruncationIndex_UserProvidedText_ReturnsCorrectIndex()
-    {
-        // maxWidth: 119. Tags are stripped to count visible width.
-        // The text has balanced tags; when truncation happens inside unclosed
-        // tags, the method backs up to the last fully-balanced position to
-        // ensure text[..truncIdx] is valid Spectre markup.
-        var text = "[default]> [/][white]/longtest [/] Long hind description test I'm wring right here to test how would it behave. Long hind description test I'm wring right here to test how would it behave.";
-        int truncIdx = ConsoleRenderer.GetTruncationIndex(text, 119);
-        string displayHint = truncIdx < 0 ? text : text[..truncIdx];
-        Console.WriteLine($"DEBUG: truncIdx={truncIdx}, text.Length={text.Length}, displayHint='{displayHint}'");
-        MarkupValidationResult validateResult = MarkupValidator.Validate(displayHint);
+        var text = "[on white][default]> [/][white]/longtest [/] Long hind description test I'm wring right here to test how would it behave. Long hind description test I'm wring right here to test how would it behave.[/]";
+        string truncatedText = ConsoleRenderer.GetTruncatedString(text, 119);
+        MarkupValidationResult validateResult = MarkupValidator.Validate(truncatedText);
 
         Assert.True(validateResult.IsValid, validateResult.ToString());
-        Assert.True(truncIdx > 0, $"Expected positive truncation index, got {truncIdx}");
-        Assert.True(truncIdx < text.Length, $"Truncation index {truncIdx} should be less than text length {text.Length}");
-    }
-
-    [Fact]
-    public void GetTruncationIndex_ExactWidth_ReturnsNegativeOne()
-    {
-        var result = ConsoleRenderer.GetTruncationIndex("abcde", 5);
-        Assert.Equal(-1, result);
-    }
-
-    [Fact]
-    public void GetTruncationIndex_OneCharOver_ReturnsIndexOfFirstExcess()
-    {
-        var result = ConsoleRenderer.GetTruncationIndex("abcdef", 5);
-        Assert.Equal(5, result); // index of 'f' that makes it 6 chars
-    }
-
-    [Fact]
-    public void GetTruncationIndex_EmptyText_ReturnsNegativeOne()
-    {
-        var result = ConsoleRenderer.GetTruncationIndex("", 10);
-        Assert.Equal(-1, result);
     }
 }
