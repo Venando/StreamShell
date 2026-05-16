@@ -65,6 +65,7 @@ internal class TextBuffer
         {
             _buffer.Remove(_cursor - 1, 1);
             _cursor--;
+
             MarkDirty();
         }
     }

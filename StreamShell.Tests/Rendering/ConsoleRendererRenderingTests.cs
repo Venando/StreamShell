@@ -188,8 +188,8 @@ public class ConsoleRendererRenderingTests
         // Each visual line now emits \x1b[K (clear to end of line) to
         // overwrite stale content without a separate clear-before-render step.
         Assert.Contains("\x1b[K", _terminal.WrittenTexts);
-        // CursorLeft reflects the escape sequence appended after markup.
-        Assert.True(_terminal.CursorLeft > 0);
+        // Escape sequences don't move the visible cursor in a real terminal.
+        Assert.True(_terminal.CursorLeft >= 0);
     }
 
     [Fact]

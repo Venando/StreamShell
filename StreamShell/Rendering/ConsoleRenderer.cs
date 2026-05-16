@@ -1,5 +1,8 @@
 namespace StreamShell;
 
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Runtime.InteropServices;
 using Spectre.Console;
 
 /// <summary>
@@ -29,7 +32,7 @@ internal class ConsoleRenderer : IRenderer
     /// Reserve one column from terminal width for separator rendering.
     /// Prevents wrapping caused by the cursor position at the rightmost column.
     /// </summary>
-    private const int TerminalWidthMargin = 1;
+    private const int TerminalWidthMargin = 0;
 
     /// <summary>Creates a renderer with default settings and the real terminal.</summary>
     public ConsoleRenderer() : this(new StreamShellSettings(), new SystemTerminal()) { }
@@ -153,6 +156,14 @@ internal class ConsoleRenderer : IRenderer
         _messageHistory.Add(markup);
         if (_messageHistory.Count > MessageHistoryCapacity)
             _messageHistory.RemoveRange(0, _messageHistory.Count - MessageHistoryCapacity);
+    }
+
+    public void RetrieveMessagesFromHistory(int count, Action<Span<string>> callback)
+    {
+        Span<string> totalSpan = CollectionsMarshal.AsSpan(_messageHistory);
+        count = Math.Min(_messageHistory.Count, count);
+        callback?.Invoke(totalSpan[^count..]);
+        _messageHistory.RemoveRange(_messageHistory.Count - count, count);
     }
 
     // ── Block Clearing ───────────────────────────────────────────────
@@ -319,6 +330,7 @@ internal class ConsoleRenderer : IRenderer
                 cursorPosition, hasSelection, selectionStart, selectionLength);
             AnsiConsole.Markup(_settings.InputPrefix);
             AnsiConsole.Markup(lineMarkup);
+            _terminal.Write("\x1b[K");
             return;
         }
 
@@ -474,8 +486,7 @@ internal class ConsoleRenderer : IRenderer
             string hint = hints[i];
             if (!string.IsNullOrEmpty(hint))
             {
-                int truncIdx = GetTruncationIndex(hint, maxWidth);
-                string displayHint = truncIdx < 0 ? hint : hint[..truncIdx];
+                string displayHint = GetTruncatedString(hint, maxWidth);
                 try
                 {
                     AnsiConsole.Markup(displayHint);
@@ -515,35 +526,98 @@ internal class ConsoleRenderer : IRenderer
 
     // ── Helpers ───────────────────────────────────────────────────────
     /// <summary>
-    /// Returns the truncation index at which <paramref name="text"/> first exceeds
-    /// <paramref name="maxWidth"/> visible characters, or <c>-1</c> if it fits.
-    /// Strips Spectre markup tags to compute display length without allocation.
+    /// <summary>
+    /// Returns <paramref name="text"/> truncated to at most <paramref name="maxWidth"/>
+    /// visible characters (Spectre markup tags are stripped during counting).
+    /// When truncation would leave unclosed markup tags, appends <c>[/]</c> closers
+    /// so the returned string is always valid Spectre markup.
+    /// Returns the original string if it fits within <paramref name="maxWidth"/>.
     /// </summary>
-    private static int GetTruncationIndex(string text, int maxWidth)
+    public static string GetTruncatedString(string text, int maxWidth)
     {
         int visualWidth = 0;
+        int tagDepth = 0;
         int i = 0;
 
         while (i < text.Length)
         {
+            // ── Escaped bracket [[ → literal '[' ────────────────────────
+            if (i + 1 < text.Length && text[i] == '[' && text[i + 1] == '[')
+            {
+                visualWidth++;
+                if (visualWidth > maxWidth)
+                    return BuildTruncated(text, i, tagDepth);
+                i += 2;
+                continue;
+            }
+
+            // ── Escaped bracket ]] → literal ']' ────────────────────────
+            if (i + 1 < text.Length && text[i] == ']' && text[i + 1] == ']')
+            {
+                visualWidth++;
+                if (visualWidth > maxWidth)
+                    return BuildTruncated(text, i, tagDepth);
+                i += 2;
+                continue;
+            }
+
+            // ── Markup tag ──────────────────────────────────────────────
             if (text[i] == '[')
             {
-                int close = text.IndexOf(']', i);
+                int close = FindTagCloseBracket(text, i);
                 if (close > i)
                 {
+                    ReadOnlySpan<char> tagContent = text.AsSpan(i + 1, close - i - 1).Trim();
+                    if (tagContent.Length > 0 && tagContent[0] == '/')
+                        tagDepth--;
+                    else
+                        tagDepth++;
                     i = close + 1;
                     continue;
                 }
             }
 
+            // ── Regular visible character ───────────────────────────────
             visualWidth++;
             if (visualWidth > maxWidth)
-                return i;
+                return BuildTruncated(text, i, tagDepth);
 
             i++;
         }
 
-        return -1; // fits within maxWidth
+        return text; // fits within maxWidth
+    }
+
+    /// <summary>
+    /// Finds the closing <c>]</c> for a tag starting at <paramref name="openBracket"/>.
+    /// Skips over <c>]]</c> escaped-bracket pairs (which do not close a tag).
+    /// </summary>
+    private static int FindTagCloseBracket(string text, int openBracket)
+    {
+        int pos = openBracket + 1;
+        while (pos < text.Length)
+        {
+            int close = text.IndexOf(']', pos);
+            if (close < 0)
+                return -1;
+            // ] followed by ] → escaped literal ']', skip both and keep looking.
+            if (close + 1 < text.Length && text[close + 1] == ']')
+            {
+                pos = close + 2;
+                continue;
+            }
+            return close;
+        }
+        return -1;
+    }
+
+    /// <summary>Builds the truncated result with closing tags for unclosed markup.</summary>
+    private static string BuildTruncated(string text, int cutIndex, int tagDepth)
+    {
+        string truncated = text[..cutIndex];
+        for (int j = 0; j < tagDepth; j++)
+            truncated += "[/]";
+        return truncated;
     }
 
     /// <summary>Renders the top separator (between message feed and input block).</summary>
@@ -676,13 +750,13 @@ internal class ConsoleRenderer : IRenderer
         if (delta >= 0)
             return;
 
-        ClearLinesBelow(-delta);
+        ClearLinesBelowCursor(-delta);
     }
 
     /// <summary>Clears <paramref name="count"/> lines below the new block that were
     /// part of the old block but not re-filled (block shrank). These are uncleared
     /// gaps between the new block bottom and the old clear area end.</summary>
-    private void ClearLinesBelow(int count)
+    public void ClearLinesBelowCursor(int count)
     {
         if (count <= 0)
             return;

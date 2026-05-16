@@ -1,4 +1,5 @@
 using StreamShell;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace StreamShell.Tests;
@@ -92,6 +93,7 @@ internal sealed class MockInputHandler : IInputHandler
 /// <summary>Mock IRenderer for testing ConsoleAppHost without Console dependency.</summary>
 internal sealed class MockRenderer : IRenderer
 {
+    private readonly List<string> _messageHistory = new();
     public List<string> RenderedMessages { get; } = new();
     public List<string> RenderedInputs { get; } = new();
     public int PanelLineCount { get; private set; }
@@ -144,6 +146,7 @@ internal sealed class MockRenderer : IRenderer
     public void RenderMessage(string markup)
     {
         RenderedMessages.Add(markup);
+        _messageHistory.Add(markup);
     }
 
     public void RenderInputBlock(
@@ -173,6 +176,25 @@ internal sealed class MockRenderer : IRenderer
     public void HandleBlockHeightChange(int oldBlockOffset, int newBlockOffset)
     {
         LastBlockOffset = newBlockOffset;
+    }
+
+    public void ClearLinesBelowCursor(int count)
+    {
+        // No-op for mock: tests don't verify actual cursor clearing.
+    }
+
+    public void RetrieveMessagesFromHistory(int count, Action<Span<string>> callback)
+    {
+        // Mirror the real ConsoleRenderer: operate on _messageHistory,
+        // not RenderedMessages. Messages are removed from history after
+        // retrieval (they get re-enqueued by the caller for re-rendering).
+        int take = Math.Min(_messageHistory.Count, count);
+        if (take > 0 && callback is not null)
+        {
+            var span = CollectionsMarshal.AsSpan(_messageHistory);
+            callback(span[^take..]);
+            _messageHistory.RemoveRange(_messageHistory.Count - take, take);
+        }
     }
 }
 

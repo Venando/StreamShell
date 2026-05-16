@@ -63,6 +63,7 @@ public partial class ConsoleAppHost : IDisposable
     /// Default bottom panel is EmptyBottomPanel; CommandPalette activates on "/".</summary>
     public ConsoleAppHost()
     {
+        _lastDateTime = DateTime.UtcNow;
         _terminal = new SystemTerminal();
         _renderer = new ConsoleRenderer(Settings);
         _inputHandler = new UserInputHandler();

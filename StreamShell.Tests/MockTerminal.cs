@@ -79,7 +79,9 @@ internal sealed class MockTerminal : ITerminal
     public void Write(string text)
     {
         WrittenTexts.Add(text);
-        CursorLeft += text.Length;
+        // ANSI escape sequences (CSI) do not move the visible cursor.
+        if (!text.StartsWith("\x1b["))
+            CursorLeft += text.Length;
     }
 
     public void WriteLine()

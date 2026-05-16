@@ -19,6 +19,11 @@ public partial class ConsoleAppHost
     private int _resizeStableTicks = 0;
     private bool _resizeDetected = false;
 
+    // ── Rendering shenanigans ─────────────────────────────────────────────
+    private int _lastInputBlockHeight = -1;
+    private int _emptyBlocksNumberAfterClearing = 0;
+    private DateTime _lastDateTime;
+
     /// <summary>
     /// Console width at the last replay emission.
     /// Messages visible at this width are already correctly wrapped.
@@ -241,46 +246,88 @@ public partial class ConsoleAppHost
     /// </summary>
     private bool RenderQueuedMessages(RenderSnapshot state, TickState tick)
     {
-        int chunkSize = Settings.RenderChunkSize;
+        MessagePrintingMode messagePrintingMode = Settings.PrintingMode;
+
+        int chunkSize;
+
+        switch (messagePrintingMode)
+        {
+            case MessagePrintingMode.IntChunks:
+                chunkSize = Settings.RenderChunkSize;
+                break;
+            case MessagePrintingMode.ExpDecay:
+            default:
+                var currentDateTime = DateTime.UtcNow;
+                double elapsed = (currentDateTime - _lastDateTime).TotalSeconds;
+                double fractionRendered = 1.0 - Math.Exp(-Settings.ExpDecayRate * elapsed);
+                chunkSize = Math.Max(1, (int)(_messages.Count * fractionRendered));
+                _lastDateTime = currentDateTime;
+                break;
+        }
+
+        // _messages.Count
         bool cleared = false;
         bool anyRendered = false;
         int messageCount = 0;
         bool scrollRegionSet = false;
+        int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
 
+        bool isBlockHeightUpdated = _lastInputBlockHeight != inputBlockHeight;
+        // On the initial tick (_lastInputBlockHeight == -1) the delta is
+        // artificial — skip message retrieval to avoid re-enqueuing freshly
+        // rendered messages.
+        int blockHeightDelta = _lastInputBlockHeight >= 0
+            ? inputBlockHeight - _lastInputBlockHeight
+            : 0;
+        _lastInputBlockHeight = inputBlockHeight;
+
+        if (isBlockHeightUpdated)
+        {
+            Clear();
+        }
+
+        void Clear()
+        {
+            if (_renderer is ConsoleRenderer cr)
+            {
+                // Scroll region isolates the input block — clearing is redundant.
+                // Messages render at the bottom of the scroll region and scroll up
+                // within it. The input block is overwritten by RenderFullInputBlock
+                // afterwards, so no pre-clearing is needed.
+                inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
+                cr.SetMessageScrollRegion(inputBlockHeight);
+                scrollRegionSet = true;
+
+                int offset = (blockHeightDelta < 0 && _messages.Count > 0) ? blockHeightDelta : 0;
+                // Position cursor at the bottom of the scroll region
+                _terminal.CursorTop = Math.Max(_terminal.BufferHeight - inputBlockHeight - 2 - _emptyBlocksNumberAfterClearing + offset, 0);
+                _terminal.CursorLeft = 0;
+            }
+            else
+            {
+                if (state.LastInput is not null)
+                    _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
+                else
+                    _renderer.ClearInputLine();
+            }
+            cleared = true;
+        }
+            
         while (messageCount < chunkSize && _messages.TryDequeue(out var message))
         {
             if (!cleared)
             {
-                if (_renderer is ConsoleRenderer cr)
-                {
-                    // Scroll region isolates the input block — clearing is redundant.
-                    // Messages render at the bottom of the scroll region and scroll up
-                    // within it. The input block is overwritten by RenderFullInputBlock
-                    // afterwards, so no pre-clearing is needed.
-                    int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
-                    cr.SetMessageScrollRegion(inputBlockHeight);
-                    scrollRegionSet = true;
-
-                    // Position cursor at the bottom of the scroll region
-                    _terminal.CursorTop = _terminal.BufferHeight - inputBlockHeight - 3;
-                    _terminal.CursorLeft = 0;
-                }
-                else
-                {
-                    if (state.LastInput is not null)
-                        _renderer.ClearInputBlockForReRender(state.LastInput, tick.Input, state.LastPanelLineCount);
-                    else
-                        _renderer.ClearInputLine();
-                }
-                cleared = true;
+                Clear();
             }
 
             _renderer.RenderMessage(message);
             anyRendered = true;
             messageCount++;
+            if (_emptyBlocksNumberAfterClearing > 0)
+                _emptyBlocksNumberAfterClearing--;
         }
 
-        if (!anyRendered)
+        if (!anyRendered && !isBlockHeightUpdated)
             return false;
 
         // Reset scroll region before rendering the input block.
@@ -288,22 +335,29 @@ public partial class ConsoleAppHost
         if (scrollRegionSet && _renderer is ConsoleRenderer cr2)
         {
             cr2.ResetScrollRegion();
-            int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
             // GetBlockOffset omits the blank WriteLine between input and hints,
-            // and AnsiConsole.MarkupLine cursor tracking adds a 1-line offset,
-            // so subtract 2 to reach the actual input block top.
-            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 2;
+            // so subtract 1 to reach the actual input block top.
+            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 1;
             _terminal.CursorTop = Math.Max(0, Math.Min(inputBlockTop, _terminal.BufferHeight - 1));
             _terminal.CursorLeft = 0;
         }
 
         RenderFullInputBlock(tick);
 
-        if (state.LastInput is not null)
+        if (blockHeightDelta < 0)
         {
-            int oldBlockOffset = (1 + state.LastPanelLineCount) + _renderer.GetInputLineCount(state.LastInput);
-            int newBlockOffset = _renderer.GetBlockOffset(tick.Input);
-            _renderer.HandleBlockHeightChange(oldBlockOffset, newBlockOffset);
+            var linesToClear = -blockHeightDelta;
+            _terminal.CursorTop =  Math.Max(0, _terminal.CursorTop - inputBlockHeight - 1 - linesToClear);
+            _renderer.ClearLinesBelowCursor(linesToClear);
+            _emptyBlocksNumberAfterClearing += linesToClear;
+        } 
+        else if (blockHeightDelta > 0)
+        {
+            _renderer.RetrieveMessagesFromHistory(blockHeightDelta, (Span<string> messages) =>
+            {
+                for (int i = 0; i < messages.Length; i++)
+                    _messages.Enqueue(messages[i]);
+            });
         }
 
         if (_bottomPanel.IsDirty)

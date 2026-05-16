@@ -1,3 +1,4 @@
+using Spectre.Console;
 using StreamShell;
 
 namespace StreamShell.Tests;
@@ -318,5 +319,27 @@ public class ConsoleRendererTests
         var result = ConsoleRenderer.GetInputLines("hello world\nfoobar", margin: 10);
         Assert.True(result.Count >= 4);
         Assert.Equal("hell", result[0]);
+    }
+
+    // ── GetTruncatedString ────────────────────────────────────────────
+
+    [Fact]
+    public void GetTruncatedString_WithWrappingMarkup_ReturnsValidMarkup()
+    {
+        var text = "[on white][default]> [/][white]/longtest [/] Long hind description test I'm wring right here to test how would it behave. Long hind description test I'm wring right here to test how would it behave.[/]";
+        string truncatedText = ConsoleRenderer.GetTruncatedString(text, 119);
+        MarkupValidationResult validateResult = MarkupValidator.Validate(truncatedText);
+
+        Assert.True(validateResult.IsValid, validateResult.ToString());
+    }
+
+    [Fact]
+    public void GetTruncatedString_WithEscapedBrackets_ReturnsValidMarkup()
+    {
+        var text = "[on white][default]> [/][white]/top-sep [/] Set top separator. Usage: /top-sep [[left]] [[right]] [[char]] [[markup]][/]";
+        string truncatedText = ConsoleRenderer.GetTruncatedString(text, 119);
+        MarkupValidationResult validateResult = MarkupValidator.Validate(truncatedText);
+
+        Assert.True(validateResult.IsValid, validateResult.ToString());
     }
 }

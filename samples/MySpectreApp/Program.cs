@@ -341,7 +341,7 @@ host.UserInputSubmitted += args =>
     host.AddMessage("[green]USER:[/] [cyan]" + args.InputType + "[/]");
     host.AddMessage("  [grey]\"" + Markup.Escape(args.TextWithAttachmentsExpanded) + "\"[/]");
     foreach (var att in args.Attachments)
-    {
+    {   
         host.AddMessage("  [grey][[attachment: " + att.Type + ", " + att.LineCount + " lines, " + att.Content.Length + " chars]][/]");
     }
 };
@@ -352,8 +352,8 @@ _ = Task.Run(async () =>
     int i = 0;
     while (true)
     {
-        await Task.Delay(1000);
-        var lines = random.Next(11, 20);
+        await Task.Delay(2000);
+        var lines = random.Next(1, 900);
         for (int j = 0; j < lines; j++)
             host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
     }
