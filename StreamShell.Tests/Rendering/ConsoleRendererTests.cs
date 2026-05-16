@@ -332,4 +332,14 @@ public class ConsoleRendererTests
 
         Assert.True(validateResult.IsValid, validateResult.ToString());
     }
+
+    [Fact]
+    public void GetTruncatedString_WithEscapedBrackets_ReturnsValidMarkup()
+    {
+        var text = "[on white][default]> [/][white]/top-sep [/] Set top separator. Usage: /top-sep [[left]] [[right]] [[char]] [[markup]][/]";
+        string truncatedText = ConsoleRenderer.GetTruncatedString(text, 119);
+        MarkupValidationResult validateResult = MarkupValidator.Validate(truncatedText);
+
+        Assert.True(validateResult.IsValid, validateResult.ToString());
+    }
 }

@@ -541,9 +541,30 @@ internal class ConsoleRenderer : IRenderer
 
         while (i < text.Length)
         {
+            // ── Escaped bracket [[ → literal '[' ────────────────────────
+            if (i + 1 < text.Length && text[i] == '[' && text[i + 1] == '[')
+            {
+                visualWidth++;
+                if (visualWidth > maxWidth)
+                    return BuildTruncated(text, i, tagDepth);
+                i += 2;
+                continue;
+            }
+
+            // ── Escaped bracket ]] → literal ']' ────────────────────────
+            if (i + 1 < text.Length && text[i] == ']' && text[i + 1] == ']')
+            {
+                visualWidth++;
+                if (visualWidth > maxWidth)
+                    return BuildTruncated(text, i, tagDepth);
+                i += 2;
+                continue;
+            }
+
+            // ── Markup tag ──────────────────────────────────────────────
             if (text[i] == '[')
             {
-                int close = text.IndexOf(']', i);
+                int close = FindTagCloseBracket(text, i);
                 if (close > i)
                 {
                     ReadOnlySpan<char> tagContent = text.AsSpan(i + 1, close - i - 1).Trim();
@@ -556,20 +577,47 @@ internal class ConsoleRenderer : IRenderer
                 }
             }
 
+            // ── Regular visible character ───────────────────────────────
             visualWidth++;
             if (visualWidth > maxWidth)
-            {
-                string truncated = text[..i];
-                // Append closing tags for any unclosed markup.
-                for (int j = 0; j < tagDepth; j++)
-                    truncated += "[/]";
-                return truncated;
-            }
+                return BuildTruncated(text, i, tagDepth);
 
             i++;
         }
 
         return text; // fits within maxWidth
+    }
+
+    /// <summary>
+    /// Finds the closing <c>]</c> for a tag starting at <paramref name="openBracket"/>.
+    /// Skips over <c>]]</c> escaped-bracket pairs (which do not close a tag).
+    /// </summary>
+    private static int FindTagCloseBracket(string text, int openBracket)
+    {
+        int pos = openBracket + 1;
+        while (pos < text.Length)
+        {
+            int close = text.IndexOf(']', pos);
+            if (close < 0)
+                return -1;
+            // ] followed by ] → escaped literal ']', skip both and keep looking.
+            if (close + 1 < text.Length && text[close + 1] == ']')
+            {
+                pos = close + 2;
+                continue;
+            }
+            return close;
+        }
+        return -1;
+    }
+
+    /// <summary>Builds the truncated result with closing tags for unclosed markup.</summary>
+    private static string BuildTruncated(string text, int cutIndex, int tagDepth)
+    {
+        string truncated = text[..cutIndex];
+        for (int j = 0; j < tagDepth; j++)
+            truncated += "[/]";
+        return truncated;
     }
 
     /// <summary>Renders the top separator (between message feed and input block).</summary>
