@@ -2,6 +2,15 @@ using Spectre.Console;
 
 namespace StreamShell;
 
+/// <summary>Controls how messages are printed to the console.</summary>
+public enum MessagePrintingMode
+{
+    /// <summary>Render complete messages in batches per tick (current behavior). Default.</summary>
+    IntChunks,
+    /// <summary>Reveal messages gradually using exponential decay timing.</summary>
+    ExpDecay
+}
+
 /// <summary>Configurable settings for the StreamShell host.</summary>
 public class StreamShellSettings
 {
@@ -21,7 +30,7 @@ public class StreamShellSettings
     /// Number of visible lines for the command palette (status + hints).
     /// Default: 8 (1 status line + 7 hint lines).
     /// </summary>
-    public int CommandPaletteHeight { get; set; } = 8;
+    public int CommandPaletteHeight { get; set; } = 9;
 
     /// <summary>
     /// Number of messages to re-emit after console width decreases and resize settles.
@@ -39,8 +48,26 @@ public class StreamShellSettings
     /// Maximum number of queued messages to render in a single tick.
     /// Higher values reduce flicker by batching output into fewer screen updates.
     /// Default: 999 (effectively unlimited for practical purposes).
+    /// Only used when <see cref="PrintingMode"/> is <see cref="MessagePrintingMode.IntChunks"/>.
     /// </summary>
     public int RenderChunkSize { get; set; } = 999;
+
+    /// <summary>
+    /// Controls how queued messages are printed to the console.
+    /// <see cref="MessagePrintingMode.IntChunks"/> renders messages in batches per tick.
+    /// <see cref="MessagePrintingMode.ExpDecay"/> renders messages smoothly using
+    /// exponential decay timing — most content appears quickly then tapers off.
+    /// Default: <see cref="MessagePrintingMode.IntChunks"/> (backward compatible).
+    /// </summary>
+    public MessagePrintingMode PrintingMode { get; set; } = MessagePrintingMode.ExpDecay;
+
+    /// <summary>
+    /// Exponential decay rate for message rendering when <see cref="PrintingMode"/> is
+    /// <see cref="MessagePrintingMode.ExpDecay"/>.
+    /// Higher values = faster rendering. Default 4.6 prints ~99% of queued content in ~1 second.
+    /// Suggested range: 1 (slow, ~63% in 1s) to 25 (fast, ~1 in 8 billion remaining in 1s).
+    /// </summary>
+    public double ExpDecayRate { get; set; } = 3.6;
 
     private string _cursorMarkup = "bold black on cyan";
     private string _selectionMarkup = "bold cyan on Grey27";

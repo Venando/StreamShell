@@ -22,6 +22,7 @@ public partial class ConsoleAppHost
     // ── Rendering shenanigans ─────────────────────────────────────────────
     private int _lastInputBlockHeight = -1;
     private int _emptyBlocksNumberAfterClearing = 0;
+    private DateTime _lastDateTime;
 
     /// <summary>
     /// Console width at the last replay emission.
@@ -245,7 +246,26 @@ public partial class ConsoleAppHost
     /// </summary>
     private bool RenderQueuedMessages(RenderSnapshot state, TickState tick)
     {
-        int chunkSize = Settings.RenderChunkSize;
+        MessagePrintingMode messagePrintingMode = Settings.PrintingMode;
+
+        int chunkSize;
+
+        switch (messagePrintingMode)
+        {
+            case MessagePrintingMode.IntChunks:
+                chunkSize = Settings.RenderChunkSize;
+                break;
+            case MessagePrintingMode.ExpDecay:
+            default:
+                var currentDateTime = DateTime.UtcNow;
+                double elapsed = (currentDateTime - _lastDateTime).TotalSeconds;
+                double fractionRendered = 1.0 - Math.Exp(-Settings.ExpDecayRate * elapsed);
+                chunkSize = Math.Max(1, (int)(_messages.Count * fractionRendered));
+                _lastDateTime = currentDateTime;
+                break;
+        }
+
+        // _messages.Count
         bool cleared = false;
         bool anyRendered = false;
         int messageCount = 0;
