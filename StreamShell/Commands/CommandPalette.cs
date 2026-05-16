@@ -426,11 +426,13 @@ internal class CommandPalette : IBottomPanel
         }
 
         // Build hint strings with selection highlighting
+        int lineWidth = Console.BufferWidth - 1;
         for (int i = 0; i < entries.Count; i++)
         {
             bool isSelected = i == SelectedIndex;
             string content = entries[i].StartsWith('/') ? entries[i][1..] : entries[i];
-            AppendHintLine(isSelected, content, includeSlash: true);
+            AppendHintLine(isSelected, content, includeSlash: true,
+                linePadTo: isSelected ? lineWidth : 0);
             lines.Add(_sb.ToString());
             if (lines.Count >= MaxHeight) break;
         }
@@ -462,8 +464,10 @@ internal class CommandPalette : IBottomPanel
     /// <param name="namePadTo">Padding target for the name visual length.</param>
     /// <param name="descriptionPadTo">Padding target for the description visual length (selected only).</param>
     /// <param name="includeSlash">When true, prepends a '/' before content. Default: true.</param>
+    /// <param name="linePadTo">Total visual width target for selected rows. Pads inside the background
+    /// scope to fill remaining space, extending the background color to the console edge.</param>
     private void AppendHintLine(bool isSelected, string content, string? description = null,
-        int namePadTo = 0, int descriptionPadTo = 0, bool includeSlash = true)
+        int namePadTo = 0, int descriptionPadTo = 0, bool includeSlash = true, int linePadTo = 0)
     {
         var p = _paletteStyle;
         _sb.Clear();
@@ -493,6 +497,18 @@ internal class CommandPalette : IBottomPanel
                 _sb.Append("[/]");
                 PadTo(_sb, GetVisualLength(description), descriptionPadTo);
             }
+
+            if (linePadTo > 0)
+            {
+                // Compute current visual width of all visible content in the line:
+                // cursor-symbol + '/' + max(content, namePadTo) + (if desc: 1 + max(desc, descPadTo))
+                int curVis = GetVisualLength(_paletteStyle.SelectedCursorSymbol) + 1;
+                curVis += Math.Max(GetVisualLength(content), namePadTo);
+                if (description != null)
+                    curVis += 1 + Math.Max(GetVisualLength(description), descriptionPadTo);
+                PadTo(_sb, curVis, linePadTo);
+            }
+
             _sb.Append("[/]"); // closes [on ...]
         }
         else
