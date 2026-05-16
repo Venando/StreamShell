@@ -125,7 +125,10 @@ internal class CommandPalette : IBottomPanel
     {
         _commandProvider = commandProvider;
         if (settings != null)
+        {
             MaxHeight = settings.CommandPaletteHeight;
+            _paletteStyle = settings.Palette ?? new PaletteStyle();
+        }
         _emptyHints = BuildEmptyHints();
         _cachedEmptyHints = _emptyHints;
         _linesBuffer = new(MaxHeight);
@@ -138,12 +141,17 @@ internal class CommandPalette : IBottomPanel
         var arr = commands.ToArray();
         _commandProvider = () => arr;
         if (settings != null)
+        {
             MaxHeight = settings.CommandPaletteHeight;
+            _paletteStyle = settings.Palette ?? new PaletteStyle();
+        }
         _emptyHints = BuildEmptyHints();
         _cachedEmptyHints = _emptyHints;
         _linesBuffer = new(MaxHeight);
         _matchingBuffer = new(HintCapacity + 1);
     }
+
+    private readonly PaletteStyle _paletteStyle = new();
 
     /// <summary>
     /// Returns all panel lines. Line 0 is the status/instruction line.
@@ -233,50 +241,14 @@ internal class CommandPalette : IBottomPanel
             }
 
             // Build hint strings with selection highlighting
-            // Find max name length manually to avoid LINQ MaxBy allocation
-            int maxSize = 0;
-            for (int i = 0; i < showCount; i++)
-            {
-                int nameLen = GetVisualLength(_matchingBuffer[effectiveOffset + i].Name);
-                if (nameLen > maxSize) maxSize = nameLen;
-            }
-            // Cap maxSize to leave room for description (at least 20 chars)
-            int availableForName = 40;
-            if (maxSize > availableForName)
-                maxSize = availableForName;
-
-            var descriptionWidth = Console.BufferWidth - maxSize - 1;
-            // Use a reusable StringBuilder for each hint line instead of
-            // string interpolation with PadRight (which allocates per line).
-            _sb.Clear();
+            int maxSize = MaxNameVisualLength(effectiveOffset, showCount);
+            int descriptionWidth = Console.BufferWidth - maxSize - 1;
             for (int i = 0; i < showCount; i++)
             {
                 var cmd = _matchingBuffer[effectiveOffset + i];
-                _sb.Clear();
-                if (i == SelectedIndex)
-                {
-                    _sb.Append("[on white]");
-                    _sb.Append("[default]> [/][white]/");
-                    _sb.Append(cmd.Name);
-                    PadTo(_sb, GetVisualLength(cmd.Name), maxSize);
-                    _sb.Append("[/] ");
-
-                    _sb.Append(cmd.Description);
-                    //PadTo(_sb, GetVisualLength(cmd.Description), descriptionWidth);
-                    //_sb.Append(cmd.Description);
-                    _sb.Append("[/]");
-                }
-                else
-                {
-                    _sb.Append("  [grey]/");
-                    _sb.Append(cmd.Name);
-                    PadTo(_sb, GetVisualLength(cmd.Name), maxSize);
-                    _sb.Append("[/] ");
-
-                    _sb.Append(cmd.Description);
-                }
-
-
+                bool isSelected = i == SelectedIndex;
+                AppendHintLine(isSelected, cmd.Name, cmd.Description,
+                    maxSize, isSelected ? descriptionWidth : 0);
                 _linesBuffer.Add(_sb.ToString());
                 if (_linesBuffer.Count >= MaxHeight) break;
             }
@@ -456,11 +428,89 @@ internal class CommandPalette : IBottomPanel
         // Build hint strings with selection highlighting
         for (int i = 0; i < entries.Count; i++)
         {
-            if (i == SelectedIndex)
-                lines.Add($"> [white]{entries[i]}[/]");
-            else
-                lines.Add($"  [grey]{entries[i]}[/]");
+            bool isSelected = i == SelectedIndex;
+            string content = entries[i].StartsWith('/') ? entries[i][1..] : entries[i];
+            AppendHintLine(isSelected, content, includeSlash: true);
+            lines.Add(_sb.ToString());
             if (lines.Count >= MaxHeight) break;
+        }
+    }
+
+    /// <summary>
+    /// Computes the maximum visual name length across the visible command slice.
+    /// Capped at 40 to leave room for descriptions.
+    /// </summary>
+    private int MaxNameVisualLength(int offset, int count)
+    {
+        int max = 0;
+        for (int i = 0; i < count; i++)
+        {
+            int len = GetVisualLength(_matchingBuffer[offset + i].Name);
+            if (len > max) max = len;
+        }
+        const int cap = 40;
+        return max > cap ? cap : max;
+    }
+
+    /// <summary>
+    /// Appends a single hint line to <see cref="_sb"/> using palette styling.
+    /// Shared by command hints and argument hints for consistent selection highlighting.
+    /// </summary>
+    /// <param name="isSelected">True for the currently selected hint.</param>
+    /// <param name="content">The name/path portion after the slash.</param>
+    /// <param name="description">Optional description text (null for argument hints).</param>
+    /// <param name="namePadTo">Padding target for the name visual length.</param>
+    /// <param name="descriptionPadTo">Padding target for the description visual length (selected only).</param>
+    /// <param name="includeSlash">When true, prepends a '/' before content. Default: true.</param>
+    private void AppendHintLine(bool isSelected, string content, string? description = null,
+        int namePadTo = 0, int descriptionPadTo = 0, bool includeSlash = true)
+    {
+        var p = _paletteStyle;
+        _sb.Clear();
+
+        if (isSelected)
+        {
+            _sb.Append("[on ");
+            _sb.Append(p.SelectedBackground);
+            _sb.Append("][");
+            _sb.Append(p.SelectedCursorColor);
+            _sb.Append(']');
+            _sb.Append(p.SelectedCursorSymbol);
+            _sb.Append("[/][");
+            _sb.Append(p.SelectedNameColor);
+            _sb.Append(']');
+            if (includeSlash) _sb.Append('/');
+            _sb.Append(content);
+            PadTo(_sb, GetVisualLength(content), namePadTo);
+            _sb.Append("[/]");
+
+            if (description != null)
+            {
+                _sb.Append(" [");
+                _sb.Append(p.SelectedDescriptionColor);
+                _sb.Append(']');
+                _sb.Append(description);
+                _sb.Append("[/]");
+                PadTo(_sb, GetVisualLength(description), descriptionPadTo);
+            }
+            _sb.Append("[/]"); // closes [on ...]
+        }
+        else
+        {
+            _sb.Append(p.NormalIndent);
+            _sb.Append('[');
+            _sb.Append(p.NormalNameColor);
+            _sb.Append(']');
+            if (includeSlash) _sb.Append('/');
+            _sb.Append(content);
+            PadTo(_sb, GetVisualLength(content), namePadTo);
+            _sb.Append("[/]");
+
+            if (description != null)
+            {
+                _sb.Append(' ');
+                _sb.Append(description);
+            }
         }
     }
 

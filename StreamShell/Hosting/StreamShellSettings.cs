@@ -5,6 +5,9 @@ namespace StreamShell;
 /// <summary>Configurable settings for the StreamShell host.</summary>
 public class StreamShellSettings
 {
+    /// <summary>Color/style configuration for the command palette hint rows.</summary>
+    public PaletteStyle Palette { get; set; } = new();
+
     /// <summary>Raised when any setting property changes. Subscribers can re-apply settings.</summary>
     public event Action? SettingsChanged;
 
