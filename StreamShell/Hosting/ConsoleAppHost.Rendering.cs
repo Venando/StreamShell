@@ -316,9 +316,8 @@ public partial class ConsoleAppHost
         {
             cr2.ResetScrollRegion();
             // GetBlockOffset omits the blank WriteLine between input and hints,
-            // and AnsiConsole.MarkupLine cursor tracking adds a 1-line offset,
-            // so subtract 2 to reach the actual input block top.
-            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 2;
+            // so subtract 1 to reach the actual input block top.
+            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 1;
             _terminal.CursorTop = Math.Max(0, Math.Min(inputBlockTop, _terminal.BufferHeight - 1));
             _terminal.CursorLeft = 0;
         }
