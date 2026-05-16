@@ -309,7 +309,7 @@ public class CommandPaletteTests
 
         // Should show individual hints with full path, never compress
         Assert.Equal("[on white][black]→ [/][gray27]/deploy linux ubuntu[/][/]", lines[1]);
-        Assert.Equal(" [grey]/deploy linux debian[/]", lines[2]);
+        Assert.Equal(" [grey] /deploy linux debian[/]", lines[2]);
         Assert.All(lines.Skip(3), line => Assert.Equal(string.Empty, line));
     }
 
@@ -326,9 +326,9 @@ public class CommandPaletteTests
         var lines = palette.GetLines("/appconfig DirectLlm");
 
         Assert.Equal("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
-        Assert.Equal(" [grey]/appconfig DirectLlmModelName[/]", lines[2]);
-        Assert.Equal(" [grey]/appconfig DirectLlmToken[/]", lines[3]);
-        Assert.Equal(" [grey]/appconfig DirectLlmUrl[/]", lines[4]);
+        Assert.Equal(" [grey] /appconfig DirectLlmModelName[/]", lines[2]);
+        Assert.Equal(" [grey] /appconfig DirectLlmToken[/]", lines[3]);
+        Assert.Equal(" [grey] /appconfig DirectLlmUrl[/]", lines[4]);
         Assert.All(lines.Skip(5), line => Assert.Equal(string.Empty, line));
 
         // CurrentSuggestion should be the first match
@@ -344,9 +344,9 @@ public class CommandPaletteTests
         var lines = palette.GetLines("/appconfig Direc");
 
         Assert.Equal("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
-        Assert.Equal(" [grey]/appconfig DirectLlmModelName[/]", lines[2]);
-        Assert.Equal(" [grey]/appconfig DirectLlmToken[/]", lines[3]);
-        Assert.Equal(" [grey]/appconfig DirectLlmUrl[/]", lines[4]);
+        Assert.Equal(" [grey] /appconfig DirectLlmModelName[/]", lines[2]);
+        Assert.Equal(" [grey] /appconfig DirectLlmToken[/]", lines[3]);
+        Assert.Equal(" [grey] /appconfig DirectLlmUrl[/]", lines[4]);
         Assert.All(lines.Skip(5), line => Assert.Equal(string.Empty, line));
 
         // The CurrentSuggestion should be the first match
@@ -389,8 +389,8 @@ public class CommandPaletteTests
         var lines = palette.GetLines("/other Alpha");
 
         Assert.Equal("[on white][black]→ [/][gray27]/other AlphaConfig[/][/]", lines[1]);
-        Assert.Equal(" [grey]/other AlphaMode[/]", lines[2]);
-        Assert.Equal(" [grey]/other AlphaValue[/]", lines[3]);
+        Assert.Equal(" [grey] /other AlphaMode[/]", lines[2]);
+        Assert.Equal(" [grey] /other AlphaValue[/]", lines[3]);
         Assert.All(lines.Skip(4), line => Assert.Equal(string.Empty, line));
 
         // Should NOT show BetaConfig or BetaMode
@@ -407,9 +407,9 @@ public class CommandPaletteTests
         var lines = palette.GetLines("/appconfig directllm");
 
         Assert.Equal("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
-        Assert.Equal(" [grey]/appconfig DirectLlmModelName[/]", lines[2]);
-        Assert.Equal(" [grey]/appconfig DirectLlmToken[/]", lines[3]);
-        Assert.Equal(" [grey]/appconfig DirectLlmUrl[/]", lines[4]);
+        Assert.Equal(" [grey] /appconfig DirectLlmModelName[/]", lines[2]);
+        Assert.Equal(" [grey] /appconfig DirectLlmToken[/]", lines[3]);
+        Assert.Equal(" [grey] /appconfig DirectLlmUrl[/]", lines[4]);
         Assert.Equal("/appconfig DirectLlmApiType ", palette.CurrentSuggestion);
     }
 
@@ -422,8 +422,8 @@ public class CommandPaletteTests
         var lines = palette.GetLines("/other Alpha");
 
         Assert.Equal("[on white][black]→ [/][gray27]/other AlphaConfig[/][/]", lines[1]);
-        Assert.Equal(" [grey]/other AlphaMode[/]", lines[2]);
-        Assert.Equal(" [grey]/other AlphaValue[/]", lines[3]);
+        Assert.Equal(" [grey] /other AlphaMode[/]", lines[2]);
+        Assert.Equal(" [grey] /other AlphaValue[/]", lines[3]);
         Assert.All(lines.Skip(4), line => Assert.Equal(string.Empty, line));
         Assert.Equal("/other AlphaConfig ", palette.CurrentSuggestion);
     }
