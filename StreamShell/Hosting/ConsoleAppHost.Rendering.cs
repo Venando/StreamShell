@@ -242,65 +242,65 @@ public partial class ConsoleAppHost
     /// <summary>
     /// Renders up to <see cref="StreamShellSettings.RenderChunkSize"/> queued messages
     /// in one go, then re-renders the input block. Batching reduces flicker and improves
-    /// throughput for bulk output. Returns true when at least one message was rendered.
+    /// throughput for bulk output. Returns true when at least one message was rendered
+    /// or the input block height changed.
     /// </summary>
     private bool RenderQueuedMessages(RenderSnapshot state, TickState tick)
     {
-        MessagePrintingMode messagePrintingMode = Settings.PrintingMode;
+        int chunkSize = GetRenderChunkSize();
 
-        int chunkSize;
-
-        switch (messagePrintingMode)
-        {
-            case MessagePrintingMode.IntChunks:
-                chunkSize = Settings.RenderChunkSize;
-                break;
-            case MessagePrintingMode.ExpDecay:
-            default:
-                var currentDateTime = DateTime.UtcNow;
-                double elapsed = (currentDateTime - _lastDateTime).TotalSeconds;
-                double fractionRendered = 1.0 - Math.Exp(-Settings.ExpDecayRate * elapsed);
-                chunkSize = Math.Max(1, (int)(_messages.Count * fractionRendered));
-                _lastDateTime = currentDateTime;
-                break;
-        }
-
-        // _messages.Count
-        bool cleared = false;
-        bool anyRendered = false;
-        int messageCount = 0;
-        bool scrollRegionSet = false;
         int inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
-
-        bool isBlockHeightUpdated = _lastInputBlockHeight != inputBlockHeight;
-        // On the initial tick (_lastInputBlockHeight == -1) the delta is
-        // artificial — skip message retrieval to avoid re-enqueuing freshly
-        // rendered messages.
         int blockHeightDelta = _lastInputBlockHeight >= 0
             ? inputBlockHeight - _lastInputBlockHeight
             : 0;
         _lastInputBlockHeight = inputBlockHeight;
 
-        if (isBlockHeightUpdated)
+        // Nothing to do if no messages and no block height change
+        if (_messages.Count == 0 && blockHeightDelta == 0)
+            return false;
+
+        bool anyRendered = false;
+        int messageCount = 0;
+        bool scrollRegionSet = false;
+        int renderedMessageCount = 0;
+
+        // Handle block growth: some lines get covered by the input block.
+        // First consume any empty lines that were waiting to be filled;
+        // only retrieve from history if growth exceeds the empty gap.
+        if (blockHeightDelta > 0)
         {
-            Clear();
+            int growth = blockHeightDelta;
+
+            int emptyConsumed = Math.Min(_emptyBlocksNumberAfterClearing, growth);
+            _emptyBlocksNumberAfterClearing -= emptyConsumed;
+            growth -= emptyConsumed;
+
+            if (growth > 0 && _renderer is ConsoleRenderer cr)
+            {
+                cr.RetrieveMessagesFromHistory(growth, (Span<string> messages) =>
+                {
+                    for (int i = messages.Length - 1; i >= 0; i--)
+                        _messages.EnqueueAsFirst(messages[i]);
+                });
+            }
         }
 
-        void Clear()
+        void SetupMessageRenderArea()
         {
             if (_renderer is ConsoleRenderer cr)
             {
-                // Scroll region isolates the input block — clearing is redundant.
-                // Messages render at the bottom of the scroll region and scroll up
-                // within it. The input block is overwritten by RenderFullInputBlock
-                // afterwards, so no pre-clearing is needed.
-                inputBlockHeight = _renderer.GetBlockOffset(tick.Input);
                 cr.SetMessageScrollRegion(inputBlockHeight);
                 scrollRegionSet = true;
 
-                int offset = (blockHeightDelta < 0 && _messages.Count > 0) ? blockHeightDelta : 0;
-                // Position cursor at the bottom of the scroll region
-                _terminal.CursorTop = Math.Max(_terminal.BufferHeight - inputBlockHeight - 2 - _emptyBlocksNumberAfterClearing + offset, 0);
+                // Position cursor one line above the scroll bottom so that after
+                // the message's leading WriteLine, the message text lands at the
+                // bottom of the scroll region (just above the input block).
+                int scrollBottom = _terminal.BufferHeight - inputBlockHeight - 1;
+                int pendingShrinkLines = blockHeightDelta < 0 ? -blockHeightDelta : 0;
+                int effectiveEmptyBlocks = _emptyBlocksNumberAfterClearing + pendingShrinkLines;
+                int cursorTop = scrollBottom - 1 - effectiveEmptyBlocks;
+
+                _terminal.CursorTop = Math.Max(0, cursorTop);
                 _terminal.CursorLeft = 0;
             }
             else
@@ -310,60 +310,82 @@ public partial class ConsoleAppHost
                 else
                     _renderer.ClearInputLine();
             }
-            cleared = true;
         }
-            
+
         while (messageCount < chunkSize && _messages.TryDequeue(out var message))
         {
-            if (!cleared)
-            {
-                Clear();
-            }
+            if (!anyRendered)
+                SetupMessageRenderArea();
 
             _renderer.RenderMessage(message);
             anyRendered = true;
             messageCount++;
-            if (_emptyBlocksNumberAfterClearing > 0)
-                _emptyBlocksNumberAfterClearing--;
+            renderedMessageCount++;
         }
 
-        if (!anyRendered && !isBlockHeightUpdated)
-            return false;
+        // If the block changed but no messages were rendered, we still need to
+        // set up the scroll region so exposed-line cleanup and input re-render work.
+        if (!anyRendered && blockHeightDelta != 0 && _renderer is ConsoleRenderer crFallback)
+        {
+            crFallback.SetMessageScrollRegion(inputBlockHeight);
+            scrollRegionSet = true;
+        }
 
         // Reset scroll region before rendering the input block.
-        // Position cursor at the start of where the input block should render.
         if (scrollRegionSet && _renderer is ConsoleRenderer cr2)
-        {
             cr2.ResetScrollRegion();
-            // GetBlockOffset omits the blank WriteLine between input and hints,
-            // so subtract 1 to reach the actual input block top.
-            int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 1;
-            _terminal.CursorTop = Math.Max(0, Math.Min(inputBlockTop, _terminal.BufferHeight - 1));
-            _terminal.CursorLeft = 0;
-        }
 
-        RenderFullInputBlock(tick);
-
+        // When the block shrinks, the lines that used to be part of the input
+        // block are now exposed in the message area. Clear them so stale
+        // separator / hint content doesn't remain visible.
         if (blockHeightDelta < 0)
         {
-            var linesToClear = -blockHeightDelta;
-            _terminal.CursorTop =  Math.Max(0, _terminal.CursorTop - inputBlockHeight - 1 - linesToClear);
-            _renderer.ClearLinesBelowCursor(linesToClear);
-            _emptyBlocksNumberAfterClearing += linesToClear;
-        } 
-        else if (blockHeightDelta > 0)
-        {
-            _renderer.RetrieveMessagesFromHistory(blockHeightDelta, (Span<string> messages) =>
+            int linesExposed = -blockHeightDelta;
+            // GetBlockOffset omits the blank WriteLine between input and hints,
+            // so subtract 1 to reach the actual input block top.
+            int blockTopForClearing = _terminal.BufferHeight - inputBlockHeight - 1;
+
+            for (int i = 1; i <= linesExposed; i++)
             {
-                for (int i = 0; i < messages.Length; i++)
-                    _messages.Enqueue(messages[i]);
-            });
+                int line = blockTopForClearing - i;
+                if (line >= 0 && line < _terminal.BufferHeight)
+                {
+                    _terminal.SetCursorPosition(0, line);
+                    _terminal.Write("\x1b[K");
+                }
+            }
+
+            _emptyBlocksNumberAfterClearing += linesExposed;
         }
+
+        // Position cursor at the top of the input block and render it.
+        int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 1;
+        _terminal.CursorTop = Math.Max(0, Math.Min(inputBlockTop, _terminal.BufferHeight - 1));
+        _terminal.CursorLeft = 0;
+        RenderFullInputBlock(tick);
+
+        // Each rendered message roughly fills one empty block line. This is
+        // approximate since wrapped messages may consume more, but the scroll
+        // region naturally accommodates the difference on subsequent ticks.
+        _emptyBlocksNumberAfterClearing = Math.Max(0, _emptyBlocksNumberAfterClearing - renderedMessageCount);
 
         if (_bottomPanel.IsDirty)
             _bottomPanel.ClearDirty();
 
         return true;
+    }
+
+    /// <summary>Computes how many messages to render this tick based on settings.</summary>
+    private int GetRenderChunkSize()
+    {
+        if (Settings.PrintingMode == MessagePrintingMode.IntChunks)
+            return Settings.RenderChunkSize;
+
+        var currentDateTime = DateTime.UtcNow;
+        double elapsed = (currentDateTime - _lastDateTime).TotalSeconds;
+        double fractionRendered = 1.0 - Math.Exp(-Settings.ExpDecayRate * elapsed);
+        _lastDateTime = currentDateTime;
+        return Math.Max(1, (int)(_messages.Count * fractionRendered));
     }
 
     /// <summary>Applies input/cursor/resize changes. Returns true when the screen was updated.</summary>

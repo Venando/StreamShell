@@ -138,19 +138,15 @@ internal class ConsoleRenderer : IRenderer
     {
         try
         {
-            // Render markup without automatic newline, then clear to
-            // end of line to prevent separator/ghost characters from
-            // leaking into the message area (critical for scroll-region
-            // mode where old input block content can bleed through).
+            _terminal.WriteLine();
             AnsiConsole.Markup(markup);
             _terminal.Write("\x1b[K");
-            _terminal.WriteLine();
         }
         catch (InvalidOperationException)
         {
+            _terminal.WriteLine();
             AnsiConsole.Markup(Markup.Escape(markup));
             _terminal.Write("\x1b[K");
-            _terminal.WriteLine();
         }
 
         _messageHistory.Add(markup);
@@ -179,9 +175,11 @@ internal class ConsoleRenderer : IRenderer
             return;
 
         int blockOffset = GetBlockOffset(lastInput);
-        int bufferHeight = _terminal.BufferHeight;
-        int newTop = _terminal.CursorTop - blockOffset;
-        _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+        // int bufferHeight = _terminal.BufferHeight;
+        // int newTop = _terminal.CursorTop - blockOffset;
+        // _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+
+        MoveCursorBelowMessageStream(lastInput);
         ClearBlock(blockOffset);
     }
 
@@ -240,9 +238,12 @@ internal class ConsoleRenderer : IRenderer
         int selectionLength,
         int margin)
     {
-        int bufferHeight = _terminal.BufferHeight;
-        int newTop = _terminal.CursorTop - (blockOffset - 1);
-        _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+        // int bufferHeight = _terminal.BufferHeight;
+        // int newTop = _terminal.CursorTop - (blockOffset - 1);
+        // _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+
+        MoveCursorBelowMessageStream(input);
+
 
         if (ShowUserField)
         {
@@ -282,10 +283,7 @@ internal class ConsoleRenderer : IRenderer
         int selectionLength,
         int margin)
     {
-        int bufferHeight = _terminal.BufferHeight;
-        int newTop = _terminal.CursorTop - oldBlockOffset;
-        _terminal.CursorLeft = 0;
-        _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
+        MoveCursorBelowMessageStream(input);
 
         if (ShowUserField)
         {
@@ -307,6 +305,14 @@ internal class ConsoleRenderer : IRenderer
             }
         }
         RenderHintsBlock(hints);
+    }
+
+    private void MoveCursorBelowMessageStream(string input)
+    {
+        int inputBlockHeight = GetBlockOffset(input);
+        int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 1;
+        _terminal.CursorTop = Math.Max(0, Math.Min(inputBlockTop, _terminal.BufferHeight - 1));
+        _terminal.CursorLeft = 0;
     }
 
     // ── Input Line Rendering ─────────────────────────────────────────

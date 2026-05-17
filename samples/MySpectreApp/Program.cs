@@ -346,6 +346,37 @@ host.UserInputSubmitted += args =>
     }
 };
 
+
+_ = Task.Run(async () =>
+{
+    var random = new Random();
+    int i = 0;
+    while (true)
+    {
+        await Task.Delay(200);
+        var separator = i++ % 2 == 0 ? '-' : '─';
+        host.SetTopSeparator(null, null, separator);
+    }
+});
+
+
+_ = Task.Run(async () =>
+{
+    var random = new Random();
+    int i = 0;
+    while (true)
+    {
+
+        await Task.Delay(1000);
+        host.AddMessage("───▄▄▄");
+        host.AddMessage("─▄▀░▄░▀▄");
+        host.AddMessage("─█░█▄▀░█");
+        host.AddMessage("─█░▀▄▄▀█▄█▄▀");
+        host.AddMessage("▄▄█▄▄▄▄███▀");
+        host.AddMessage("───────────");
+    }
+});
+
 _ = Task.Run(async () =>
 {
     var random = new Random();
@@ -353,7 +384,7 @@ _ = Task.Run(async () =>
     while (true)
     {
         await Task.Delay(2000);
-        var lines = random.Next(1, 900);
+        var lines = random.Next(1, 20);
         for (int j = 0; j < lines; j++)
             host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
     }
