@@ -292,13 +292,13 @@ public partial class ConsoleAppHost
                 cr.SetMessageScrollRegion(inputBlockHeight);
                 scrollRegionSet = true;
 
-                // Position cursor so new messages fill any exposed empty lines first,
-                // before scrolling older messages up. Include the current shrink so
-                // messages immediately fill freshly exposed lines.
+                // Position cursor one line above the scroll bottom so that after
+                // the message's leading WriteLine, the message text lands at the
+                // bottom of the scroll region (just above the input block).
                 int scrollBottom = _terminal.BufferHeight - inputBlockHeight - 1;
                 int pendingShrinkLines = blockHeightDelta < 0 ? -blockHeightDelta : 0;
                 int effectiveEmptyBlocks = _emptyBlocksNumberAfterClearing + pendingShrinkLines;
-                int cursorTop = scrollBottom - effectiveEmptyBlocks;
+                int cursorTop = scrollBottom - 1 - effectiveEmptyBlocks;
 
                 _terminal.CursorTop = Math.Max(0, cursorTop);
                 _terminal.CursorLeft = 0;
@@ -341,11 +341,13 @@ public partial class ConsoleAppHost
         if (blockHeightDelta < 0)
         {
             int linesExposed = -blockHeightDelta;
-            int newBlockTop = _terminal.BufferHeight - inputBlockHeight;
+            // GetBlockOffset omits the blank WriteLine between input and hints,
+            // so subtract 1 to reach the actual input block top.
+            int blockTopForClearing = _terminal.BufferHeight - inputBlockHeight - 1;
 
             for (int i = 1; i <= linesExposed; i++)
             {
-                int line = newBlockTop - i;
+                int line = blockTopForClearing - i;
                 if (line >= 0 && line < _terminal.BufferHeight)
                 {
                     _terminal.SetCursorPosition(0, line);
