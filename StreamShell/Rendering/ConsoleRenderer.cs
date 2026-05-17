@@ -210,6 +210,8 @@ internal class ConsoleRenderer : IRenderer
         int selectionLength,
         int margin)
     {
+        MoveCursorBelowMessageStream(input);
+
         if (ShowUserField)
         {
             RenderTopSeparator();

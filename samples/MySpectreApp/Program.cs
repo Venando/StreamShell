@@ -346,6 +346,8 @@ host.UserInputSubmitted += args =>
     }
 };
 
+host.SetDefaultPanel(new CharacterCounterPanel());
+
 
 _ = Task.Run(async () =>
 {
@@ -426,22 +428,38 @@ class Variant : IVariant
 // ── Custom bottom panel ──
 class CharacterCounterPanel : IBottomPanel
 {
-    public int LineCount => 3;
+    public int LineCount => _lastCount;
     private readonly string[] _lines = new string[3];
     private string? _lastInput;
 
+    private bool _isDirty = false;
+
+    public bool IsDirty => _isDirty;
+
+    private int _lastCount = 0;
+
+    public CharacterCounterPanel()
+    {
+        _lastCount = 1;
+    }
+
     public IReadOnlyList<string> GetLines(string currentInput)
     {
-        if (currentInput == _lastInput)
-            return _lines;
         _lastInput = currentInput;
 
-        _lines[0] = "";  // No suggestion
-        _lines[1] = "[bold]Character Counter[/]";
-        _lines[2] = string.IsNullOrEmpty(currentInput)
-            ? "[dim]Type something...[/]"
-            : $"[grey]Input length: [green]{currentInput.Length}[/][/]";
-        return _lines;
+        if (currentInput.Length == 0)
+        {
+            _lastCount = 1;
+            return Enumerable.Repeat("", _lastCount).ToArray();
+        }
+        else
+        {
+            _lastCount = 3;
+            _lines[0] = "";  // No suggestion
+            _lines[1] = "[bold]Character Counter[/]";
+            _lines[2] = $"[grey]Input length: [green]{currentInput.Length}[/][/]";
+            return _lines;
+        }
     }
 
     public void Dispose() { }

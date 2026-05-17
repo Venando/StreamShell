@@ -87,6 +87,10 @@ public partial class ConsoleAppHost
         var tick = CaptureTickState();
         SyncPlaceholderCache();
 
+        // Let panel compute lines (may update dynamic LineCount), then sync renderer
+        _bottomPanel.GetLines(tick.Input);
+        _renderer.SetPanelLineCount(_bottomPanel.LineCount);
+
         // Check for resize that has settled (width decreased and stable for several ticks)
         bool widthDecreased = tick.WindowWidth < state.LastWindowWidth;
         bool widthChanged = tick.WindowWidth != state.LastWindowWidth;
@@ -430,12 +434,13 @@ public partial class ConsoleAppHost
     }
 
     /// <summary>Returns true when any tracked state has changed from the last render.</summary>
-    private static bool StateDiffersFromRender(RenderSnapshot state, TickState tick)
+    private bool StateDiffersFromRender(RenderSnapshot state, TickState tick)
     {
         return state.LastInput != tick.Input
             || state.LastCursor != tick.Cursor
             || state.LastHasSelection != tick.HasSelection
-            || state.LastWindowWidth != tick.WindowWidth;
+            || state.LastWindowWidth != tick.WindowWidth
+            || state.LastPanelLineCount != _bottomPanel.LineCount;
     }
 
     private void RenderFullInputBlock(TickState tick)
