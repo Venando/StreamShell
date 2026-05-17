@@ -27,7 +27,7 @@ public enum InputType
 public partial class ConsoleAppHost : IDisposable
 {
     private readonly ITerminal _terminal;
-    private readonly ConcurrentQueue<string> _messages = new();
+    private readonly ThreadSafeQueue<string> _messages = new();
     private readonly CommandManager _commandManager = new();
     private readonly IInputHandler _inputHandler;
     private readonly IRenderer _renderer;

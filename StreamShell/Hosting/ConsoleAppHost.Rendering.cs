@@ -320,10 +320,7 @@ public partial class ConsoleAppHost
                 Clear();
             }
 
-            var semicolonIndex = message.IndexOf(':');
-            if (semicolonIndex != -1)
-                message = message.Substring(semicolonIndex + 1);
-            _renderer.RenderMessage($"{chunkSize:D3}:" + message);
+            _renderer.RenderMessage(message);
             anyRendered = true;
             messageCount++;
             if (_emptyBlocksNumberAfterClearing > 0)
@@ -358,8 +355,10 @@ public partial class ConsoleAppHost
         {
             _renderer.RetrieveMessagesFromHistory(blockHeightDelta, (Span<string> messages) =>
             {
-                for (int i = 0; i < messages.Length; i++)
-                    _messages.Enqueue(messages[i]);
+                for (int i = messages.Length - 1; i >= 0; i--)
+                {
+                    _messages.EnqueueAsFirst(messages[i]);
+                }
             });
         }
 
