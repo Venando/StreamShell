@@ -454,11 +454,10 @@ class CharacterCounterPanel : IBottomPanel
         }
         else
         {
+            _lastCount = 3;
             _lines[0] = "";  // No suggestion
             _lines[1] = "[bold]Character Counter[/]";
-            _lines[2] = string.IsNullOrEmpty(currentInput)
-                ? "[dim]Type something...[/]"
-                : $"[grey]Input length: [green]{currentInput.Length}[/][/]";
+            _lines[2] = $"[grey]Input length: [green]{currentInput.Length}[/][/]";
             return _lines;
         }
     }
