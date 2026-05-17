@@ -352,10 +352,24 @@ _ = Task.Run(async () =>
     int i = 0;
     while (true)
     {
-        await Task.Delay(2000);
-        var lines = random.Next(1, 900);
-        for (int j = 0; j < lines; j++)
-            host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
+
+        await Task.Delay(3000);
+        /*
+        ───▄▄▄
+        ─▄▀░▄░▀▄
+        ─█░█▄▀░█
+        ─█░▀▄▄▀█▄█▄▀
+        ▄▄█▄▄▄▄███▀
+        */
+        host.AddMessage("───▄▄▄");
+        host.AddMessage("─▄▀░▄░▀▄");
+        host.AddMessage("─█░█▄▀░█");
+        host.AddMessage("─█░▀▄▄▀█▄█▄▀");
+        host.AddMessage("▄▄█▄▄▄▄███▀");
+        host.AddMessage("───────────");
+        // var lines = random.Next(1, 20);
+        // for (int j = 0; j < lines; j++)
+        //     host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
     }
 });
 

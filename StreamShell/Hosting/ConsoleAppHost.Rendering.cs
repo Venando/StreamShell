@@ -320,7 +320,10 @@ public partial class ConsoleAppHost
                 Clear();
             }
 
-            _renderer.RenderMessage(message);
+            var semicolonIndex = message.IndexOf(':');
+            if (semicolonIndex != -1)
+                message = message.Substring(semicolonIndex + 1);
+            _renderer.RenderMessage($"{chunkSize:D3}:" + message);
             anyRendered = true;
             messageCount++;
             if (_emptyBlocksNumberAfterClearing > 0)
