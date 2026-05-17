@@ -346,6 +346,35 @@ host.UserInputSubmitted += args =>
     }
 };
 
+host.SetDefaultPanel(new CharacterCounterPanel());
+
+_ = Task.Run(async () =>
+{
+    var random = new Random();
+    int i = 0;
+    while (true)
+    {
+        await Task.Delay(100);
+        if (i++ % 2 == 0)
+            host.SetInputField("/");
+        else
+            host.SetInputField("");
+    }
+});
+
+_ = Task.Run(async () =>
+{
+    var random = new Random();
+    int i = 0;
+    while (true)
+    {
+        await Task.Delay(200);
+        var separator = i++ % 2 == 0 ? '-' : '─';
+        host.SetTopSeparator(null, null, separator);
+    }
+});
+
+
 _ = Task.Run(async () =>
 {
     var random = new Random();
@@ -353,7 +382,7 @@ _ = Task.Run(async () =>
     while (true)
     {
 
-        await Task.Delay(3000);
+        await Task.Delay(6000);
         /*
         ───▄▄▄
         ─▄▀░▄░▀▄
