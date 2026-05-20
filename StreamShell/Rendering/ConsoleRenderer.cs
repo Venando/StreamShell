@@ -211,15 +211,10 @@ internal class ConsoleRenderer : IRenderer
         int selectionLength,
         int margin)
     {
-        int blockTop = CalculateBlockTop(input);
-        if (_lastRenderedBlockTop >= 0 && blockTop != _lastRenderedBlockTop)
-        {
-            _terminal.CursorTop = blockTop;
-            _terminal.CursorLeft = 0;
-            ClearToEndOfBuffer();
-        }
-
         MoveCursorBelowMessageStream(input);
+        int currentTop = _terminal.CursorTop;
+        if (_lastRenderedBlockTop >= 0 && currentTop != _lastRenderedBlockTop)
+            ClearToEndOfScreen();
 
         if (ShowUserField)
         {
@@ -229,7 +224,6 @@ internal class ConsoleRenderer : IRenderer
         }
         else
         {
-            // Emit empty lines in place of separator + input to keep block height stable
             _terminal.WriteLine();
             int inputLines = GetInputLineCount(input);
             for (int i = 0; i < inputLines; i++)
@@ -237,14 +231,14 @@ internal class ConsoleRenderer : IRenderer
         }
         RenderHintsBlock(hints);
 
-        _lastRenderedBlockTop = blockTop;
+        _lastRenderedBlockTop = currentTop;
     }
 
     // ── Overwrite-Only Render ────────────────────────────────────────
     public void OverwriteInputBlock(
         string input,
         IReadOnlyList<string> hints,
-        int blockOffset,
+        int blockOffset, // unused — position derived from input via MoveCursorBelowMessageStream
         int cursorPosition,
         bool hasSelection,
         int selectionStart,
@@ -255,7 +249,7 @@ internal class ConsoleRenderer : IRenderer
         int currentTop = _terminal.CursorTop;
         if (_lastRenderedBlockTop >= 0 && currentTop != _lastRenderedBlockTop)
         {
-            ClearToEndOfBuffer();
+            ClearToEndOfScreen();
         }
 
         if (ShowUserField)
@@ -291,7 +285,7 @@ internal class ConsoleRenderer : IRenderer
     public void OverwriteFullBlock(
         string input,
         IReadOnlyList<string> hints,
-        int oldBlockOffset,
+        int oldBlockOffset, // unused — position derived from input via MoveCursorBelowMessageStream
         int cursorPosition,
         bool hasSelection,
         int selectionStart,
@@ -302,7 +296,7 @@ internal class ConsoleRenderer : IRenderer
         int currentTop = _terminal.CursorTop;
         if (_lastRenderedBlockTop >= 0 && currentTop != _lastRenderedBlockTop)
         {
-            ClearToEndOfBuffer();
+            ClearToEndOfScreen();
         }
 
         if (ShowUserField)
@@ -329,15 +323,9 @@ internal class ConsoleRenderer : IRenderer
         _lastRenderedBlockTop = currentTop;
     }
 
-    private int CalculateBlockTop(string input)
+    private void ClearToEndOfScreen()
     {
-        int inputBlockHeight = GetBlockOffset(input);
-        return _terminal.BufferHeight - inputBlockHeight - 1;
-    }
-
-    private void ClearToEndOfBuffer()
-    {
-        _terminal.Write("\x1b[J"); // ESC[J = clear from cursor to end of screen/buffer
+        _terminal.Write("\x1b[J"); // ESC[0J = clear from cursor to end of visible screen
     }
 
     private void MoveCursorBelowMessageStream(string input)

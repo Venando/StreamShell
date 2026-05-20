@@ -114,7 +114,7 @@ public class ConsoleRendererRenderingTests
             "hello", Array.Empty<string>(),
             0, false, 0, 0, 80);
 
-        // First render should not emit clear-to-end-of-buffer
+        // First render should not emit clear-to-end-of-screen
         Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
 
         // Simulate terminal resize: buffer grows
@@ -124,7 +124,60 @@ public class ConsoleRendererRenderingTests
             "hello", Array.Empty<string>(),
             0, false, 0, 0, 80);
 
-        // Second render must emit clear-to-end-of-buffer because block top shifted
+        // Second render must emit clear-to-end-of-screen because block top shifted
+        Assert.Contains("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void RenderInputBlock_ShowUserFieldFalse_BufferHeightChange_ClearsToEndOfScreen()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.ShowUserField = false;
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // First render should not emit clear-to-end-of-screen
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+
+        // Simulate terminal resize: buffer grows
+        _terminal.BufferHeight = 40;
+
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Second render must emit clear-to-end-of-screen because block top shifted
+        Assert.Contains("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void RenderInputBlock_BufferHeightDecrease_ClearsToEndOfScreen()
+    {
+        _terminal.BufferHeight = 40;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // First render should not emit clear-to-end-of-screen
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+
+        // Simulate terminal resize: buffer shrinks
+        _terminal.BufferHeight = 30;
+
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Second render must emit clear-to-end-of-screen because block top shifted
         Assert.Contains("\x1b[J", _terminal.WrittenTexts);
     }
 
