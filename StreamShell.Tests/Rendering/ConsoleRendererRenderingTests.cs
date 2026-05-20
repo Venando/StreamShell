@@ -102,6 +102,131 @@ public class ConsoleRendererRenderingTests
         Assert.NotNull(renderer);
     }
 
+    [Fact]
+    public void RenderInputBlock_BufferHeightIncrease_ClearsToEndOfBuffer()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // First render should not emit clear-to-end-of-buffer
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+
+        // Simulate terminal resize: buffer grows
+        _terminal.BufferHeight = 40;
+
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Second render must emit clear-to-end-of-buffer because block top shifted
+        Assert.Contains("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void OverwriteFullBlock_BufferHeightIncrease_ClearsToEndOfBuffer()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.OverwriteFullBlock(
+            "hello", Array.Empty<string>(),
+            oldBlockOffset: 4, 0, false, 0, 0, 80);
+
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+
+        _terminal.BufferHeight = 40;
+
+        renderer.OverwriteFullBlock(
+            "hello", Array.Empty<string>(),
+            oldBlockOffset: 4, 0, false, 0, 0, 80);
+
+        Assert.Contains("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void OverwriteInputBlock_BufferHeightIncrease_ClearsToEndOfBuffer()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.OverwriteInputBlock(
+            "hello", Array.Empty<string>(),
+            blockOffset: 4, 0, false, 0, 0, 80);
+
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+
+        _terminal.BufferHeight = 40;
+
+        renderer.OverwriteInputBlock(
+            "hello", Array.Empty<string>(),
+            blockOffset: 4, 0, false, 0, 0, 80);
+
+        Assert.Contains("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void ClearInputBlock_ResetsLastRenderedBlockTop()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Clear should reset tracking
+        renderer.ClearInputBlock("hello");
+
+        _terminal.BufferHeight = 40;
+        _terminal.ClearOutput();
+
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Because tracking was reset, no clear-to-end should be emitted
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void ClearInputBlockForReRender_ResetsLastRenderedBlockTop()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+        _terminal.CursorTop = 20;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // ClearForReRender should reset tracking
+        renderer.ClearInputBlockForReRender("hello", "world", 2);
+
+        _terminal.BufferHeight = 40;
+        _terminal.ClearOutput();
+
+        renderer.RenderInputBlock(
+            "world", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Because tracking was reset, no clear-to-end should be emitted
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+    }
+
     // ── RenderInputBlock ─────────────────────────────────────────────
 
     [Fact]
