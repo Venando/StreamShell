@@ -26,7 +26,8 @@ internal class ConsoleRenderer : IRenderer
     private string? _cachedBottomSepLine;
     private SeparatorConfig? _cachedTopSepConfig;
     private SeparatorConfig? _cachedBottomSepConfig;
-    private int _cachedSepWidth;
+    private int _cachedTopSepWidth;
+    private int _cachedBottomSepWidth;
 
     /// <summary>
     /// Reserve one column from terminal width for separator rendering.
@@ -630,21 +631,21 @@ internal class ConsoleRenderer : IRenderer
 
     /// <summary>Renders the top separator (between message feed and input block).</summary>
     private void RenderTopSeparator()
-        => RenderSeparator(TopSeparator, ref _cachedTopSepLine, ref _cachedTopSepConfig);
+        => RenderSeparator(TopSeparator, ref _cachedTopSepLine, ref _cachedTopSepConfig, ref _cachedTopSepWidth);
 
     /// <summary>Renders the bottom separator (between input line and hints block).</summary>
     private void RenderBottomSeparator()
-        => RenderSeparator(BottomSeparator, ref _cachedBottomSepLine, ref _cachedBottomSepConfig);
+        => RenderSeparator(BottomSeparator, ref _cachedBottomSepLine, ref _cachedBottomSepConfig, ref _cachedBottomSepWidth);
 
     /// <summary>Renders a separator line, caching the built string when config and width are stable.</summary>
-    private void RenderSeparator(SeparatorConfig config, ref string? cachedLine, ref SeparatorConfig? cachedConfig)
+    private void RenderSeparator(SeparatorConfig config, ref string? cachedLine, ref SeparatorConfig? cachedConfig, ref int cachedWidth)
     {
         int width = _terminal.WindowWidth - TerminalWidthMargin;
-        if (cachedLine == null || _cachedSepWidth != width || cachedConfig != config)
+        if (cachedLine == null || cachedWidth != width || cachedConfig != config)
         {
             cachedLine = BuildSeparatorLine(config, width);
             cachedConfig = config;
-            _cachedSepWidth = width;
+            cachedWidth = width;
         }
         AnsiConsole.Markup(cachedLine);
         _terminal.Write("\x1b[K");
