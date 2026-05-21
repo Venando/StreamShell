@@ -92,6 +92,38 @@ public partial class ConsoleAppHost
         _bottomPanel.GetLines(tick.Input);
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
 
+        // ── Buffer height change: exposed lines become empty blocks ──────
+        int currentBufferHeight = _terminal.BufferHeight;
+        int bufferHeightDelta = currentBufferHeight - state.LastBufferHeight;
+
+        if (bufferHeightDelta > 0 && state.LastBufferHeight > 0 && state.LastInput is not null)
+        {
+            // Buffer grew: the input block moved down, exposing lines in the message area.
+            // Add exposed lines to empty-block counter so messages fill them from top.
+            _emptyBlocksNumberAfterClearing += bufferHeightDelta;
+
+            // Clear old block content so separator / hints don't leak into messages.
+            int oldBlockOffset = (1 + state.LastPanelLineCount)
+                + _renderer.GetInputLineCount(state.LastInput);
+            int oldBlockTop = state.LastBufferHeight - oldBlockOffset - 1;
+
+            for (int i = 0; i < oldBlockOffset + 1; i++)
+            {
+                int line = oldBlockTop + i;
+                if (line >= 0 && line < currentBufferHeight)
+                {
+                    _terminal.SetCursorPosition(0, line);
+                    _terminal.Write("\x1b[K");
+                }
+            }
+        }
+        else if (bufferHeightDelta < 0)
+        {
+            // Buffer shrank: cap empty blocks so they don't exceed available space.
+            _emptyBlocksNumberAfterClearing = Math.Max(0,
+                _emptyBlocksNumberAfterClearing + bufferHeightDelta);
+        }
+
         // Check for resize that has settled (width decreased and stable for several ticks)
         bool widthDecreased = tick.WindowWidth < state.LastWindowWidth;
         bool widthChanged = tick.WindowWidth != state.LastWindowWidth;
