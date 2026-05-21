@@ -693,7 +693,7 @@ public class CursorMovementHandlerTests
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Word Left / Right
+    //  Word Left / Right — VS Code-style (separator-aware)
     // ══════════════════════════════════════════════════════════════════
 
     [Fact]
@@ -770,6 +770,105 @@ public class CursorMovementHandlerTests
         var handler = CreateHandlerWithAttachments(buf, new SelectionManager(), attachments);
         handler.MoveCursorWordRight(shift: false);
         Assert.Equal(buf.CurrentInput.IndexOf("cd", StringComparison.Ordinal), buf.CursorPosition);
+    }
+
+    // ── Separator-aware word navigation ──
+
+    [Fact]
+    public void MoveWordRight_SkipsSeparators_ToNextWord()
+    {
+        // "hello.world" — Ctrl+→ from 'h' should skip past '.' to 'w'
+        var buf = new TextBuffer();
+        buf.Insert("hello.world");
+        buf.MoveTo(0);
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordRight(shift: false);
+        Assert.Equal(6, buf.CursorPosition); // start of 'world'
+    }
+
+    [Fact]
+    public void MoveWordLeft_SkipsSeparators_ToPreviousWord()
+    {
+        // "hello.world" — Ctrl+← from end goes to start of 'world' (6),
+        // skipping past '.' separator. Another Ctrl+← would go to 'hello' (0).
+        var buf = new TextBuffer();
+        buf.Insert("hello.world");
+        buf.MoveTo(11);
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordLeft(shift: false);
+        Assert.Equal(6, buf.CursorPosition); // start of 'world'
+    }
+
+    [Fact]
+    public void MoveWordRight_MultipleSeparators_SkipsAll()
+    {
+        // "a++b" — Ctrl+→ from 'a' should skip '++' to 'b'
+        var buf = new TextBuffer();
+        buf.Insert("a++b");
+        buf.MoveTo(0);
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordRight(shift: false);
+        Assert.Equal(3, buf.CursorPosition); // start of 'b'
+    }
+
+    [Fact]
+    public void MoveWordLeft_MultipleSeparators_SkipsAll()
+    {
+        // "a++b" — Ctrl+← from end goes to 'b' start (3), skipping '++'
+        var buf = new TextBuffer();
+        buf.Insert("a++b");
+        buf.MoveTo(4);
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordLeft(shift: false);
+        Assert.Equal(3, buf.CursorPosition); // start of 'b'
+    }
+
+    [Fact]
+    public void MoveWordRight_SpacedPunctuation_SkipsSeparators()
+    {
+        // "cmd /arg value" — Ctrl+→ from start skips 'cmd' then ' /' to 'arg' (5)
+        var buf = new TextBuffer();
+        buf.Insert("cmd /arg value");
+        buf.MoveTo(0);
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordRight(shift: false);
+        Assert.Equal(5, buf.CursorPosition); // start of 'arg'
+    }
+
+    [Fact]
+    public void MoveWordLeft_SpacedPunctuation_SkipsSeparators()
+    {
+        // "cmd /arg value" — from middle of 'value' (10), Ctrl+← goes to 'value' start (9)
+        var buf = new TextBuffer();
+        buf.Insert("cmd /arg value");
+        buf.MoveTo(10); // 'a' in 'value'
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordLeft(shift: false);
+        Assert.Equal(9, buf.CursorPosition); // start of 'value'
+    }
+
+    [Fact]
+    public void MoveWordRight_InsideWord_GoesToNextWord()
+    {
+        // "hello world" — from middle of 'hello', Ctrl+→ goes to 'world'
+        var buf = new TextBuffer();
+        buf.Insert("hello world");
+        buf.MoveTo(3); // 'l' in 'hello'
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordRight(shift: false);
+        Assert.Equal(6, buf.CursorPosition); // start of 'world'
+    }
+
+    [Fact]
+    public void MoveWordLeft_InsideWord_GoesToWordStart()
+    {
+        // "hello world" — from middle of 'world', Ctrl+← goes to 'w'
+        var buf = new TextBuffer();
+        buf.Insert("hello world");
+        buf.MoveTo(9); // 'l' in 'world'
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordLeft(shift: false);
+        Assert.Equal(6, buf.CursorPosition); // start of 'world'
     }
 
     // ══════════════════════════════════════════════════════════════════

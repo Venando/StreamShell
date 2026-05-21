@@ -282,8 +282,8 @@ internal class CursorMovementHandler
                         target = start;
                         break;
                     }
-                    // Target landed inside placeholder → jump to its start
-                    if (target > start && target < end)
+                    // Target landed inside or immediately after placeholder → jump to its start
+                    if (target > start && target <= end)
                     {
                         target = start;
                         break;
@@ -338,12 +338,26 @@ internal class CursorMovementHandler
         }
     }
 
+    private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+    private static bool IsSeparator(char c) => !IsWordChar(c) && !char.IsWhiteSpace(c);
+
     private static int FindPreviousWordStart(string input, int pos)
     {
         if (pos <= 0) return 0;
         int i = pos - 1;
-        while (i >= 0 && char.IsWhiteSpace(input[i])) i--;
-        while (i >= 0 && !char.IsWhiteSpace(input[i])) i--;
+
+        // Case 1: cursor is inside a word → go to start of this word
+        if (IsWordChar(input[i]))
+        {
+            while (i >= 0 && IsWordChar(input[i])) i--;
+            return i + 1;
+        }
+
+        // Case 2: cursor is on whitespace/separator → go to start of previous word
+        // Skip backward over whitespace and separators
+        while (i >= 0 && !IsWordChar(input[i])) i--;
+        // Now on a word char — skip back to its start
+        while (i >= 0 && IsWordChar(input[i])) i--;
         return i + 1;
     }
 
@@ -352,8 +366,10 @@ internal class CursorMovementHandler
         int len = input.Length;
         if (pos >= len) return len;
         int i = pos;
-        while (i < len && !char.IsWhiteSpace(input[i])) i++;
-        while (i < len && char.IsWhiteSpace(input[i])) i++;
+        // If we're on a word character, skip to the end of the current word
+        while (i < len && IsWordChar(input[i])) i++;
+        // Skip separators (punctuation/symbols) and whitespace
+        while (i < len && !IsWordChar(input[i])) i++;
         return i;
     }
 
