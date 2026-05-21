@@ -50,6 +50,9 @@ internal class ConsoleRenderer : IRenderer
         RightMargin = terminal.WindowWidth;
     }
 
+    private int _lastRenderedBlockTop = -1;
+    private int _lastRenderedBlockHeight = 0;
+
     private readonly MarkupBuilder _markupBuilder;
 
     public int RightMargin { get; set; }
@@ -175,13 +178,11 @@ internal class ConsoleRenderer : IRenderer
         if (lastInput is null)
             return;
 
-        int blockOffset = GetBlockOffset(lastInput);
-        // int bufferHeight = _terminal.BufferHeight;
-        // int newTop = _terminal.CursorTop - blockOffset;
-        // _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
-
         MoveCursorBelowMessageStream(lastInput);
+        int blockOffset = GetBlockOffset(lastInput);
         ClearBlock(blockOffset);
+        _lastRenderedBlockTop = -1;
+        _lastRenderedBlockHeight = 0;
     }
 
     /// <summary>Clears enough lines to cover both old and new block heights,
@@ -199,6 +200,8 @@ internal class ConsoleRenderer : IRenderer
         int newTop = _terminal.CursorTop - oldOffset;
         _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
         ClearBlock(clearOffset);
+        _lastRenderedBlockTop = -1;
+        _lastRenderedBlockHeight = 0;
     }
 
     // ── Full Block Render ────────────────────────────────────────────
@@ -212,6 +215,9 @@ internal class ConsoleRenderer : IRenderer
         int margin)
     {
         MoveCursorBelowMessageStream(input);
+        int currentTop = _terminal.CursorTop;
+        if (currentTop != _lastRenderedBlockTop)
+            ClearOnPositionShift(currentTop);
 
         if (ShowUserField)
         {
@@ -221,32 +227,34 @@ internal class ConsoleRenderer : IRenderer
         }
         else
         {
-            // Emit empty lines in place of separator + input to keep block height stable
             _terminal.WriteLine();
             int inputLines = GetInputLineCount(input);
             for (int i = 0; i < inputLines; i++)
                 _terminal.WriteLine();
         }
         RenderHintsBlock(hints);
+
+        _lastRenderedBlockTop = currentTop;
+        _lastRenderedBlockHeight = GetBlockOffset(input);
     }
 
     // ── Overwrite-Only Render ────────────────────────────────────────
     public void OverwriteInputBlock(
         string input,
         IReadOnlyList<string> hints,
-        int blockOffset,
+        int blockOffset, // position-derived height, used when block shifts
         int cursorPosition,
         bool hasSelection,
         int selectionStart,
         int selectionLength,
         int margin)
     {
-        // int bufferHeight = _terminal.BufferHeight;
-        // int newTop = _terminal.CursorTop - (blockOffset - 1);
-        // _terminal.CursorTop = Math.Max(0, Math.Min(newTop, bufferHeight - 1));
-
         MoveCursorBelowMessageStream(input);
-
+        int currentTop = _terminal.CursorTop;
+        if (currentTop != _lastRenderedBlockTop)
+        {
+            ClearOnPositionShift(currentTop, blockOffset);
+        }
 
         if (ShowUserField)
         {
@@ -265,6 +273,9 @@ internal class ConsoleRenderer : IRenderer
             }
         }
         RenderHintsBlock(hints);
+
+        _lastRenderedBlockTop = currentTop;
+        _lastRenderedBlockHeight = blockOffset > 0 ? blockOffset : GetBlockOffset(input);
     }
 
     // ── Full-Block Overwrite (no clear-first — eliminates flicker) ────
@@ -279,7 +290,7 @@ internal class ConsoleRenderer : IRenderer
     public void OverwriteFullBlock(
         string input,
         IReadOnlyList<string> hints,
-        int oldBlockOffset,
+        int oldBlockOffset, // previous block height, used when block shifts
         int cursorPosition,
         bool hasSelection,
         int selectionStart,
@@ -287,6 +298,11 @@ internal class ConsoleRenderer : IRenderer
         int margin)
     {
         MoveCursorBelowMessageStream(input);
+        int currentTop = _terminal.CursorTop;
+        if (currentTop != _lastRenderedBlockTop)
+        {
+            ClearOnPositionShift(currentTop, oldBlockOffset);
+        }
 
         if (ShowUserField)
         {
@@ -308,6 +324,35 @@ internal class ConsoleRenderer : IRenderer
             }
         }
         RenderHintsBlock(hints);
+
+        _lastRenderedBlockTop = currentTop;
+        _lastRenderedBlockHeight = oldBlockOffset > 0 ? oldBlockOffset : GetBlockOffset(input);
+    }
+
+    private void ClearOnPositionShift(int currentTop, int oldBlockHeight = 0)
+    {
+        if (_lastRenderedBlockTop < 0)
+            return;
+
+        int height = oldBlockHeight > 0 ? oldBlockHeight : _lastRenderedBlockHeight;
+
+        // If old block is above the new position (buffer grew), clear it explicitly
+        // so stale content doesn't leak into the message stream.
+        if (_lastRenderedBlockTop < currentTop && height > 0)
+        {
+            _terminal.SetCursorPosition(0, _lastRenderedBlockTop);
+            ClearBlock(height);
+        }
+
+        // Clear from new position to end of screen (handles buffer shrink case
+        // where old block is below, plus ensures the new area is clean).
+        _terminal.SetCursorPosition(0, currentTop);
+        ClearToEndOfScreen();
+    }
+
+    private void ClearToEndOfScreen()
+    {
+        _terminal.Write("\x1b[J"); // ESC[0J = clear from cursor to end of visible screen
     }
 
     private void MoveCursorBelowMessageStream(string input)

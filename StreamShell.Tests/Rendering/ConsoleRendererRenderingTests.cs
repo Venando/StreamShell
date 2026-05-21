@@ -102,6 +102,324 @@ public class ConsoleRendererRenderingTests
         Assert.NotNull(renderer);
     }
 
+    [Fact]
+    public void RenderInputBlock_BufferHeightIncrease_ClearsToEndOfBuffer()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // First render should not emit clear-to-end-of-screen
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+
+        // Simulate terminal resize: buffer grows
+        _terminal.BufferHeight = 40;
+
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Second render must emit clear-to-end-of-screen because block top shifted
+        Assert.Contains("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void RenderInputBlock_BufferHeightIncrease_ClearsOldBlockArea()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        int firstTop = _terminal.CursorTop;
+        _terminal.ClearOutput();
+
+        // Simulate terminal resize: buffer grows
+        _terminal.BufferHeight = 40;
+
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        int secondTop = _terminal.CursorTop;
+
+        // Old block top must be explicitly cleared (old area is above new area)
+        Assert.True(secondTop > firstTop, $"Expected secondTop ({secondTop}) > firstTop ({firstTop})");
+
+        var oldTopClear = _terminal.SetCursorCalls.Any(c => c.Top == firstTop && c.Left == 0);
+        Assert.True(oldTopClear, "Should clear old block area when buffer grows");
+    }
+
+    [Fact]
+    public void OverwriteFullBlock_BufferHeightIncrease_ClearsOldBlockArea()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.OverwriteFullBlock(
+            "hello", Array.Empty<string>(),
+            oldBlockOffset: 4, 0, false, 0, 0, 80);
+
+        int firstTop = _terminal.CursorTop;
+        _terminal.ClearOutput();
+
+        _terminal.BufferHeight = 40;
+
+        renderer.OverwriteFullBlock(
+            "hello", Array.Empty<string>(),
+            oldBlockOffset: 4, 0, false, 0, 0, 80);
+
+        int secondTop = _terminal.CursorTop;
+
+        Assert.True(secondTop > firstTop, $"Expected secondTop ({secondTop}) > firstTop ({firstTop})");
+
+        var oldTopClear = _terminal.SetCursorCalls.Any(c => c.Top == firstTop && c.Left == 0);
+        Assert.True(oldTopClear, "Should clear old block area when buffer grows");
+    }
+
+    [Fact]
+    public void OverwriteInputBlock_BufferHeightIncrease_ClearsOldBlockArea()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.OverwriteInputBlock(
+            "hello", Array.Empty<string>(),
+            blockOffset: 4, 0, false, 0, 0, 80);
+
+        int firstTop = _terminal.CursorTop;
+        _terminal.ClearOutput();
+
+        _terminal.BufferHeight = 40;
+
+        renderer.OverwriteInputBlock(
+            "hello", Array.Empty<string>(),
+            blockOffset: 4, 0, false, 0, 0, 80);
+
+        int secondTop = _terminal.CursorTop;
+
+        Assert.True(secondTop > firstTop, $"Expected secondTop ({secondTop}) > firstTop ({firstTop})");
+
+        var oldTopClear = _terminal.SetCursorCalls.Any(c => c.Top == firstTop && c.Left == 0);
+        Assert.True(oldTopClear, "Should clear old block area when buffer grows");
+    }
+
+    [Fact]
+    public void RenderInputBlock_ShowUserFieldFalse_BufferHeightChange_ClearsToEndOfScreen()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.ShowUserField = false;
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // First render should not emit clear-to-end-of-screen
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+
+        // Simulate terminal resize: buffer grows
+        _terminal.BufferHeight = 40;
+
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Second render must emit clear-to-end-of-screen because block top shifted
+        Assert.Contains("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void RenderInputBlock_BufferHeightDecrease_ClearsToEndOfScreen()
+    {
+        _terminal.BufferHeight = 40;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // First render should not emit clear-to-end-of-screen
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+
+        // Simulate terminal resize: buffer shrinks
+        _terminal.BufferHeight = 30;
+
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Second render must emit clear-to-end-of-screen because block top shifted
+        Assert.Contains("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void OverwriteFullBlock_BufferHeightIncrease_ClearsToEndOfBuffer()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.OverwriteFullBlock(
+            "hello", Array.Empty<string>(),
+            oldBlockOffset: 4, 0, false, 0, 0, 80);
+
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+
+        _terminal.BufferHeight = 40;
+
+        renderer.OverwriteFullBlock(
+            "hello", Array.Empty<string>(),
+            oldBlockOffset: 4, 0, false, 0, 0, 80);
+
+        Assert.Contains("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void OverwriteInputBlock_BufferHeightIncrease_ClearsToEndOfBuffer()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.OverwriteInputBlock(
+            "hello", Array.Empty<string>(),
+            blockOffset: 4, 0, false, 0, 0, 80);
+
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+
+        _terminal.BufferHeight = 40;
+
+        renderer.OverwriteInputBlock(
+            "hello", Array.Empty<string>(),
+            blockOffset: 4, 0, false, 0, 0, 80);
+
+        Assert.Contains("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void ClearInputBlock_ResetsLastRenderedBlockTop()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Clear should reset tracking
+        renderer.ClearInputBlock("hello");
+
+        _terminal.BufferHeight = 40;
+        _terminal.ClearOutput();
+
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Because tracking was reset, no clear-to-end should be emitted
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void ClearInputBlock_ResetsLastRenderedBlockHeight()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        renderer.ClearInputBlock("hello");
+
+        _terminal.BufferHeight = 40;
+        _terminal.ClearOutput();
+
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Tracking was reset, so no old-block clear should be emitted
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void ClearInputBlockForReRender_ResetsLastRenderedBlockTop()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+        _terminal.CursorTop = 20;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // ClearForReRender should reset tracking
+        renderer.ClearInputBlockForReRender("hello", "world", 2);
+
+        _terminal.BufferHeight = 40;
+        _terminal.ClearOutput();
+
+        renderer.RenderInputBlock(
+            "world", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Because tracking was reset, no clear-to-end should be emitted
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+    }
+
+    [Fact]
+    public void ClearInputBlockForReRender_ResetsLastRenderedBlockHeight()
+    {
+        _terminal.BufferHeight = 30;
+        _terminal.WindowWidth = 80;
+        _terminal.CursorTop = 20;
+
+        var renderer = CreateRenderer();
+        renderer.SetPanelLineCount(2);
+        renderer.RenderInputBlock(
+            "hello", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        renderer.ClearInputBlockForReRender("hello", "world", 2);
+
+        _terminal.BufferHeight = 40;
+        _terminal.ClearOutput();
+
+        renderer.RenderInputBlock(
+            "world", Array.Empty<string>(),
+            0, false, 0, 0, 80);
+
+        // Tracking was reset, so no old-block clear should be emitted
+        Assert.DoesNotContain("\x1b[J", _terminal.WrittenTexts);
+    }
+
     // ── RenderInputBlock ─────────────────────────────────────────────
 
     [Fact]

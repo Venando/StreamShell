@@ -12,7 +12,8 @@ public partial class ConsoleAppHost
         bool LastHasSelection,
         int LastInputLineCount,
         int LastWindowWidth,
-        int LastPanelLineCount
+        int LastPanelLineCount,
+        int LastBufferHeight
     );
 
     // ── Resize detection ─────────────────────────────────────────────
@@ -37,7 +38,7 @@ public partial class ConsoleAppHost
 
     private async Task RunLoop(CancellationToken token)
     {
-        var state = new RenderSnapshot(null, 0, false, 0, _terminal.WindowWidth, _bottomPanel.LineCount);
+        var state = new RenderSnapshot(null, 0, false, 0, _terminal.WindowWidth, _bottomPanel.LineCount, _terminal.BufferHeight);
 
         while (!token.IsCancellationRequested)
         {
@@ -91,7 +92,38 @@ public partial class ConsoleAppHost
         _bottomPanel.GetLines(tick.Input);
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
 
-        // Check for resize that has settled (width decreased and stable for several ticks)
+        // ── Buffer height change: exposed lines become empty blocks ──────
+        int currentBufferHeight = _terminal.BufferHeight;
+        int bufferHeightDelta = currentBufferHeight - state.LastBufferHeight;
+
+        if (bufferHeightDelta > 0 && state.LastBufferHeight > 0 && state.LastInput is not null)
+        {
+            // Buffer grew: the input block moved down, exposing lines in the message area.
+            // Add exposed lines to empty-block counter so messages fill them from top.
+            _emptyBlocksNumberAfterClearing += bufferHeightDelta;
+
+            // Clear old block content so separator / hints don't leak into messages.
+            int oldBlockOffset = (1 + state.LastPanelLineCount)
+                + _renderer.GetInputLineCount(state.LastInput);
+            int oldBlockTop = state.LastBufferHeight - oldBlockOffset - 1;
+
+            for (int i = 0; i < oldBlockOffset + 1; i++)
+            {
+                int line = oldBlockTop + i;
+                if (line >= 0 && line < currentBufferHeight)
+                {
+                    _terminal.SetCursorPosition(0, line);
+                    _terminal.Write("\x1b[K");
+                }
+            }
+        }
+        else if (bufferHeightDelta < 0)
+        {
+            // Buffer shrank: cap empty blocks so they don't exceed available space.
+            _emptyBlocksNumberAfterClearing = Math.Max(0,
+                _emptyBlocksNumberAfterClearing + bufferHeightDelta);
+        }
+
         bool widthDecreased = tick.WindowWidth < state.LastWindowWidth;
         bool widthChanged = tick.WindowWidth != state.LastWindowWidth;
 
@@ -118,33 +150,26 @@ public partial class ConsoleAppHost
                     _lastReplayWidth = tick.WindowWidth;
                     ReplayTriggerCount++;
 
-                    // Re-emit last N messages
+                    // Move messages from history back into the queue so they render
+                    // through the normal pipeline (scroll region, empty-block tracking,
+                    // proper cursor positioning). This prevents the top separator from
+                    // leaking into the message stream when messages replay directly via
+                    // AnsiConsole.MarkupLine without a scroll region.
                     int replayCount = Settings.MessageReplayCount < 0
                         ? Console.WindowHeight + 1
                         : Settings.MessageReplayCount;
                     if (_renderer is ConsoleRenderer cr)
-                        cr.ReplayMessages(replayCount);
+                    {
+                        cr.RetrieveMessagesFromHistory(replayCount, (Span<string> messages) =>
+                        {
+                            for (int i = messages.Length - 1; i >= 0; i--)
+                                _messages.EnqueueAsFirst(messages[i]);
+                        });
+                    }
                 }
-
-                // After replay (or skip), we need a full re-render of the input block
-                RenderFullInputBlock(tick);
-                var postReplayState = new RenderSnapshot(tick.Input, tick.Cursor, tick.HasSelection,
-                    _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount);
-
-                if (_inputHandler.QuitRequested)
-                {
-                    _inputHandler.QuitRequested = false;
-                    return ("__QUIT__", postReplayState);
-                }
-
-                string? submittedInput = _inputHandler.ProcessInput();
-                if (submittedInput != null)
-                {
-                    HandleSubmittedInput(submittedInput, tick.WindowWidth);
-                    postReplayState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount);
-                }
-
-                return (submittedInput, postReplayState);
+                // Fall through to TryRender — RenderQueuedMessages will handle both
+                // replayed messages (now in _messages) and any new queued messages,
+                // with proper scroll-region setup and empty-block tracking.
             }
         }
         else if (_resizeDetected && widthChanged && !widthDecreased)
@@ -157,7 +182,7 @@ public partial class ConsoleAppHost
         bool rendered = TryRender(state, tick);
         var newState = rendered
             ? new RenderSnapshot(tick.Input, tick.Cursor, tick.HasSelection,
-                _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount)
+                _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount, _terminal.BufferHeight)
             : state;
 
         if (_inputHandler.QuitRequested)
@@ -170,7 +195,7 @@ public partial class ConsoleAppHost
         if (submitted != null)
         {
             HandleSubmittedInput(submitted, tick.WindowWidth);
-            newState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount);
+            newState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount, _terminal.BufferHeight);
         }
 
         return (submitted, newState);
@@ -440,7 +465,8 @@ public partial class ConsoleAppHost
             || state.LastCursor != tick.Cursor
             || state.LastHasSelection != tick.HasSelection
             || state.LastWindowWidth != tick.WindowWidth
-            || state.LastPanelLineCount != _bottomPanel.LineCount;
+            || state.LastPanelLineCount != _bottomPanel.LineCount
+            || state.LastBufferHeight != _terminal.BufferHeight;
     }
 
     private void RenderFullInputBlock(TickState tick)

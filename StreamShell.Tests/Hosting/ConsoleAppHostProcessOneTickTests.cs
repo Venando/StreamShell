@@ -18,7 +18,7 @@ public class ConsoleAppHostProcessOneTickTests
     {
         _host = new ConsoleAppHost(_renderer, _inputHandler, _terminal);
         _state = new ConsoleAppHost.RenderSnapshot(
-            null, 0, false, 0, _terminal.WindowWidth, 2);
+            null, 0, false, 0, _terminal.WindowWidth, 2, _terminal.BufferHeight);
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -362,7 +362,7 @@ public class ConsoleAppHostProcessOneTickTests
         var renderer = new ConsoleRenderer(new StreamShellSettings(), _terminal);
         _host = new ConsoleAppHost(renderer, _inputHandler, _terminal);
         _state = new ConsoleAppHost.RenderSnapshot(
-            null, 0, false, 0, _terminal.WindowWidth, 2);
+            null, 0, false, 0, _terminal.WindowWidth, 2, _terminal.BufferHeight);
 
         _inputHandler.Attachments.Add(
             new Attachment("content", AttachmentType.PlainText, 2, 1, "[paste #1, 2 lines]"));
@@ -379,7 +379,7 @@ public class ConsoleAppHostProcessOneTickTests
         var renderer = new ConsoleRenderer(new StreamShellSettings(), _terminal);
         _host = new ConsoleAppHost(renderer, _inputHandler, _terminal);
         _state = new ConsoleAppHost.RenderSnapshot(
-            null, 0, false, 0, _terminal.WindowWidth, 2);
+            null, 0, false, 0, _terminal.WindowWidth, 2, _terminal.BufferHeight);
 
         _host.ProcessOneTick(_state);
 
