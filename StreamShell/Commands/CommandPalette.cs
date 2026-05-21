@@ -208,7 +208,7 @@ internal class CommandPalette : IBottomPanel
         // Status line at index 0 (first line) — shows input schema + scroll position
         int startIdx = ScrollOffset + 1;
         int endIdx = Math.Min(ScrollOffset + HintCapacity, _matchingBuffer.Count);
-        _linesBuffer.Add($"  [dim gray]\u2191\u2193: scroll, tab: autocomplete, {startIdx}-{endIdx}/{_matchingBuffer.Count}[/]");
+        _linesBuffer.Add($"  [{_paletteStyle.NavigationHintStyle}]\u2191\u2193: scroll, tab: autocomplete, {startIdx}-{endIdx}/{_matchingBuffer.Count}[/]");
 
         int spaceIndex = query.IndexOf(' ');
 
@@ -474,8 +474,8 @@ internal class CommandPalette : IBottomPanel
 
         if (isSelected)
         {
-            _sb.Append("[on ");
-            _sb.Append(p.SelectedBackground);
+            _sb.Append("[");
+            _sb.Append(p.SelectedStyle);
             _sb.Append("][");
             _sb.Append(p.SelectedCursorColor);
             _sb.Append(']');

@@ -6,8 +6,8 @@ namespace StreamShell;
 /// </summary>
 public class PaletteStyle
 {
-    /// <summary>Background color for the selected hint row. Default: "white".</summary>
-    public string SelectedBackground { get; set; } = "white";
+    /// <summary> Selected style for the selected hint row. Default: "on white".</summary>
+    public string SelectedStyle { get; set; } = "on white";
 
     /// <summary>Text color for the selected row cursor arrow. Default: "black".</summary>
     public string SelectedCursorColor { get; set; } = "black";
@@ -26,4 +26,7 @@ public class PaletteStyle
 
     /// <summary>Text color for slash and name in normal rows. Default: "grey".</summary>
     public string NormalNameColor { get; set; } = "grey";
+
+    /// <summary>Style and color for navigation hints below the separtor.</summary>
+    public string NavigationHintStyle { get; set; } = "dim gray";
 }
