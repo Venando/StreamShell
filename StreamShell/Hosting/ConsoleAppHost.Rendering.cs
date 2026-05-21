@@ -211,6 +211,8 @@ public partial class ConsoleAppHost
         // at the same place" after a resize).
         int windowWidth = _terminal.WindowWidth;
         _inputHandler.RightMargin = windowWidth;
+        _inputHandler.PrefixMargin = Settings.PrefixMargin;
+        _inputHandler.WrappingRightMargin = Settings.WrappingRightMargin;
         if (_renderer is ConsoleRenderer cr)
             cr.RightMargin = windowWidth;
 

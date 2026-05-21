@@ -331,21 +331,24 @@ public static class LineWrappingService
         string input, int cursorPosition, int margin,
         int prefixMargin = 2, int rightMargin = 4, bool wordWrap = false)
     {
-        var offsets = GetVisualLineOffsets(input, margin, prefixMargin, rightMargin, wordWrap);
-        int accumulated = 0;
+        var lines = new List<string>();
+        var offsets = new List<int>();
+        PopulateVisualLineData(input, margin, lines, offsets, prefixMargin, rightMargin, wordWrap);
 
-        for (int i = 0; i < offsets.Count; i++)
+        for (int i = lines.Count - 1; i >= 0; i--)
         {
-            int lineLen = offsets[i];
-            if (accumulated + lineLen > cursorPosition)
-                return (i, cursorPosition - accumulated);
-            accumulated += lineLen;
+            if (offsets[i] <= cursorPosition)
+            {
+                int col = cursorPosition - offsets[i];
+                if (col <= lines[i].Length)
+                    return (i, col);
+            }
         }
 
-        if (offsets.Count == 0)
+        if (lines.Count == 0)
             return (0, 0);
 
-        return (offsets.Count - 1, offsets[^1]);
+        return (lines.Count - 1, lines[^1].Length);
     }
 
     /// <summary>

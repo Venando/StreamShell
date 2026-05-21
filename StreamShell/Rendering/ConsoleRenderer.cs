@@ -100,7 +100,7 @@ internal class ConsoleRenderer : IRenderer
     private int GetBlockOffset(string input, int panelLineCount)
     {
         return (1 + panelLineCount) + LineWrappingService.GetInputLineCount(
-            input, _terminal.WindowWidth, 2, 4);
+            input, _terminal.WindowWidth, _settings.PrefixMargin, _settings.WrappingRightMargin, _settings.WordWrap);
     }
 
     /// <summary>Number of visual lines the input occupies.</summary>

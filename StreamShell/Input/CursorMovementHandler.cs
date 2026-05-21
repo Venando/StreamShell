@@ -15,6 +15,8 @@ internal class CursorMovementHandler
     private readonly TextBuffer _buffer;
     private readonly SelectionManager _selection;
     private readonly Func<int> _getRightMargin;
+    private readonly Func<int> _getPrefixMargin;
+    private readonly Func<int> _getWrappingRightMargin;
     private readonly Func<IReadOnlyList<Attachment>> _getAttachments;
     private readonly Func<bool> _getWordWrap;
     private int _stickyColumn = -1;
@@ -28,12 +30,16 @@ internal class CursorMovementHandler
         TextBuffer buffer,
         SelectionManager selection,
         Func<int> getRightMargin,
+        Func<int>? getPrefixMargin = null,
+        Func<int>? getWrappingRightMargin = null,
         Func<IReadOnlyList<Attachment>>? getAttachments = null,
         Func<bool>? getWordWrap = null)
     {
         _buffer = buffer;
         _selection = selection;
         _getRightMargin = getRightMargin;
+        _getPrefixMargin = getPrefixMargin ?? (() => 2);
+        _getWrappingRightMargin = getWrappingRightMargin ?? (() => 4);
         _getAttachments = getAttachments ?? (() => Array.Empty<Attachment>());
         _getWordWrap = getWordWrap ?? (() => false);
     }
@@ -181,44 +187,73 @@ internal class CursorMovementHandler
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Line-based movement (Home / End)
+    //  Visual-line-aware Home / End
     // ══════════════════════════════════════════════════════════════════
 
     public void MoveCursorHome(bool shift)
     {
         string input = _buffer.CurrentInput;
         int cursor = _buffer.CursorPosition;
-        int lineStart = cursor > 0
-            ? input.LastIndexOf('\n', cursor - 1) + 1
-            : 0;
 
-        if (lineStart != cursor)
+        if (string.IsNullOrEmpty(input) || cursor == 0)
         {
             _selection.ForMovement(shift, cursor);
-            _buffer.MoveTo(lineStart);
             return;
         }
 
-        // Already at line start — act like Left arrow
-        MoveCursorLeft(shift);
+        int width = GetEffectiveWidth();
+        LineWrappingService.PopulateVisualLineData(input, width,
+            _visualLinesCache, _visualOffsetsCache,
+            prefixMargin: _getPrefixMargin(),
+            rightMargin: _getWrappingRightMargin(),
+            wordWrap: _getWordWrap());
+
+        var (visLine, _) = GetVisualPosition(input, _visualLinesCache, _visualOffsetsCache);
+        int targetPos = _visualOffsetsCache[visLine];
+
+        if (targetPos != cursor)
+        {
+            _selection.ForMovement(shift, cursor);
+            _buffer.MoveTo(targetPos);
+        }
+        else
+        {
+            // Already at visual-line start — do nothing (consistent with standard editors)
+            _selection.ForMovement(shift, cursor);
+        }
     }
 
     public void MoveCursorEnd(bool shift)
     {
         string input = _buffer.CurrentInput;
         int cursor = _buffer.CursorPosition;
-        int nextNewline = input.IndexOf('\n', cursor);
-        int lineEnd = nextNewline >= 0 ? nextNewline : _buffer.Length;
 
-        if (lineEnd != cursor)
+        if (cursor >= _buffer.Length)
         {
             _selection.ForMovement(shift, cursor);
-            _buffer.MoveTo(lineEnd);
             return;
         }
 
-        // Already at line end — act like Right arrow
-        MoveCursorRight(shift);
+        int width = GetEffectiveWidth();
+        LineWrappingService.PopulateVisualLineData(input, width,
+            _visualLinesCache, _visualOffsetsCache,
+            prefixMargin: _getPrefixMargin(),
+            rightMargin: _getWrappingRightMargin(),
+            wordWrap: _getWordWrap());
+
+        var (visLine, _) = GetVisualPosition(input, _visualLinesCache, _visualOffsetsCache);
+        int lineEndOffset = _visualOffsetsCache[visLine] + _visualLinesCache[visLine].Length;
+
+        if (lineEndOffset != cursor)
+        {
+            _selection.ForMovement(shift, cursor);
+            _buffer.MoveTo(lineEndOffset);
+        }
+        else
+        {
+            // Already at visual-line end — do nothing (consistent with standard editors)
+            _selection.ForMovement(shift, cursor);
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -359,6 +394,8 @@ internal class CursorMovementHandler
         int width = GetEffectiveWidth();
         LineWrappingService.PopulateVisualLineData(input, width,
             _visualLinesCache, _visualOffsetsCache,
+            prefixMargin: _getPrefixMargin(),
+            rightMargin: _getWrappingRightMargin(),
             wordWrap: _getWordWrap());
         var (visLine, visCol) = GetVisualPosition(input, _visualLinesCache, _visualOffsetsCache);
 
@@ -391,6 +428,8 @@ internal class CursorMovementHandler
         int width = GetEffectiveWidth();
         LineWrappingService.PopulateVisualLineData(input, width,
             _visualLinesCache, _visualOffsetsCache,
+            prefixMargin: _getPrefixMargin(),
+            rightMargin: _getWrappingRightMargin(),
             wordWrap: _getWordWrap());
         var (visLine, visCol) = GetVisualPosition(input, _visualLinesCache, _visualOffsetsCache);
 

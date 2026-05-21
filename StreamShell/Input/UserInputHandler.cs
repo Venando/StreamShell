@@ -40,11 +40,18 @@ internal class UserInputHandler : IInputHandler
             () => LargePasteLineThreshold);
 
         _cursorMovement = new CursorMovementHandler(
-            _buffer, _selection, () => RightMargin, () => Attachments, () => WordWrap);
+            _buffer, _selection,
+            () => RightMargin,
+            () => PrefixMargin,
+            () => WrappingRightMargin,
+            () => Attachments,
+            () => WordWrap);
 
         LargePasteThreshold = 300;
         LargePasteLineThreshold = 4;
         WordWrap = true;
+        PrefixMargin = 2;
+        WrappingRightMargin = 4;
 
         int width = terminal.WindowWidth;
         RightMargin = width > 0 ? width : 80;
@@ -65,6 +72,8 @@ internal class UserInputHandler : IInputHandler
     public int LargePasteLineThreshold { get; set; }
     public bool WordWrap { get; set; } = true;
     public bool QuitRequested { get; set; }
+    public int PrefixMargin { get; set; } = 2;
+    public int WrappingRightMargin { get; set; } = 4;
 
     public int CursorPosition => _buffer.CursorPosition;
     public bool HasSelection => _selection.IsActiveAt(_buffer.CursorPosition);
