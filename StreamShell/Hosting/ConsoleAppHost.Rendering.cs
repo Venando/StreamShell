@@ -124,7 +124,6 @@ public partial class ConsoleAppHost
                 _emptyBlocksNumberAfterClearing + bufferHeightDelta);
         }
 
-        // Check for resize that has settled (width decreased and stable for several ticks)
         bool widthDecreased = tick.WindowWidth < state.LastWindowWidth;
         bool widthChanged = tick.WindowWidth != state.LastWindowWidth;
 
@@ -151,33 +150,26 @@ public partial class ConsoleAppHost
                     _lastReplayWidth = tick.WindowWidth;
                     ReplayTriggerCount++;
 
-                    // Re-emit last N messages
+                    // Move messages from history back into the queue so they render
+                    // through the normal pipeline (scroll region, empty-block tracking,
+                    // proper cursor positioning). This prevents the top separator from
+                    // leaking into the message stream when messages replay directly via
+                    // AnsiConsole.MarkupLine without a scroll region.
                     int replayCount = Settings.MessageReplayCount < 0
                         ? Console.WindowHeight + 1
                         : Settings.MessageReplayCount;
                     if (_renderer is ConsoleRenderer cr)
-                        cr.ReplayMessages(replayCount);
+                    {
+                        cr.RetrieveMessagesFromHistory(replayCount, (Span<string> messages) =>
+                        {
+                            for (int i = messages.Length - 1; i >= 0; i--)
+                                _messages.EnqueueAsFirst(messages[i]);
+                        });
+                    }
                 }
-
-                // After replay (or skip), we need a full re-render of the input block
-                RenderFullInputBlock(tick);
-                var postReplayState = new RenderSnapshot(tick.Input, tick.Cursor, tick.HasSelection,
-                    _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount, _terminal.BufferHeight);
-
-                if (_inputHandler.QuitRequested)
-                {
-                    _inputHandler.QuitRequested = false;
-                    return ("__QUIT__", postReplayState);
-                }
-
-                string? submittedInput = _inputHandler.ProcessInput();
-                if (submittedInput != null)
-                {
-                    HandleSubmittedInput(submittedInput, tick.WindowWidth);
-                    postReplayState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount, _terminal.BufferHeight);
-                }
-
-                return (submittedInput, postReplayState);
+                // Fall through to TryRender — RenderQueuedMessages will handle both
+                // replayed messages (now in _messages) and any new queued messages,
+                // with proper scroll-region setup and empty-block tracking.
             }
         }
         else if (_resizeDetected && widthChanged && !widthDecreased)
