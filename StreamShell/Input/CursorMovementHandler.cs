@@ -350,23 +350,17 @@ internal class CursorMovementHandler
         if (pos <= 0) return 0;
         int i = pos - 1;
 
+        // If on a word char, skip back to start of this word
         if (IsWordChar(input[i]))
         {
             while (i >= 0 && IsWordChar(input[i])) i--;
             return i + 1;
         }
 
-        if (IsSeparator(input[i]))
-        {
-            while (i >= 0 && IsSeparator(input[i])) i--;
-            while (i >= 0 && char.IsWhiteSpace(input[i])) i--;
-            return i + 1;
-        }
-
-        // whitespace
-        while (i >= 0 && char.IsWhiteSpace(input[i])) i--;
-        while (i >= 0 && IsSeparator(input[i])) i--;
-        while (i >= 0 && char.IsWhiteSpace(input[i])) i--;
+        // On whitespace/separator: skip all non-word chars back,
+        // then skip the preceding word to its start
+        while (i >= 0 && !IsWordChar(input[i])) i--;
+        while (i >= 0 && IsWordChar(input[i])) i--;
         return i + 1;
     }
 

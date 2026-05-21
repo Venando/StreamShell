@@ -708,14 +708,14 @@ public class CursorMovementHandlerTests
     }
 
     [Fact]
-    public void MoveWordLeft_AtFirstWord_GoesToPreviousGroupEnd()
+    public void MoveWordLeft_AtFirstWord_GoesToPreviousWordStart()
     {
         var buf = new TextBuffer();
         buf.Insert("hello world");
         buf.MoveTo(6); // at start of 'world'
         var handler = CreateHandler(buf, new SelectionManager());
         handler.MoveCursorWordLeft(shift: false);
-        Assert.Equal(5, buf.CursorPosition); // end of 'hello'
+        Assert.Equal(0, buf.CursorPosition); // start of 'hello'
     }
 
     [Fact]

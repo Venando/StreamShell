@@ -554,8 +554,9 @@ public class UserInputHandlerKeyProcessingTests
         // Cursor at end (31)
         Assert.Equal(31, handler.CursorPosition);
 
-        // VS Code backward stops: end→":"| role| "[{"| :| Array| =| ValueKind|
-        int[] expectedStops = [28, 24, 19, 17, 12, 9, 0];
+        // VS Code backward: jumps to start of each previous word,
+        // skipping all intervening non-word chars (whitespace + separators)
+        int[] expectedStops = [24, 12, 0];
         foreach (int expected in expectedStops)
         {
             _terminal.EnqueueCtrlArrow(ConsoleKey.LeftArrow);
