@@ -502,6 +502,29 @@ public class UserInputHandlerKeyProcessingTests
     }
 
     [Fact]
+    public void ProcessInput_CtrlRightArrow_VsCodeStyle_DotSeparated()
+    {
+        // VS Code: <start>selected<here>.hint<here>
+        // Package (before fix): <start>selected<here>.<here>hint<here>
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("selected.hint");
+
+        _terminal.EnqueueRaw(new ConsoleKeyInfo('\0', ConsoleKey.Home, false, false, false));
+        handler.ProcessInput();
+        Assert.Equal(0, handler.CursorPosition);
+
+        // First jump: end of 'selected'
+        _terminal.EnqueueCtrlArrow(ConsoleKey.RightArrow);
+        handler.ProcessInput();
+        Assert.Equal(8, handler.CursorPosition); // selected|
+
+        // Second jump: separator '.' + 'hint' as one group
+        _terminal.EnqueueCtrlArrow(ConsoleKey.RightArrow);
+        handler.ProcessInput();
+        Assert.Equal(13, handler.CursorPosition); // .hint|
+    }
+
+    [Fact]
     public void ProcessInput_CtrlRightArrow_VsCodeStyle_MixedTokens()
     {
         // Reproduces the user's exact example:

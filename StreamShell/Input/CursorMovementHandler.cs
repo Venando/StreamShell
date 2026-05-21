@@ -392,7 +392,13 @@ internal class CursorMovementHandler
             return i;
         }
 
+        // On separator: skip all separators, then if immediately followed by word chars
+        // (no whitespace between), skip those too — matches VS Code for "selected.hint"
         while (i < len && IsSeparator(input[i])) i++;
+        if (i < len && IsWordChar(input[i]))
+        {
+            while (i < len && IsWordChar(input[i])) i++;
+        }
         return i;
     }
 
