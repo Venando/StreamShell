@@ -693,7 +693,6 @@ internal class ConsoleRenderer : IRenderer
             cachedWidth = width;
         }
         AnsiConsole.Markup(cachedLine);
-        _terminal.Write("\x1b[K");
         _terminal.WriteLine();
     }
 
