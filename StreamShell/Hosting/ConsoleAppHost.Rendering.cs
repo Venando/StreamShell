@@ -12,7 +12,8 @@ public partial class ConsoleAppHost
         bool LastHasSelection,
         int LastInputLineCount,
         int LastWindowWidth,
-        int LastPanelLineCount
+        int LastPanelLineCount,
+        int LastBufferHeight
     );
 
     // ── Resize detection ─────────────────────────────────────────────
@@ -37,7 +38,7 @@ public partial class ConsoleAppHost
 
     private async Task RunLoop(CancellationToken token)
     {
-        var state = new RenderSnapshot(null, 0, false, 0, _terminal.WindowWidth, _bottomPanel.LineCount);
+        var state = new RenderSnapshot(null, 0, false, 0, _terminal.WindowWidth, _bottomPanel.LineCount, _terminal.BufferHeight);
 
         while (!token.IsCancellationRequested)
         {
@@ -129,7 +130,7 @@ public partial class ConsoleAppHost
                 // After replay (or skip), we need a full re-render of the input block
                 RenderFullInputBlock(tick);
                 var postReplayState = new RenderSnapshot(tick.Input, tick.Cursor, tick.HasSelection,
-                    _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount);
+                    _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount, _terminal.BufferHeight);
 
                 if (_inputHandler.QuitRequested)
                 {
@@ -141,7 +142,7 @@ public partial class ConsoleAppHost
                 if (submittedInput != null)
                 {
                     HandleSubmittedInput(submittedInput, tick.WindowWidth);
-                    postReplayState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount);
+                    postReplayState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount, _terminal.BufferHeight);
                 }
 
                 return (submittedInput, postReplayState);
@@ -157,7 +158,7 @@ public partial class ConsoleAppHost
         bool rendered = TryRender(state, tick);
         var newState = rendered
             ? new RenderSnapshot(tick.Input, tick.Cursor, tick.HasSelection,
-                _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount)
+                _renderer.GetInputLineCount(tick.Input), tick.WindowWidth, _bottomPanel.LineCount, _terminal.BufferHeight)
             : state;
 
         if (_inputHandler.QuitRequested)
@@ -170,7 +171,7 @@ public partial class ConsoleAppHost
         if (submitted != null)
         {
             HandleSubmittedInput(submitted, tick.WindowWidth);
-            newState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount);
+            newState = new RenderSnapshot(null, 0, false, 0, tick.WindowWidth, _bottomPanel.LineCount, _terminal.BufferHeight);
         }
 
         return (submitted, newState);
@@ -440,7 +441,8 @@ public partial class ConsoleAppHost
             || state.LastCursor != tick.Cursor
             || state.LastHasSelection != tick.HasSelection
             || state.LastWindowWidth != tick.WindowWidth
-            || state.LastPanelLineCount != _bottomPanel.LineCount;
+            || state.LastPanelLineCount != _bottomPanel.LineCount
+            || state.LastBufferHeight != _terminal.BufferHeight;
     }
 
     private void RenderFullInputBlock(TickState tick)
