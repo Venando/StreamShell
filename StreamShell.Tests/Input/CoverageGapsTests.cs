@@ -41,6 +41,36 @@ public class UserInputHandlerDirectTests
     }
 
     [Fact]
+    public void Constructor_PrefixMargin_DefaultIsTwo()
+    {
+        var handler = new UserInputHandler();
+        Assert.Equal(2, handler.PrefixMargin);
+    }
+
+    [Fact]
+    public void Constructor_WrappingRightMargin_DefaultIsFour()
+    {
+        var handler = new UserInputHandler();
+        Assert.Equal(4, handler.WrappingRightMargin);
+    }
+
+    [Fact]
+    public void PrefixMargin_CanBeSet()
+    {
+        var handler = new UserInputHandler();
+        handler.PrefixMargin = 3;
+        Assert.Equal(3, handler.PrefixMargin);
+    }
+
+    [Fact]
+    public void WrappingRightMargin_CanBeSet()
+    {
+        var handler = new UserInputHandler();
+        handler.WrappingRightMargin = 5;
+        Assert.Equal(5, handler.WrappingRightMargin);
+    }
+
+    [Fact]
     public void Constructor_TryGetSelection_NoSelection_ReturnsFalse()
     {
         var handler = new UserInputHandler();
@@ -271,7 +301,7 @@ public class CursorMovementHandlerEdgeCasesTests
 {
     private static CursorMovementHandler CreateHandler(
         TextBuffer buffer, SelectionManager selection, int margin = 80)
-        => new(buffer, selection, () => margin, () => Array.Empty<Attachment>());
+        => new(buffer, selection, () => margin, getAttachments: () => Array.Empty<Attachment>());
 
     // ── Shift+Right at buffer end ────────────────────────────────────
 

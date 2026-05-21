@@ -20,6 +20,8 @@ internal sealed class MockInputHandler : IInputHandler
     public int LargePasteThreshold { get; set; } = 300;
     public int LargePasteLineThreshold { get; set; } = 4;
     public bool WordWrap { get; set; } = true;
+    public int PrefixMargin { get; set; } = 2;
+    public int WrappingRightMargin { get; set; } = 4;
 
     public bool TryGetSelection(out int start, out int length)
     {

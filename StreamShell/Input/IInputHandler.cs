@@ -33,6 +33,12 @@ public interface IInputHandler
     /// <summary>When true, wraps text at word boundaries rather than fixed character positions.</summary>
     bool WordWrap { get; set; }
 
+    /// <summary>Width of the input prefix (first-line or continuation) used for wrapping calculations.</summary>
+    int PrefixMargin { get; set; }
+
+    /// <summary>Right-edge buffer in characters, reserved between wrapped text and console right edge.</summary>
+    int WrappingRightMargin { get; set; }
+
     /// <summary>Process buffered keyboard input. Returns submitted text or null.</summary>
     string? ProcessInput(CancellationToken cancellationToken = default);
 

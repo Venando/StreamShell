@@ -461,12 +461,12 @@ public class CursorMovementHandlerTests
 
     private static CursorMovementHandler CreateHandler(
         TextBuffer buffer, SelectionManager selection, int margin = 80)
-        => new(buffer, selection, () => margin, () => Array.Empty<Attachment>());
+        => new(buffer, selection, () => margin, getAttachments: () => Array.Empty<Attachment>());
 
     private static CursorMovementHandler CreateHandlerWithAttachments(
         TextBuffer buffer, SelectionManager selection,
         IReadOnlyList<Attachment> attachments, int margin = 80)
-        => new(buffer, selection, () => margin, () => attachments);
+        => new(buffer, selection, () => margin, getAttachments: () => attachments);
 
     // ══════════════════════════════════════════════════════════════════
     //  Left / Right
@@ -582,6 +582,60 @@ public class CursorMovementHandlerTests
     //  Home / End
     // ══════════════════════════════════════════════════════════════════
 
+    // ══════════════════════════════════════════════════════════════════
+    //  Home / End — visual line awareness (wrapped text)
+    // ══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void MoveHome_WrappedText_GoesToVisualLineStart()
+    {
+        // margin=10, cap=4 → "hello world" wraps as ["hell", "o wo", "rld"]
+        var buf = new TextBuffer();
+        buf.Insert("hello world");
+        buf.MoveTo(5); // position 5 = ' ' on second visual line "o wo"
+        var handler = CreateHandler(buf, new SelectionManager(), margin: 10);
+        handler.MoveCursorHome(shift: false);
+        Assert.Equal(4, buf.CursorPosition); // start of second visual line
+    }
+
+    [Fact]
+    public void MoveEnd_WrappedText_GoesToVisualLineEnd()
+    {
+        // margin=10, cap=4 → "hello world" wraps as ["hell", "o wo", "rld"]
+        var buf = new TextBuffer();
+        buf.Insert("hello world");
+        buf.MoveTo(5); // position 5 = ' ' on second visual line "o wo"
+        var handler = CreateHandler(buf, new SelectionManager(), margin: 10);
+        handler.MoveCursorEnd(shift: false);
+        Assert.Equal(8, buf.CursorPosition); // end of second visual line (boundary of next line)
+    }
+
+    [Fact]
+    public void MoveHome_WrappedText_AlreadyAtStart_Stays()
+    {
+        var buf = new TextBuffer();
+        buf.Insert("hello world");
+        buf.MoveTo(4); // start of second visual line "o wo"
+        var handler = CreateHandler(buf, new SelectionManager(), margin: 10);
+        handler.MoveCursorHome(shift: false);
+        Assert.Equal(4, buf.CursorPosition); // already at start — stays
+    }
+
+    [Fact]
+    public void MoveEnd_WrappedText_AlreadyAtEnd_Stays()
+    {
+        var buf = new TextBuffer();
+        buf.Insert("hello world");
+        buf.MoveTo(11); // past end of last visual line "rld"
+        var handler = CreateHandler(buf, new SelectionManager(), margin: 10);
+        handler.MoveCursorEnd(shift: false);
+        Assert.Equal(11, buf.CursorPosition); // already at buffer end — stays
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Home / End — logical lines (explicit newlines)
+    // ══════════════════════════════════════════════════════════════════
+
     [Fact]
     public void MoveHome_JumpsToLineStart()
     {
@@ -594,14 +648,14 @@ public class CursorMovementHandlerTests
     }
 
     [Fact]
-    public void MoveHome_AlreadyAtLineStart_GoesLeft()
+    public void MoveHome_AlreadyAtLineStart_Stays()
     {
         var buf = new TextBuffer();
         buf.Insert("abc\ndef");
         buf.MoveTo(4); // start of 'def' line
         var handler = CreateHandler(buf, new SelectionManager());
         handler.MoveCursorHome(shift: false);
-        Assert.Equal(3, buf.CursorPosition); // acts like Left → '\n'
+        Assert.Equal(4, buf.CursorPosition); // already at visual line start — stays
     }
 
     [Fact]
@@ -616,14 +670,14 @@ public class CursorMovementHandlerTests
     }
 
     [Fact]
-    public void MoveEnd_AtLineEnd_GoesRight()
+    public void MoveEnd_AtLineEnd_Stays()
     {
         var buf = new TextBuffer();
         buf.Insert("abc\ndef");
         buf.MoveTo(3); // '\n' between lines
         var handler = CreateHandler(buf, new SelectionManager());
         handler.MoveCursorEnd(shift: false);
-        Assert.Equal(4, buf.CursorPosition); // acts like Right → 'd'
+        Assert.Equal(3, buf.CursorPosition); // already at visual line end — stays
     }
 
     [Fact]
