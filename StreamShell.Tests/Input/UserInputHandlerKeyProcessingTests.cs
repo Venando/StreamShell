@@ -458,23 +458,28 @@ public class UserInputHandlerKeyProcessingTests
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Ctrl+Arrow — Word jumps
+    //  Ctrl+Arrow — VS Code-style word navigation
     // ══════════════════════════════════════════════════════════════════
 
     [Fact]
-    public void ProcessInput_CtrlLeftArrow_JumpsWordLeft()
+    public void ProcessInput_CtrlRightArrow_JumpsToEndOfWord()
     {
         var handler = CreateHandler();
         handler.SetInputFieldContent("hello");
 
-        _terminal.EnqueueCtrlArrow(ConsoleKey.LeftArrow);
+        _terminal.EnqueueRaw(new ConsoleKeyInfo('\0', ConsoleKey.Home, false, false, false));
+        handler.ProcessInput();
+        Assert.Equal(0, handler.CursorPosition);
+
+        _terminal.EnqueueCtrlArrow(ConsoleKey.RightArrow);
         handler.ProcessInput();
 
-        Assert.Equal(0, handler.CursorPosition);
+        // Stops at end of word
+        Assert.Equal(5, handler.CursorPosition);
     }
 
     [Fact]
-    public void ProcessInput_CtrlRightArrow_JumpsWordRight()
+    public void ProcessInput_CtrlRightArrow_JumpsWordRight_VsCodeStyle()
     {
         var handler = CreateHandler();
         handler.SetInputFieldContent("a b");
@@ -485,11 +490,130 @@ public class UserInputHandlerKeyProcessingTests
         handler.ProcessInput();
         Assert.Equal(0, handler.CursorPosition);
 
+        // First jump: end of 'a'
         _terminal.EnqueueCtrlArrow(ConsoleKey.RightArrow);
         handler.ProcessInput();
+        Assert.Equal(1, handler.CursorPosition);
 
-        // Jumps past 'a' and space to start of next word 'b' at position 2
-        Assert.Equal(2, handler.CursorPosition);
+        // Second jump: skip ' b' (space + word) to end of 'b'
+        _terminal.EnqueueCtrlArrow(ConsoleKey.RightArrow);
+        handler.ProcessInput();
+        Assert.Equal(3, handler.CursorPosition);
+    }
+
+    [Fact]
+    public void ProcessInput_CtrlRightArrow_VsCodeStyle_DotSeparated()
+    {
+        // VS Code: <start>selected<here>.hint<here>
+        // Package (before fix): <start>selected<here>.<here>hint<here>
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("selected.hint");
+
+        _terminal.EnqueueRaw(new ConsoleKeyInfo('\0', ConsoleKey.Home, false, false, false));
+        handler.ProcessInput();
+        Assert.Equal(0, handler.CursorPosition);
+
+        // First jump: end of 'selected'
+        _terminal.EnqueueCtrlArrow(ConsoleKey.RightArrow);
+        handler.ProcessInput();
+        Assert.Equal(8, handler.CursorPosition); // selected|
+
+        // Second jump: separator '.' + 'hint' as one group
+        _terminal.EnqueueCtrlArrow(ConsoleKey.RightArrow);
+        handler.ProcessInput();
+        Assert.Equal(13, handler.CursorPosition); // .hint|
+    }
+
+    [Fact]
+    public void ProcessInput_CtrlRightArrow_VsCodeStyle_MixedTokens()
+    {
+        // Reproduces the user's exact example:
+        // ValueKind = Array : "[{"role":"
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("ValueKind = Array : \"[{\"role\":\"");
+
+        _terminal.EnqueueRaw(new ConsoleKeyInfo('\0', ConsoleKey.Home, false, false, false));
+        handler.ProcessInput();
+        Assert.Equal(0, handler.CursorPosition);
+
+        // VS Code stops: ValueKind| =| Array| :| "[{"|role|":"| (end)
+        int[] expectedStops = [9, 11, 17, 19, 24, 28, 31];
+        foreach (int expected in expectedStops)
+        {
+            _terminal.EnqueueCtrlArrow(ConsoleKey.RightArrow);
+            handler.ProcessInput();
+            Assert.Equal(expected, handler.CursorPosition);
+        }
+    }
+
+    [Fact]
+    public void ProcessInput_CtrlLeftArrow_VsCodeStyle_MixedTokens()
+    {
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("ValueKind = Array : \"[{\"role\":\"");
+        // Cursor at end (31)
+        Assert.Equal(31, handler.CursorPosition);
+
+        // VS Code backward: jumps to start of each previous word,
+        // skipping all intervening non-word chars (whitespace + separators)
+        int[] expectedStops = [24, 12, 0];
+        foreach (int expected in expectedStops)
+        {
+            _terminal.EnqueueCtrlArrow(ConsoleKey.LeftArrow);
+            handler.ProcessInput();
+            Assert.Equal(expected, handler.CursorPosition);
+        }
+    }
+
+    [Fact]
+    public void ProcessInput_CtrlLeftArrow_JumpsWordLeft()
+    {
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("hello");
+        // Cursor at end
+        Assert.Equal(5, handler.CursorPosition);
+
+        _terminal.EnqueueCtrlArrow(ConsoleKey.LeftArrow);
+        handler.ProcessInput();
+
+        // Stops at start of word
+        Assert.Equal(0, handler.CursorPosition);
+    }
+
+    [Fact]
+    public void ProcessInput_CtrlRightArrow_SeparatorsOnly()
+    {
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("::==>>");
+
+        _terminal.EnqueueRaw(new ConsoleKeyInfo('\0', ConsoleKey.Home, false, false, false));
+        handler.ProcessInput();
+        Assert.Equal(0, handler.CursorPosition);
+
+        // All separators are one group? No, :: and == are separate if whitespace between...
+        // Actually without whitespace, all contiguous separators are one group
+        _terminal.EnqueueCtrlArrow(ConsoleKey.RightArrow);
+        handler.ProcessInput();
+        Assert.Equal(6, handler.CursorPosition);
+    }
+
+    [Fact]
+    public void ProcessInput_CtrlRightArrow_SeparatorsWithWhitespace()
+    {
+        var handler = CreateHandler();
+        handler.SetInputFieldContent(":: == >>");
+
+        _terminal.EnqueueRaw(new ConsoleKeyInfo('\0', ConsoleKey.Home, false, false, false));
+        handler.ProcessInput();
+        Assert.Equal(0, handler.CursorPosition);
+
+        int[] expectedStops = [2, 5, 8];
+        foreach (int expected in expectedStops)
+        {
+            _terminal.EnqueueCtrlArrow(ConsoleKey.RightArrow);
+            handler.ProcessInput();
+            Assert.Equal(expected, handler.CursorPosition);
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════

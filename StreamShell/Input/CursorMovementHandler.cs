@@ -282,8 +282,8 @@ internal class CursorMovementHandler
                         target = start;
                         break;
                     }
-                    // Target landed inside placeholder → jump to its start
-                    if (target > start && target < end)
+                    // Target landed inside or immediately after placeholder → jump to its start
+                    if (target > start && target <= end)
                     {
                         target = start;
                         break;
@@ -338,12 +338,29 @@ internal class CursorMovementHandler
         }
     }
 
+    private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+    private static bool IsSeparator(char c) => !IsWordChar(c) && !char.IsWhiteSpace(c);
+
+    /// <summary>
+    /// VS Code-style word navigation: stops at each token boundary.
+    /// A "token" is a contiguous run of word chars, separators, or whitespace+next-token.
+    /// </summary>
     private static int FindPreviousWordStart(string input, int pos)
     {
         if (pos <= 0) return 0;
         int i = pos - 1;
-        while (i >= 0 && char.IsWhiteSpace(input[i])) i--;
-        while (i >= 0 && !char.IsWhiteSpace(input[i])) i--;
+
+        // If on a word char, skip back to start of this word
+        if (IsWordChar(input[i]))
+        {
+            while (i >= 0 && IsWordChar(input[i])) i--;
+            return i + 1;
+        }
+
+        // On whitespace/separator: skip all non-word chars back,
+        // then skip the preceding word to its start
+        while (i >= 0 && !IsWordChar(input[i])) i--;
+        while (i >= 0 && IsWordChar(input[i])) i--;
         return i + 1;
     }
 
@@ -352,8 +369,30 @@ internal class CursorMovementHandler
         int len = input.Length;
         if (pos >= len) return len;
         int i = pos;
-        while (i < len && !char.IsWhiteSpace(input[i])) i++;
-        while (i < len && char.IsWhiteSpace(input[i])) i++;
+
+        if (char.IsWhiteSpace(input[i]))
+        {
+            while (i < len && char.IsWhiteSpace(input[i])) i++;
+            if (i < len && IsSeparator(input[i]))
+                while (i < len && IsSeparator(input[i])) i++;
+            else if (i < len && IsWordChar(input[i]))
+                while (i < len && IsWordChar(input[i])) i++;
+            return i;
+        }
+
+        if (IsWordChar(input[i]))
+        {
+            while (i < len && IsWordChar(input[i])) i++;
+            return i;
+        }
+
+        // On separator: skip all separators, then if immediately followed by word chars
+        // (no whitespace between), skip those too — matches VS Code for "selected.hint"
+        while (i < len && IsSeparator(input[i])) i++;
+        if (i < len && IsWordChar(input[i]))
+        {
+            while (i < len && IsWordChar(input[i])) i++;
+        }
         return i;
     }
 

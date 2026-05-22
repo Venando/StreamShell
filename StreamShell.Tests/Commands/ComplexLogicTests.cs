@@ -693,7 +693,7 @@ public class CursorMovementHandlerTests
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Word Left / Right
+    //  Word Left / Right — VS Code-style (separator-aware)
     // ══════════════════════════════════════════════════════════════════
 
     [Fact]
@@ -701,21 +701,32 @@ public class CursorMovementHandlerTests
     {
         var buf = new TextBuffer();
         buf.Insert("hello world foo");
-        buf.MoveTo(14);
+        buf.MoveTo(14); // inside 'foo'
         var handler = CreateHandler(buf, new SelectionManager());
         handler.MoveCursorWordLeft(shift: false);
         Assert.Equal(12, buf.CursorPosition); // start of 'foo'
     }
 
     [Fact]
-    public void MoveWordLeft_AtFirstWord_GoesToStart()
+    public void MoveWordLeft_AtFirstWord_GoesToPreviousWordStart()
     {
         var buf = new TextBuffer();
         buf.Insert("hello world");
-        buf.MoveTo(6);
+        buf.MoveTo(6); // at start of 'world'
         var handler = CreateHandler(buf, new SelectionManager());
         handler.MoveCursorWordLeft(shift: false);
-        Assert.Equal(0, buf.CursorPosition);
+        Assert.Equal(0, buf.CursorPosition); // start of 'hello'
+    }
+
+    [Fact]
+    public void MoveWordLeft_AtGroupEnd_GoesToPreviousGroupStart()
+    {
+        var buf = new TextBuffer();
+        buf.Insert("hello world");
+        buf.MoveTo(5); // end of 'hello'
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordLeft(shift: false);
+        Assert.Equal(0, buf.CursorPosition); // start of 'hello'
     }
 
     [Fact]
@@ -726,7 +737,7 @@ public class CursorMovementHandlerTests
         buf.MoveTo(0);
         var handler = CreateHandler(buf, new SelectionManager());
         handler.MoveCursorWordRight(shift: false);
-        Assert.Equal(6, buf.CursorPosition); // start of 'world'
+        Assert.Equal(5, buf.CursorPosition); // end of 'hello'
     }
 
     [Fact]
@@ -734,10 +745,10 @@ public class CursorMovementHandlerTests
     {
         var buf = new TextBuffer();
         buf.Insert("hello world");
-        buf.MoveTo(6);
+        buf.MoveTo(6); // at 'world'
         var handler = CreateHandler(buf, new SelectionManager());
         handler.MoveCursorWordRight(shift: false);
-        Assert.Equal(11, buf.CursorPosition);
+        Assert.Equal(11, buf.CursorPosition); // end of 'world'
     }
 
     [Fact]
@@ -745,7 +756,7 @@ public class CursorMovementHandlerTests
     {
         var buf = new TextBuffer();
         buf.Insert("ab[paste #1, 2 lines]cd");
-        buf.MoveTo(buf.CurrentInput.Length);
+        buf.MoveTo(5); // inside placeholder
 
         var attachments = new List<Attachment>
         {
@@ -753,7 +764,7 @@ public class CursorMovementHandlerTests
         };
         var handler = CreateHandlerWithAttachments(buf, new SelectionManager(), attachments);
         handler.MoveCursorWordLeft(shift: false);
-        Assert.Equal(2, buf.CursorPosition);
+        Assert.Equal(2, buf.CursorPosition); // jumps to before placeholder
     }
 
     [Fact]
@@ -761,7 +772,7 @@ public class CursorMovementHandlerTests
     {
         var buf = new TextBuffer();
         buf.Insert("ab[paste #1, 2 lines]cd");
-        buf.MoveTo(0);
+        buf.MoveTo(5); // inside placeholder
 
         var attachments = new List<Attachment>
         {
@@ -770,6 +781,104 @@ public class CursorMovementHandlerTests
         var handler = CreateHandlerWithAttachments(buf, new SelectionManager(), attachments);
         handler.MoveCursorWordRight(shift: false);
         Assert.Equal(buf.CurrentInput.IndexOf("cd", StringComparison.Ordinal), buf.CursorPosition);
+    }
+
+    // ── Separator-aware word navigation ──
+
+    [Fact]
+    public void MoveWordRight_SkipsSeparators_ToNextWord()
+    {
+        // "hello.world" — Ctrl+→ from 'h' stops at end of 'hello' (5)
+        var buf = new TextBuffer();
+        buf.Insert("hello.world");
+        buf.MoveTo(0);
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordRight(shift: false);
+        Assert.Equal(5, buf.CursorPosition); // end of 'hello'
+    }
+
+    [Fact]
+    public void MoveWordLeft_SkipsSeparators_ToPreviousWord()
+    {
+        // "hello.world" — Ctrl+← from end goes to start of 'world' (6)
+        var buf = new TextBuffer();
+        buf.Insert("hello.world");
+        buf.MoveTo(11);
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordLeft(shift: false);
+        Assert.Equal(6, buf.CursorPosition); // start of 'world'
+    }
+
+    [Fact]
+    public void MoveWordRight_MultipleSeparators_SkipsAll()
+    {
+        // "a++b" — Ctrl+→ from 'a' stops at end of 'a' (1)
+        var buf = new TextBuffer();
+        buf.Insert("a++b");
+        buf.MoveTo(0);
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordRight(shift: false);
+        Assert.Equal(1, buf.CursorPosition); // end of 'a'
+    }
+
+    [Fact]
+    public void MoveWordLeft_MultipleSeparators_SkipsAll()
+    {
+        // "a++b" — Ctrl+← from end goes to start of 'b' (3)
+        var buf = new TextBuffer();
+        buf.Insert("a++b");
+        buf.MoveTo(4);
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordLeft(shift: false);
+        Assert.Equal(3, buf.CursorPosition); // start of 'b'
+    }
+
+    [Fact]
+    public void MoveWordRight_SpacedPunctuation_SkipsSeparators()
+    {
+        // "cmd /arg value" — Ctrl+→ from start stops at end of 'cmd' (3)
+        var buf = new TextBuffer();
+        buf.Insert("cmd /arg value");
+        buf.MoveTo(0);
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordRight(shift: false);
+        Assert.Equal(3, buf.CursorPosition); // end of 'cmd'
+    }
+
+    [Fact]
+    public void MoveWordLeft_SpacedPunctuation_SkipsSeparators()
+    {
+        // "cmd /arg value" — from 'a' in 'value' (10), Ctrl+← goes to start of 'value' (9)
+        var buf = new TextBuffer();
+        buf.Insert("cmd /arg value");
+        buf.MoveTo(10); // 'a' in 'value'
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordLeft(shift: false);
+        Assert.Equal(9, buf.CursorPosition); // start of 'value'
+    }
+
+    [Fact]
+    public void MoveWordRight_InsideWord_GoesToEndOfCurrentWord()
+    {
+        // "hello world" — from middle of 'hello', Ctrl+→ goes to end of 'hello' (5)
+        var buf = new TextBuffer();
+        buf.Insert("hello world");
+        buf.MoveTo(3); // 'l' in 'hello'
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordRight(shift: false);
+        Assert.Equal(5, buf.CursorPosition); // end of 'hello'
+    }
+
+    [Fact]
+    public void MoveWordLeft_InsideWord_GoesToWordStart()
+    {
+        // "hello world" — from middle of 'world', Ctrl+← goes to start of 'world'
+        var buf = new TextBuffer();
+        buf.Insert("hello world");
+        buf.MoveTo(9); // 'l' in 'world'
+        var handler = CreateHandler(buf, new SelectionManager());
+        handler.MoveCursorWordLeft(shift: false);
+        Assert.Equal(6, buf.CursorPosition); // start of 'world'
     }
 
     // ══════════════════════════════════════════════════════════════════
