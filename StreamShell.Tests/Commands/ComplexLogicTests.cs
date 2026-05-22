@@ -1007,3 +1007,69 @@ public class CursorMovementHandlerTests
         handler.MoveCursorWordRight(false); Assert.Equal(0, buf.CursorPosition);
     }
 }
+
+// ═════════════════════════════════════════════════════════════════════
+//  CommandManager Tests — command registration, lookup, execution with markup
+// ═════════════════════════════════════════════════════════════════════
+
+public class CommandManagerTests
+{
+    [Fact]
+    public void Add_WithMarkupName_StoresByStrippedName()
+    {
+        var manager = new CommandManager();
+        var cmd = new Command("[yellow]quit[/]", "Exit", (_, _) => Task.CompletedTask);
+        manager.Add(cmd);
+
+        Assert.True(manager.Contains("quit"));
+        Assert.True(manager.Contains("QUIT")); // case-insensitive
+    }
+
+    [Fact]
+    public void Contains_MarkupInLookupKey_StripsBeforeLookup()
+    {
+        var manager = new CommandManager();
+        var cmd = new Command("quit", "Exit", (_, _) => Task.CompletedTask);
+        manager.Add(cmd);
+
+        Assert.True(manager.Contains("[yellow]quit[/]"));
+    }
+
+    [Fact]
+    public void Remove_MarkupName_StripsBeforeRemoval()
+    {
+        var manager = new CommandManager();
+        var cmd = new Command("[yellow]quit[/]", "Exit", (_, _) => Task.CompletedTask);
+        manager.Add(cmd);
+        manager.Remove(cmd);
+
+        Assert.False(manager.Contains("quit"));
+    }
+
+    [Fact]
+    public void ExecuteAsync_MarkupName_ExecutesByStrippedName()
+    {
+        var manager = new CommandManager();
+        bool executed = false;
+        var cmd = new Command("[yellow]quit[/]", "Exit", (_, _) => { executed = true; return Task.CompletedTask; });
+        manager.Add(cmd);
+
+        var result = manager.ExecuteAsync("/quit");
+        result.Wait();
+
+        Assert.True(executed);
+        Assert.Null(result.Result);
+    }
+
+    [Fact]
+    public void AllCommands_PreservesOriginalMarkupName()
+    {
+        var manager = new CommandManager();
+        var cmd = new Command("[yellow]quit[/]", "Exit", (_, _) => Task.CompletedTask);
+        manager.Add(cmd);
+
+        var all = manager.AllCommands.ToList();
+        Assert.Single(all);
+        Assert.Equal("[yellow]quit[/]", all[0].Name);
+    }
+}
