@@ -316,6 +316,30 @@ public partial class ConsoleAppHost
             }
         }
 
+        // When the block shrinks, lines that used to be part of the input
+        // block are now exposed in the message area. Clear them BEFORE
+        // rendering messages so stale separator / hint content is removed,
+        // and account for them as empty blocks so messages fill them.
+        if (blockHeightDelta < 0)
+        {
+            int linesExposed = -blockHeightDelta;
+            // GetBlockOffset omits the blank WriteLine between input and hints,
+            // so subtract 1 to reach the actual input block top.
+            int blockTopForClearing = _terminal.BufferHeight - inputBlockHeight - 1;
+
+            for (int i = 1; i <= linesExposed; i++)
+            {
+                int line = blockTopForClearing - i;
+                if (line >= 0 && line < _terminal.BufferHeight)
+                {
+                    _terminal.SetCursorPosition(0, line);
+                    _terminal.Write("\x1b[K");
+                }
+            }
+
+            _emptyBlocksNumberAfterClearing += linesExposed;
+        }
+
         void SetupMessageRenderArea()
         {
             if (_renderer is ConsoleRenderer cr)
@@ -327,9 +351,7 @@ public partial class ConsoleAppHost
                 // the message's leading WriteLine, the message text lands at the
                 // bottom of the scroll region (just above the input block).
                 int scrollBottom = _terminal.BufferHeight - inputBlockHeight - 1;
-                int pendingShrinkLines = blockHeightDelta < 0 ? -blockHeightDelta : 0;
-                int effectiveEmptyBlocks = _emptyBlocksNumberAfterClearing + pendingShrinkLines;
-                int cursorTop = scrollBottom - 1 - effectiveEmptyBlocks;
+                int cursorTop = scrollBottom - 1 - _emptyBlocksNumberAfterClearing;
 
                 _terminal.CursorTop = Math.Max(0, cursorTop);
                 _terminal.CursorLeft = 0;
@@ -365,29 +387,6 @@ public partial class ConsoleAppHost
         // Reset scroll region before rendering the input block.
         if (scrollRegionSet && _renderer is ConsoleRenderer cr2)
             cr2.ResetScrollRegion();
-
-        // When the block shrinks, the lines that used to be part of the input
-        // block are now exposed in the message area. Clear them so stale
-        // separator / hint content doesn't remain visible.
-        if (blockHeightDelta < 0)
-        {
-            int linesExposed = -blockHeightDelta;
-            // GetBlockOffset omits the blank WriteLine between input and hints,
-            // so subtract 1 to reach the actual input block top.
-            int blockTopForClearing = _terminal.BufferHeight - inputBlockHeight - 1;
-
-            for (int i = 1; i <= linesExposed; i++)
-            {
-                int line = blockTopForClearing - i;
-                if (line >= 0 && line < _terminal.BufferHeight)
-                {
-                    _terminal.SetCursorPosition(0, line);
-                    _terminal.Write("\x1b[K");
-                }
-            }
-
-            _emptyBlocksNumberAfterClearing += linesExposed;
-        }
 
         // Position cursor at the top of the input block and render it.
         int inputBlockTop = _terminal.BufferHeight - inputBlockHeight - 1;

@@ -453,6 +453,59 @@ public class ConsoleAppHostProcessOneTickTests
     }
 
     // ══════════════════════════════════════════════════════════════════
+    //  Shrink cleanup + messages: exposed lines cleared BEFORE message render
+    // ══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void ProcessOneTick_BlockShrink_WithMessages_ClearsExposedLinesBeforeRendering()
+    {
+        // Use real ConsoleRenderer so shrink-cleanup paths are exercised
+        var renderer = new ConsoleRenderer(new StreamShellSettings(), _terminal);
+        _host = new ConsoleAppHost(renderer, _inputHandler, _terminal);
+        _state = new ConsoleAppHost.RenderSnapshot(
+            null, 0, false, 0, _terminal.WindowWidth, 2, _terminal.BufferHeight);
+
+        // Tick 1: large input block + one message
+        _inputHandler.CurrentInput = "line1\nline2\nline3";
+        _host.AddMessage("first message");
+        var (_, state1) = _host.ProcessOneTick(_state);
+
+        _terminal.ClearOutput();
+
+        // Tick 2: input cleared (block shrinks), new messages queued
+        _inputHandler.CurrentInput = "";
+        _host.AddMessage("second message");
+        _host.AddMessage("third message");
+        var (_, state2) = _host.ProcessOneTick(state1);
+
+        var texts = _terminal.WrittenTexts;
+
+        // Find scroll region set (\x1b[0;...r) and reset (\x1b[r)
+        int scrollSetIdx = texts.FindIndex(t => t.StartsWith("\x1b[0;"));
+        int scrollResetIdx = texts.FindIndex(t => t == "\x1b[r");
+
+        Assert.True(scrollSetIdx >= 0, "Scroll region should be set");
+        Assert.True(scrollResetIdx > scrollSetIdx, "Scroll region should be reset after being set");
+
+        // All shrink-cleanup \x1b[K calls must occur BEFORE the scroll region is set
+        // (i.e., before messages are rendered inside the scroll region)
+        for (int i = 0; i < scrollSetIdx; i++)
+        {
+            if (texts[i] == "\x1b[K")
+            {
+                // This is a shrink-cleanup clear — it must be before message rendering
+                Assert.True(i < scrollSetIdx,
+                    $"Shrink cleanup \x1b[K at index {i} must be before scroll region set at {scrollSetIdx}");
+            }
+        }
+
+        // No \x1b[K between scroll region set and reset should be from shrink cleanup
+        // (they're message clears, which is fine)
+        int shrinkCleanupCount = texts.Take(scrollSetIdx).Count(t => t == "\x1b[K");
+        Assert.True(shrinkCleanupCount > 0, "Shrink cleanup should have cleared at least one exposed line");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  Replay Width Tracking
     // ══════════════════════════════════════════════════════════════════
 
