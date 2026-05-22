@@ -526,9 +526,10 @@ internal class ConsoleRenderer : IRenderer
             RenderBottomSeparator();
         else
         {
-            // Clear the old bottom separator line first, then advance
+            // Clear the old bottom separator line, then advance.
+            // 
             _terminal.CursorLeft = 0;
-            ClearLine();
+            _terminal.Write("\x1b[K");
             _terminal.WriteLine();
         }
 
@@ -536,7 +537,6 @@ internal class ConsoleRenderer : IRenderer
         for (int i = 0; i < hints.Count; i++)
         {
             _terminal.CursorLeft = 0;
-            ClearLine();
             string hint = hints[i];
             if (!string.IsNullOrEmpty(hint))
             {
@@ -550,6 +550,9 @@ internal class ConsoleRenderer : IRenderer
                     AnsiConsole.Markup(Markup.Escape(displayHint));
                 }
             }
+            // Clear trailing stale characters AFTER writing new content.
+            // This matches the flicker-free pattern used in RenderSingleVisualLine.
+            _terminal.Write("\x1b[K");
             if (i < hints.Count - 1)
                 _terminal.WriteLine();
         }
