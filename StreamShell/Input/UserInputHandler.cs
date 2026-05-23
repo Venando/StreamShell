@@ -339,15 +339,18 @@ internal class UserInputHandler : IInputHandler
         else if (_clipboard.RemovePlaceholderAffectedBy(_buffer.CursorPosition, 0))
         {
             // Placeholder was preemptively removed, cursor is at its start position.
-            // Insert the character at this position.
-            _buffer.Insert(c);
+            // Buffer the character for batch processing so continued paste characters
+            // are grouped into a single paste block if they exceed the threshold.
+            _tempInput.Append(c);
             return;
         }
 
-        if (_buffer.CursorPosition < _buffer.Length)
-            _buffer.Insert(c);
-        else
-            _tempInput.Append(c);
+        // Always buffer in tempInput so that fast-arriving characters (e.g., from
+        // terminal paste) are grouped together for batch processing. If the
+        // cumulative text exceeds the paste threshold on flush, it's collapsed
+        // into a single placeholder. Single-char flushes fall through to direct
+        // buffer insert at cursor position.
+        _tempInput.Append(c);
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -358,16 +361,8 @@ internal class UserInputHandler : IInputHandler
     {
         if (_selection.IsActiveAt(_buffer.CursorPosition))
         {
-            if (_clipboard.RemovePlaceholderAffectedBy(
-                    _selection.SelectionStart(_buffer.CursorPosition),
-                    _selection.SelectionLength(_buffer.CursorPosition)))
-            {
-                _selection.Clear();
-            }
-            else
-            {
-                RemoveSelectedText();
-            }
+            RemoveSelectedText();
+            _clipboard.CleanupOrphanedAttachments();
         }
         else if (!_clipboard.RemovePlaceholderAffectedBy(_buffer.CursorPosition - 1, 1))
         {
@@ -379,16 +374,8 @@ internal class UserInputHandler : IInputHandler
     {
         if (_selection.IsActiveAt(_buffer.CursorPosition))
         {
-            if (_clipboard.RemovePlaceholderAffectedBy(
-                    _selection.SelectionStart(_buffer.CursorPosition),
-                    _selection.SelectionLength(_buffer.CursorPosition)))
-            {
-                _selection.Clear();
-            }
-            else
-            {
-                RemoveSelectedText();
-            }
+            RemoveSelectedText();
+            _clipboard.CleanupOrphanedAttachments();
         }
         else if (!_clipboard.RemovePlaceholderAffectedBy(_buffer.CursorPosition, 1))
         {
