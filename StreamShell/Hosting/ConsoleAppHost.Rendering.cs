@@ -91,6 +91,8 @@ public partial class ConsoleAppHost
         // Let panel compute lines (may update dynamic LineCount), then sync renderer
         _bottomPanel.GetLines(tick.Input);
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
+        if (_renderer is ConsoleRenderer crUserField)
+            crUserField.ShowUserField = _bottomPanel.AllowUserField;
 
         // ── Buffer height change: exposed lines become empty blocks ──────
         int currentBufferHeight = _terminal.BufferHeight;
