@@ -290,12 +290,7 @@ public partial class ConsoleAppHost : IDisposable
     }
 
     /// <summary>Creates the platform-appropriate terminal implementation.</summary>
-    private static ITerminal CreateTerminal()
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            return new LinuxTerminal();
-        return new SystemTerminal();
-    }
+    private static ITerminal CreateTerminal() => new SystemTerminal();
 
     private bool _disposed;
 

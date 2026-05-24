@@ -110,6 +110,16 @@ internal class UserInputHandler : IInputHandler
 
             var key = _terminal.ReadKey(intercept: true);
 
+            // On Linux, Console.ReadKey may return Escape for extended CSI
+            // sequences (Shift+Arrow, etc.) with trailing bytes still buffered.
+            // Try to parse the full sequence before dispatching the key.
+            if (key.Key == ConsoleKey.Escape && _terminal.KeyAvailable)
+            {
+                var csiKey = TryParseCsiSequence();
+                if (csiKey is not null)
+                    key = csiKey.Value;
+            }
+
             // Give the interceptor first crack at the key (e.g. hint navigation)
             if (KeyInterceptor?.Invoke(key) == true)
                 continue;
@@ -149,8 +159,49 @@ internal class UserInputHandler : IInputHandler
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Key Dispatch: Enter
+    //  CSI Sequence Interception (Linux escape sequence fix)
     // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Reads trailing bytes from the terminal and attempts to parse them
+    /// as a VT/xterm CSI sequence.  Called after <c>Console.ReadKey</c>
+    /// returns Escape and more keys are pending.
+    /// </summary>
+    private ConsoleKeyInfo? TryParseCsiSequence()
+    {
+        var trailing = new List<ConsoleKeyInfo>(8);
+        while (_terminal.KeyAvailable)
+            trailing.Add(_terminal.ReadKey(intercept: true));
+
+        if (trailing.Count == 0)
+            return null;
+
+        char intro = trailing[0].KeyChar;
+        if (intro != '[' && intro != 'O')
+        {
+            // Not a CSI sequence — could be Alt+key (ESC + char).
+            // Path through as Alt-modified key.
+            if (trailing.Count == 1 && trailing[0].KeyChar >= ' ')
+            {
+                var tk = trailing[0];
+                char c = tk.KeyChar;
+                if (c >= 'a' && c <= 'z')
+                    return new ConsoleKeyInfo(c, ConsoleKey.A + (c - 'a'), false, true, false);
+                return new ConsoleKeyInfo(c, (ConsoleKey)c, false, true, false);
+            }
+            return null;
+        }
+
+        // Reconstruct the CSI sequence from KeyChar values
+        var seq = new System.Text.StringBuilder(trailing.Count);
+        foreach (var k in trailing)
+        {
+            if (k.KeyChar != '\0')
+                seq.Append(k.KeyChar);
+        }
+
+        return CsiParser.Parse(seq.ToString());
+    }
 
     /// <summary>Handles Enter. Returns true if the outer while should continue or break.</summary>
     private EnterHandleResult HandleEnter(ConsoleKeyInfo key, bool ctrl, bool shift, bool alt, ref string? submitted)

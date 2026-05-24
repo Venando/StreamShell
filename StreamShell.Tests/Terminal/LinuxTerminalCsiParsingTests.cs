@@ -276,9 +276,9 @@ public class LinuxTerminalCsiParsingTests
     //  Helpers
     // ══════════════════════════════════════════════════════════════════
 
-    /// <summary>Invokes the internal parser via reflection (it's internal static).</summary>
+    /// <summary>Invokes the CSI parser.</summary>
     private static ConsoleKeyInfo? ParseCsi(string seq) =>
-        LinuxTerminal.ParseCsiSequence(seq);
+        CsiParser.Parse(seq);
 
     private static void AssertModifiers(ConsoleKeyInfo key, bool shift, bool alt, bool ctrl)
     {
