@@ -66,7 +66,7 @@ public partial class ConsoleAppHost : IDisposable
     {
         _lastDateTime = DateTime.UtcNow;
         _terminal = CreateTerminal();
-        _renderer = new ConsoleRenderer(Settings);
+        _renderer = new ConsoleRenderer(Settings, _terminal);
         _inputHandler = new UserInputHandler(_terminal);
         _defaultPanel = new EmptyBottomPanel(Settings.CommandPaletteHeight);
         _bottomPanel = _defaultPanel;

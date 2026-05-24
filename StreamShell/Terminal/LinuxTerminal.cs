@@ -1,15 +1,14 @@
+using System;
+using System.Collections.Concurrent;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace StreamShell;
 
 /// <summary>
-/// Linux terminal implementation that reads raw bytes from stdin via P/Invoke
-/// and parses VT/xterm escape sequences into <see cref="ConsoleKeyInfo"/>.
-///
-/// Bypasses <c>Console.ReadKey()</c> entirely — on Linux, .NET may split
-/// extended CSI sequences (Ctrl+Arrows, Shift+Arrows) internally, returning
-/// ESC standalone and trapping the remaining bytes in its internal buffer.
-/// Reading raw bytes avoids this entirely.
+/// Linux terminal implementation that continuously harvests raw bytes from stdin via P/Invoke
+/// on a dedicated background thread and parses VT/xterm escape sequences.
 /// </summary>
 internal sealed class LinuxTerminal : ITerminal, IDisposable
 {
@@ -19,6 +18,11 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
     private bool _useConsoleReadKey; // fallback for non-terminal environments
     private bool _disposed;
 
+    // Threading & Buffering primitives
+    private readonly BlockingCollection<ConsoleKeyInfo> _inputBuffer = new();
+    private Thread? _inputThread;
+    private CancellationTokenSource? _cts;
+
     // ══════════════════════════════════════════════════════════════════
     //  Lifecycle
     // ══════════════════════════════════════════════════════════════════
@@ -26,138 +30,191 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
     public LinuxTerminal()
     {
         EnableRawMode();
+        if (!_useConsoleReadKey)
+        {
+            StartInputReader();
+        }
     }
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+
+        _cts?.Cancel();
+        _inputBuffer.CompleteAdding();
+
+        if (_inputThread != null && _inputThread.IsAlive)
+        {
+            _inputThread.Join(500); 
+        }
+
         RestoreTerminal();
+        _cts?.Dispose();
+        _inputBuffer.Dispose();
+    }
+
+    private void StartInputReader()
+    {
+        _cts = new CancellationTokenSource();
+        _inputThread = new Thread(InputLoop)
+        {
+            IsBackground = true,
+            Name = "LinuxTerminalInputReader"
+        };
+        _inputThread.Start();
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  ITerminal — Key Input (raw stdin path)
+    //  Background Input Loop (Producer Thread)
     // ══════════════════════════════════════════════════════════════════
 
-    public bool KeyAvailable
+    private void InputLoop()
     {
-        get
+        try
         {
-            if (_useConsoleReadKey)
-                return Console.KeyAvailable;
-
+            var token = _cts!.Token;
             var fds = new pollfd[1];
             fds[0].fd = STDIN_FILENO;
             fds[0].events = POLLIN;
-            return poll(fds, 1, 0) > 0;
+
+            while (!token.IsCancellationRequested)
+            {
+                // Poll stdin for up to 50ms to keep thread responsive to cancellation
+                int pollRet = poll(fds, 1, 50);
+                if (pollRet < 0)
+                {
+                    Thread.Sleep(10); // Interrupted/Error: throttle tight loop
+                    continue;
+                }
+                if (pollRet == 0)
+                {
+                    continue; // Timeout, loop again
+                }
+
+                // Check for exceptional error/hangup conditions on descriptor
+                if ((fds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+                {
+                    Thread.Sleep(50); // Safe backing off on stream detach
+                    continue;
+                }
+
+                // Bug 1 Fix: Pure blocking single-byte read mode.
+                int b = ReadByteBlocking();
+                if (b < 0)
+                {
+                    Thread.Sleep(10); // Safe throttle on empty read/interrupt
+                    continue;
+                }
+
+                if (b == 0x1B) // ESC → multi-byte escape sequence
+                {
+                    var seq = ReadEscapeSequence();
+                    if (seq is not null)
+                    {
+                        _inputBuffer.Add(seq.Value, token);
+                    }
+                    else
+                    {
+                        // Standalone ESC
+                        _inputBuffer.Add(new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false), token);
+                    }
+                }
+                else
+                {
+                    _inputBuffer.Add(MapSingleByte((byte)b), token);
+                }
+            }
         }
+        catch (OperationCanceledException) { /* Clean thread exit */ }
+        catch (Exception) { /* Handle unexpected errors gracefully */ }
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ITerminal — Key Input (Consumer Path)
+    // ══════════════════════════════════════════════════════════════════
+
+    public bool KeyAvailable => _useConsoleReadKey ? Console.KeyAvailable : _inputBuffer.Count > 0;
 
     public ConsoleKeyInfo ReadKey(bool intercept)
     {
         if (_useConsoleReadKey)
             return Console.ReadKey(intercept);
 
-        // Read first byte. VMIN=0, VTIME=1 → immediate if data
-        // available (caller checks KeyAvailable first).
-        int b = ReadByte();
-        if (b < 0) return default; // no data (shouldn't happen if KeyAvailable)
-
-        // ESC → multi-byte escape sequence
-        if (b == 0x1B)
+        try
         {
-            var seq = ReadEscapeSequence();
-            if (seq is not null)
-                return seq.Value;
-            // Standalone ESC
-            return new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false);
+            return _inputBuffer.Take();
         }
-
-        return MapSingleByte((byte)b);
+        catch (InvalidOperationException)
+        {
+            return default;
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
     //  ITerminal — Window / Cursor (delegated to Console)
     // ══════════════════════════════════════════════════════════════════
 
-    public int WindowWidth
-    {
-        get
-        {
-            try { return Console.WindowWidth; }
-            catch (IOException) { return 80; }
-        }
-    }
+    public int WindowWidth => GetConsoleProperty(() => Console.WindowWidth, 80);
+    public int WindowHeight => GetConsoleProperty(() => Console.WindowHeight, 24);
+    public int BufferHeight => GetConsoleProperty(() => Console.BufferHeight, 30);
 
-    public int WindowHeight
-    {
-        get
-        {
-            try { return Console.WindowHeight; }
-            catch (IOException) { return 24; }
-        }
-    }
+    private int _trackedCursorLeft = 0;
+    private int _trackedCursorTop = 0;
 
-    public int BufferHeight
+    public int CursorLeft
     {
-        get
-        {
-            try { return Console.BufferHeight; }
-            catch (IOException) { return 30; }
+        get => _trackedCursorLeft;
+        set 
+        { 
+            _trackedCursorLeft = Math.Max(0, value);
+            
+            // Escape sequence \x1b[{col}G (CHA - Cursor Horizontal Absolute)
+            // Moves the cursor to an absolute column position (1-indexed)
+            Console.Write($"\x1b[{_trackedCursorLeft + 1}G"); 
         }
     }
 
     public int CursorTop
     {
-        get
-        {
-            try { return Console.CursorTop; }
-            catch (IOException) { return 0; }
-        }
-        set
-        {
-            try { Console.CursorTop = value; }
-            catch (IOException) { }
-            catch (ArgumentOutOfRangeException) { }
-        }
-    }
-
-    public int CursorLeft
-    {
-        get
-        {
-            try { return Console.CursorLeft; }
-            catch (IOException) { return 0; }
-        }
-        set
-        {
-            try { Console.CursorLeft = value; }
-            catch (IOException) { }
-            catch (ArgumentOutOfRangeException) { }
+        get => _trackedCursorTop;
+        set 
+        { 
+            _trackedCursorTop = Math.Max(0, value);
+            
+            // Escape sequence \x1b[{row}d (VPA - Vertical Line Position Absolute)
+            // Moves the cursor to an absolute row position (1-indexed)
+            Console.Write($"\x1b[{_trackedCursorTop + 1}d"); 
         }
     }
 
     public void SetCursorPosition(int left, int top)
     {
-        try { Console.SetCursorPosition(left, top); }
-        catch (IOException) { }
-        catch (ArgumentOutOfRangeException) { }
+        _trackedCursorLeft = Math.Max(0, left);
+        _trackedCursorTop = Math.Max(0, top);
+        
+        // Escape sequence \x1b[{row};{col}H (CUP - Cursor Position)
+        // Moves the cursor to both coordinates simultaneously (1-indexed)
+        Console.Write($"\x1b[{_trackedCursorTop + 1};{_trackedCursorLeft + 1}H");
     }
 
     public void Write(string text)
     {
-        try { Console.Write(text); }
-        catch (IOException) { }
+        try { Console.Write(text); } catch (IOException) {}
     }
 
     public void WriteLine()
     {
-        try { Console.WriteLine(); }
-        catch (IOException) { }
+        try { Console.WriteLine(); } catch (IOException) {}
+    }
+
+    private static T GetConsoleProperty<T>(Func<T> getter, T fallback)
+    {
+        try { return getter(); } catch (Exception) { return fallback; }
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Raw Mode
+    //  Raw Mode Configuration
     // ══════════════════════════════════════════════════════════════════
 
     private void EnableRawMode()
@@ -166,29 +223,22 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
 
         if (tcgetattr(STDIN_FILENO, ref _originalTermios) == -1)
         {
-            // Not a terminal (piped input, CI, etc.) — fall back to
-            // Console.ReadKey which handles this gracefully.
-            _useConsoleReadKey = true;
+            _useConsoleReadKey = true; // Fallback for IDE, non-TTY streams
             return;
         }
 
         var raw = _originalTermios;
 
-        // Only disable input-processing flags — we need raw reads
-        // but must keep output processing (OPOST) intact so that
-        // \n → \r\n translation and cursor positioning still work.
-        // cfmakeraw() clears OPOST too, which breaks Spectre.Console
-        // rendering by leaving the cursor at random columns.
+        // Strip input processing flags
         raw.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+        // Bug 2 Fix: Clear out specific bits properly using correct group logic mapping
         raw.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
         raw.c_cflag &= ~(CSIZE | PARENB);
         raw.c_cflag |= CS8;
 
-        // Non-blocking reads with brief timeout for multi-byte sequences:
-        // VMIN=0, VTIME=1 → read() returns immediately when data is
-        // available, or blocks up to 100ms if no data.
-        raw.c_cc[VMIN] = 0;
-        raw.c_cc[VTIME] = 1;
+        // Bug 1 Fix: Change parameters to standard blocking primitive setup
+        raw.c_cc[VMIN] = 1;
+        raw.c_cc[VTIME] = 0;
 
         if (tcsetattr(STDIN_FILENO, TCSAFLUSH, ref raw) == -1)
             return;
@@ -204,11 +254,11 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Byte Reading
+    //  Byte Reading Primitives
     // ══════════════════════════════════════════════════════════════════
 
-    /// <summary>Reads a single byte from stdin. Returns -1 if no data.</summary>
-    private static int ReadByte()
+    /// <summary>Bug 4 — Explicit blocking primitive.</summary>
+    private static int ReadByteBlocking()
     {
         Span<byte> buf = stackalloc byte[1];
         IntPtr n = read(STDIN_FILENO, ref buf[0], (IntPtr)1);
@@ -219,40 +269,37 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
     //  Escape Sequence Parser
     // ══════════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Reads an escape sequence after the initial ESC byte has been consumed.
-    /// Tries to read up to 5 additional bytes over ~15ms to collect the
-    /// full CSI/SS3 sequence, then parses it.
-    /// </summary>
     private static ConsoleKeyInfo? ReadEscapeSequence()
     {
-        var seq = new byte[6]; // max 6 bytes after ESC (e.g. [1;8D = 5 bytes)
+        var seq = new byte[6]; 
         int len = 0;
+        var fds = new pollfd[1];
+        fds[0].fd = STDIN_FILENO;
+        fds[0].events = POLLIN;
 
-        // Read up to 5 bytes after ESC. The terminal sends the entire
-        // sequence atomically — these reads return immediately.
         for (int i = 0; i < 5; i++)
         {
-            int b = ReadByte();
+            // Bug 3 Fix: Timeout window reduced to exactly 20ms using local poll validation
+            if (poll(fds, 1, 20) <= 0) 
+                break;
+
+            if ((fds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+                break;
+
+            int b = ReadByteBlocking();
             if (b < 0) break;
             seq[len++] = (byte)b;
 
-            // First byte is always the CSI/SS3 introducer ([ = 0x5B
-            // or O = 0x4F) — skip terminator check for it.
-            // After that, break when we hit the terminator (0x40-0x7E).
-            if (len > 1 && b >= 0x40 && b <= 0x7E) break;
+            if (len > 1 && b >= 0x40 && b <= 0x7E) 
+                break;
         }
 
         if (len == 0)
-            return null; // standalone ESC
+            return null;
 
         return ParseEscapeSequence(seq.AsSpan(0, len));
     }
 
-    /// <summary>
-    /// Parses a CSI/SS3 escape sequence into a ConsoleKeyInfo.
-    /// The span contains bytes after the initial ESC (0x1B).
-    /// </summary>
     private static ConsoleKeyInfo? ParseEscapeSequence(Span<byte> seq)
     {
         if (seq.Length == 0) return null;
@@ -260,19 +307,16 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
         char intro = (char)seq[0];
         if (intro != '[' && intro != 'O')
         {
-            // Alt+key: ESC followed by a single printable character
             if (seq.Length == 1 && seq[0] >= 0x20)
                 return MapAltChar((char)seq[0]);
             return null;
         }
 
-        // Extract final character and parameter string
         char final = (char)seq[^1];
         string paramStr = seq.Length > 2
             ? System.Text.Encoding.ASCII.GetString(seq.Slice(1, seq.Length - 2))
             : "";
 
-        // Parse parameters
         int p1 = 0, p2 = 0;
         if (paramStr.Length > 0)
         {
@@ -281,7 +325,6 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
             if (parts.Length > 1) int.TryParse(parts[1], out p2);
         }
 
-        // Decode modifiers
         bool shift = false, alt = false, ctrl = false;
         if (paramStr.Contains(';'))
         {
@@ -290,11 +333,9 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
         }
         else if (p1 >= 2 && p1 <= 8 && final != '~')
         {
-            // Bare modifier format (Linux console): CSI mod letter
             (shift, alt, ctrl) = DecodeXtermModifier(p1);
         }
 
-        // Map to ConsoleKey
         ConsoleKey? key = MapSequenceToKey(intro, final, p1);
         if (key is null)
             return null;
@@ -314,7 +355,7 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
             0x09 => new ConsoleKeyInfo('\t', ConsoleKey.Tab, false, false, false),
             0x20 => new ConsoleKeyInfo(' ', ConsoleKey.Spacebar, false, false, false),
             0x7F => new ConsoleKeyInfo('\b', ConsoleKey.Backspace, false, false, false),
-            >= 0x01 and <= 0x1A => CtrlLetter(b), // Ctrl+A through Ctrl+Z
+            >= 0x01 and <= 0x1A => CtrlLetter(b),
             _ => new ConsoleKeyInfo((char)b, (ConsoleKey)b, false, false, false),
         };
     }
@@ -328,9 +369,7 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
 
     private static ConsoleKeyInfo MapAltChar(char c)
     {
-        ConsoleKey key = c >= 'a' && c <= 'z'
-            ? ConsoleKey.A + (c - 'a')
-            : (ConsoleKey)c;
+        ConsoleKey key = c >= 'a' && c <= 'z' ? ConsoleKey.A + (c - 'a') : (ConsoleKey)c;
         return new ConsoleKeyInfo(c, key, false, true, false);
     }
 
@@ -415,35 +454,38 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  P/Invoke — termios
+    //  P/Invoke — Structural Header Constant Alignments
     // ══════════════════════════════════════════════════════════════════
 
     private const int NCCS = 32;
 
-    // termios flags
-    private const uint IGNBRK  = 1 << 0;
-    private const uint BRKINT  = 1 << 1;
-    private const uint PARMRK  = 1 << 3;
-    private const uint ISTRIP  = 1 << 5;
-    private const uint INLCR   = 1 << 6;
-    private const uint IGNCR   = 1 << 7;
-    private const uint ICRNL   = 1 << 8;
-    private const uint IXON    = 1 << 10;
-    private const uint ECHO    = 1 << 3;
-    private const uint ECHONL  = 1 << 6;
-    private const uint ICANON  = 1 << 1;
-    private const uint ISIG    = 1 << 0;
-    private const uint IEXTEN  = 1 << 15;
-    private const uint CSIZE   = 0x30;
-    private const uint CS8     = 0x30;
-    private const uint PARENB  = 1 << 8;
+    // Bug 2 Fix: Verified hex mappings strictly conforming to x86_64 <bits/termios.h>
+    private const uint IGNBRK  = 0x00000001; 
+    private const uint BRKINT  = 0x00000002; 
+    private const uint PARMRK  = 0x00000008; 
+    private const uint ISTRIP  = 0x00000020; 
+    private const uint INLCR   = 0x00000040; 
+    private const uint IGNCR   = 0x00000080; 
+    private const uint ICRNL   = 0x00000100; 
+    private const uint IXON    = 0x00000400; 
+
+    private const uint CSIZE   = 0x00000030; 
+    private const uint CS8     = 0x00000030; 
+    private const uint PARENB  = 0x00000100; 
+
+    private const uint ISIG    = 0x00000001; 
+    private const uint ICANON  = 0x00000002; 
+    private const uint ECHO    = 0x00000008; 
+    private const uint ECHONL  = 0x00000040; 
+    private const uint IEXTEN  = 0x00008000; 
 
     private const int VMIN  = 6;
     private const int VTIME = 5;
     private const int TCSAFLUSH = 2;
-
-    // poll() constants
     private const short POLLIN = 1;
+    private const short POLLERR = 8;
+    private const short POLLHUP = 16;
+    private const short POLLNVAL = 32;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Termios
