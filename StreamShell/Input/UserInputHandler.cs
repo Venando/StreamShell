@@ -166,26 +166,6 @@ internal class UserInputHandler : IInputHandler
                 break;
             batch.Add(_terminal.ReadKey(intercept: true));
         }
-
-        // On Linux, .NET may split ESC from trailing CSI bytes across
-        // internal buffer boundaries even though the terminal sends the
-        // entire sequence atomically.  When the batch ends with a lone
-        // Escape, yield briefly so in-flight CSI bytes can surface and
-        // be collected into the same batch before post-processing.
-        // Without this, bare ESC resets input state and trailing bytes
-        // leak as literal text ("[;").  The 5 ms pause only triggers
-        // when ESC is the *last* key — negligible for genuine Escape.
-        if (batch.Count > 0 && batch[^1].Key == ConsoleKey.Escape)
-        {
-            Thread.Sleep(5);
-            while (_terminal.KeyAvailable)
-            {
-                if (ct.IsCancellationRequested)
-                    break;
-                batch.Add(_terminal.ReadKey(intercept: true));
-            }
-        }
-
         return batch;
     }
 

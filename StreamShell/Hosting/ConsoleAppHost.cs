@@ -290,7 +290,12 @@ public partial class ConsoleAppHost : IDisposable
     }
 
     /// <summary>Creates the platform-appropriate terminal implementation.</summary>
-    private static ITerminal CreateTerminal() => new SystemTerminal();
+    private static ITerminal CreateTerminal()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return new LinuxTerminal();
+        return new SystemTerminal();
+    }
 
     private bool _disposed;
 
@@ -309,6 +314,9 @@ public partial class ConsoleAppHost : IDisposable
         // Dispose active panel
         _bottomPanel?.Dispose();
         _defaultPanel?.Dispose();
+
+        // Dispose terminal (LinuxTerminal restores raw mode)
+        (_terminal as IDisposable)?.Dispose();
 
         // Restore terminal state — may fail in test/headless environments
         try
