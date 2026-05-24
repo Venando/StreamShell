@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace StreamShell;
@@ -64,7 +65,7 @@ public partial class ConsoleAppHost : IDisposable
     public ConsoleAppHost()
     {
         _lastDateTime = DateTime.UtcNow;
-        _terminal = new SystemTerminal();
+        _terminal = CreateTerminal();
         _renderer = new ConsoleRenderer(Settings);
         _inputHandler = new UserInputHandler();
         _defaultPanel = new EmptyBottomPanel(Settings.CommandPaletteHeight);
@@ -92,7 +93,7 @@ public partial class ConsoleAppHost : IDisposable
     {
         _renderer = renderer;
         _inputHandler = inputHandler;
-        _terminal = terminal ?? new SystemTerminal();
+        _terminal = terminal ?? CreateTerminal();
         _defaultPanel = new EmptyBottomPanel(Settings.CommandPaletteHeight);
         _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
@@ -260,6 +261,14 @@ public partial class ConsoleAppHost : IDisposable
     /// Attachments are not affected.
     /// </summary>
     public void SetInputField(string text) => _inputHandler.SetInputFieldContent(text);
+
+    /// <summary>Creates the platform-appropriate terminal implementation.</summary>
+    private static ITerminal CreateTerminal()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return new LinuxTerminal();
+        return new SystemTerminal();
+    }
 
     private bool _disposed;
 
