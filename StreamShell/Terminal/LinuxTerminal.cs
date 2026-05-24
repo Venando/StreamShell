@@ -174,9 +174,12 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
 
         var raw = _originalTermios;
 
-        // cfmakeraw() equivalent: disable canonical, echo, signal processing
+        // Only disable input-processing flags — we need raw reads
+        // but must keep output processing (OPOST) intact so that
+        // \n → \r\n translation and cursor positioning still work.
+        // cfmakeraw() clears OPOST too, which breaks Spectre.Console
+        // rendering by leaving the cursor at random columns.
         raw.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
-        raw.c_oflag &= ~OPOST;
         raw.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
         raw.c_cflag &= ~(CSIZE | PARENB);
         raw.c_cflag |= CS8;
@@ -226,19 +229,18 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
         var seq = new byte[6]; // max 6 bytes after ESC (e.g. [1;8D = 5 bytes)
         int len = 0;
 
-        // Read up to 5 bytes after ESC with brief timeouts.
-        // The terminal sends the entire sequence atomically — these
-        // reads should return immediately with buffered data.
+        // Read up to 5 bytes after ESC. The terminal sends the entire
+        // sequence atomically — these reads return immediately.
         for (int i = 0; i < 5; i++)
         {
             int b = ReadByte();
-            if (b < 0) break; // no more data
+            if (b < 0) break;
             seq[len++] = (byte)b;
 
-            // Stop collecting once we see a terminator (0x40–0x7E)
-            // or the sequence is already longer than expected.
-            if (b >= 0x40 && b <= 0x7E) break;
-            if (len >= 2 && b >= 0x20 && b < 0x40) continue; // parameter bytes
+            // First byte is always the CSI/SS3 introducer ([ = 0x5B
+            // or O = 0x4F) — skip terminator check for it.
+            // After that, break when we hit the terminator (0x40-0x7E).
+            if (len > 1 && b >= 0x40 && b <= 0x7E) break;
         }
 
         if (len == 0)
@@ -427,7 +429,6 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
     private const uint IGNCR   = 1 << 7;
     private const uint ICRNL   = 1 << 8;
     private const uint IXON    = 1 << 10;
-    private const uint OPOST   = 1 << 0;
     private const uint ECHO    = 1 << 3;
     private const uint ECHONL  = 1 << 6;
     private const uint ICANON  = 1 << 1;
