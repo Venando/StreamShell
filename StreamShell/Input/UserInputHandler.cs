@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using System.Text;
 using System.Threading;
 
@@ -111,9 +112,10 @@ internal class UserInputHandler : IInputHandler
             var key = _terminal.ReadKey(intercept: true);
 
             // On Linux, Console.ReadKey may return Escape for extended CSI
-            // sequences (Shift+Arrow, etc.) with trailing bytes still buffered.
-            // Try to parse the full sequence before dispatching the key.
-            if (key.Key == ConsoleKey.Escape && _terminal.KeyAvailable)
+            // sequences (Shift+Arrow, etc.).  The runtime's internal parser
+            // may buffer trailing bytes without exposing them via KeyAvailable.
+            // Try the .NET buffer first, then attempt a raw stdin peek.
+            if (key.Key == ConsoleKey.Escape)
             {
                 var csiKey = TryParseCsiSequence();
                 if (csiKey is not null)
@@ -163,24 +165,48 @@ internal class UserInputHandler : IInputHandler
     // ══════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Reads trailing bytes from the terminal and attempts to parse them
-    /// as a VT/xterm CSI sequence.  Called after <c>Console.ReadKey</c>
-    /// returns Escape and more keys are pending.
+    /// Reads trailing bytes and attempts to parse them as a VT/xterm CSI
+    /// sequence.  Called after <c>Console.ReadKey</c> returns Escape.
+    /// Tries .NET's buffered keys first, then falls back to a raw stdin
+    /// peek (1ms timeout) for bytes the runtime left unconsumed on the fd.
     /// </summary>
     private ConsoleKeyInfo? TryParseCsiSequence()
+    {
+        // Try .NET's internal buffer first
+        if (_terminal.KeyAvailable)
+        {
+            var trailing = ReadTrailingKeys();
+            if (trailing.Count > 0)
+                return ParseTrailing(trailing);
+        }
+
+        // Fallback: raw stdin peek for bytes .NET didn't buffer.
+        // Uses ReadTimeout (not raw mode) so Console state is untouched.
+        return TryRawStdinPeek();
+    }
+
+    /// <summary>Reads all pending keys from the terminal into a list.</summary>
+    private List<ConsoleKeyInfo> ReadTrailingKeys()
     {
         var trailing = new List<ConsoleKeyInfo>(8);
         while (_terminal.KeyAvailable)
             trailing.Add(_terminal.ReadKey(intercept: true));
+        return trailing;
+    }
 
+    /// <summary>
+    /// Attempts to parse a CSI sequence from a list of trailing keys.
+    /// Also handles Alt+key (ESC followed by a single printable character).
+    /// </summary>
+    private static ConsoleKeyInfo? ParseTrailing(List<ConsoleKeyInfo> trailing)
+    {
         if (trailing.Count == 0)
             return null;
 
         char intro = trailing[0].KeyChar;
         if (intro != '[' && intro != 'O')
         {
-            // Not a CSI sequence — could be Alt+key (ESC + char).
-            // Path through as Alt-modified key.
+            // Not CSI — could be Alt+key (ESC + single char)
             if (trailing.Count == 1 && trailing[0].KeyChar >= ' ')
             {
                 var tk = trailing[0];
@@ -192,7 +218,6 @@ internal class UserInputHandler : IInputHandler
             return null;
         }
 
-        // Reconstruct the CSI sequence from KeyChar values
         var seq = new System.Text.StringBuilder(trailing.Count);
         foreach (var k in trailing)
         {
@@ -201,6 +226,62 @@ internal class UserInputHandler : IInputHandler
         }
 
         return CsiParser.Parse(seq.ToString());
+    }
+
+    /// <summary>
+    /// Tries to read CSI bytes directly from stdin with a 1ms timeout.
+    /// Does NOT change terminal mode — just peeks at the raw fd.
+    /// </summary>
+    private ConsoleKeyInfo? TryRawStdinPeek()
+    {
+        try
+        {
+            var stdin = Console.OpenStandardInput();
+            if (!stdin.CanRead)
+                return null;
+
+            int oldTimeout = stdin.ReadTimeout;
+            stdin.ReadTimeout = 1; // 1ms — enough for in-process bytes
+            try
+            {
+                int b = stdin.ReadByte();
+                if (b < 0)
+                    return null;
+
+                byte first = (byte)b;
+                if (first != (byte)'[' && first != (byte)'O')
+                    return null; // not CSI, not worth parsing
+
+                // Read the rest of the CSI sequence
+                var buf = new byte[16];
+                buf[0] = first;
+                int total = 1;
+                while (total < buf.Length)
+                {
+                    int nb = stdin.ReadByte();
+                    if (nb < 0) break;
+                    byte next = (byte)nb;
+                    buf[total++] = next;
+                    if (next >= 0x40 && next <= 0x7E) // CSI terminator
+                        break;
+                }
+
+                return CsiParser.Parse(
+                    System.Text.Encoding.ASCII.GetString(buf, 0, total));
+            }
+            catch (IOException)
+            {
+                return null; // timeout — no bytes available
+            }
+            finally
+            {
+                stdin.ReadTimeout = oldTimeout;
+            }
+        }
+        catch
+        {
+            return null; // stdin not available
+        }
     }
 
     /// <summary>Handles Enter. Returns true if the outer while should continue or break.</summary>
