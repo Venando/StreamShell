@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace StreamShell;
@@ -25,6 +26,14 @@ internal class ClipboardHandler
     /// <summary>Counter for attachment placeholders, reset on each submit.</summary>
     private int _attachmentCounter;
 
+    /// <summary>Creates the platform-appropriate clipboard service.</summary>
+    private static IClipboardService CreateClipboardService()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return new WindowsClipboardService();
+        return new LinuxClipboardService();
+    }
+
     public ClipboardHandler(
         TextBuffer buffer,
         SelectionManager selection,
@@ -39,7 +48,7 @@ internal class ClipboardHandler
         _snapshot = snapshot;
         _getLargePasteThreshold = getLargePasteThreshold;
         _getLargePasteLineThreshold = getLargePasteLineThreshold;
-        _clipboard = new ClipboardService();
+        _clipboard = CreateClipboardService();
     }
 
     /// <summary>Creates the handler with an explicit clipboard service (for testing).</summary>

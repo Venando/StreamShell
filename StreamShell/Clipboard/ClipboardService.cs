@@ -4,7 +4,8 @@ using System.Text;
 
 namespace StreamShell;
 
-internal class ClipboardService : IClipboardService
+/// <summary>Windows-only clipboard service using Win32 P/Invoke.</summary>
+internal sealed class WindowsClipboardService : IClipboardService
 {
     private const uint CF_UNICODETEXT = 13;
     private const uint GMEM_MOVABLE = 0x0002;
