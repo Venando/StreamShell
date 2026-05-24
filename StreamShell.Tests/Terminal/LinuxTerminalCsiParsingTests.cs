@@ -273,6 +273,89 @@ public class LinuxTerminalCsiParsingTests
     }
 
     // ══════════════════════════════════════════════════════════════════
+    //  Bare modifier format (without 1; prefix)
+    //  Linux console / old xterm send CSI mod letter (e.g. [5D])
+    // ══════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData("[2A", ConsoleKey.UpArrow,    true,  false, false)]  // Shift
+    [InlineData("[2B", ConsoleKey.DownArrow,  true,  false, false)]
+    [InlineData("[2C", ConsoleKey.RightArrow, true,  false, false)]
+    [InlineData("[2D", ConsoleKey.LeftArrow,  true,  false, false)]
+    [InlineData("[3A", ConsoleKey.UpArrow,    false, true,  false)]  // Alt
+    [InlineData("[3D", ConsoleKey.LeftArrow,  false, true,  false)]
+    [InlineData("[5A", ConsoleKey.UpArrow,    false, false, true)]   // Ctrl
+    [InlineData("[5B", ConsoleKey.DownArrow,  false, false, true)]
+    [InlineData("[5C", ConsoleKey.RightArrow, false, false, true)]
+    [InlineData("[5D", ConsoleKey.LeftArrow,  false, false, true)]
+    [InlineData("[6A", ConsoleKey.UpArrow,    true,  false, true)]   // Ctrl+Shift
+    [InlineData("[6B", ConsoleKey.DownArrow,  true,  false, true)]
+    [InlineData("[6C", ConsoleKey.RightArrow, true,  false, true)]
+    [InlineData("[6D", ConsoleKey.LeftArrow,  true,  false, true)]
+    [InlineData("[7A", ConsoleKey.UpArrow,    false, true,  true)]   // Ctrl+Alt
+    [InlineData("[7D", ConsoleKey.LeftArrow,  false, true,  true)]
+    [InlineData("[8A", ConsoleKey.UpArrow,    true,  true,  true)]   // Ctrl+Shift+Alt
+    [InlineData("[8D", ConsoleKey.LeftArrow,  true,  true,  true)]
+    public void ParseCsiSequence_BareModifierArrows_CorrectModifiers(
+        string seq, ConsoleKey expectedKey, bool shift, bool alt, bool ctrl)
+    {
+        var result = ParseCsi(seq);
+
+        Assert.NotNull(result);
+        Assert.Equal(expectedKey, result.Value.Key);
+        AssertModifiers(result.Value, shift, alt, ctrl);
+    }
+
+    // ── Bare modifier for Home/End ────────────────────────────────
+
+    [Theory]
+    [InlineData("[2H", ConsoleKey.Home, true,  false, false)]  // Shift+Home
+    [InlineData("[5H", ConsoleKey.Home, false, false, true)]   // Ctrl+Home
+    [InlineData("[2F", ConsoleKey.End,  true,  false, false)]  // Shift+End
+    [InlineData("[5F", ConsoleKey.End,  false, false, true)]   // Ctrl+End
+    public void ParseCsiSequence_BareModifierHomeEnd_CorrectModifiers(
+        string seq, ConsoleKey expectedKey, bool shift, bool alt, bool ctrl)
+    {
+        var result = ParseCsi(seq);
+
+        Assert.NotNull(result);
+        Assert.Equal(expectedKey, result.Value.Key);
+        AssertModifiers(result.Value, shift, alt, ctrl);
+    }
+
+    // ── Bare modifier for SS3 (application mode O) ───────────────
+
+    [Theory]
+    [InlineData("O2D", ConsoleKey.LeftArrow,  true,  false, false)]  // Shift+Left
+    [InlineData("O5C", ConsoleKey.RightArrow, false, false, true)]    // Ctrl+Right
+    [InlineData("O6A", ConsoleKey.UpArrow,    true,  false, true)]    // Ctrl+Shift+Up
+    public void ParseCsiSequence_BareModifierSs3_CorrectModifiers(
+        string seq, ConsoleKey expectedKey, bool shift, bool alt, bool ctrl)
+    {
+        var result = ParseCsi(seq);
+
+        Assert.NotNull(result);
+        Assert.Equal(expectedKey, result.Value.Key);
+        AssertModifiers(result.Value, shift, alt, ctrl);
+    }
+
+    // ── Tilde sequences still use p1 as key code, not modifier ───
+
+    [Theory]
+    [InlineData("[2~", ConsoleKey.Insert)]
+    [InlineData("[3~", ConsoleKey.Delete)]
+    [InlineData("[5~", ConsoleKey.PageUp)]
+    [InlineData("[6~", ConsoleKey.PageDown)]
+    public void ParseCsiSequence_BareModifierDoesNotAffectTilde(string seq, ConsoleKey expectedKey)
+    {
+        var result = ParseCsi(seq);
+
+        Assert.NotNull(result);
+        Assert.Equal(expectedKey, result.Value.Key);
+        AssertModifiers(result.Value, shift: false, alt: false, ctrl: false);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  Helpers
     // ══════════════════════════════════════════════════════════════════
 

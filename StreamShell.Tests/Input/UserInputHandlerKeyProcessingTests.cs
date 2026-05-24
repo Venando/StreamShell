@@ -975,4 +975,118 @@ public class UserInputHandlerKeyProcessingTests
         var handler = CreateHandler();
         Assert.Equal(50, handler.RightMargin);
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Linux CSI escape sequence handling (ESC + CSI batch)
+    //  Simulates .NET splitting ESC from the trailing CSI bytes.
+    // ══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void ProcessInput_EscAndCsiBytesInBatch_MergesToCtrlLeftArrow()
+    {
+        // Simulate .NET on Linux returning ESC + CSI bytes individually
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("hello world");
+        // Move cursor to end so word-left is visible
+        _terminal.EnqueueRaw(new ConsoleKeyInfo('\0', ConsoleKey.End, false, false, false));
+        handler.ProcessInput();
+
+        // Now press Ctrl+LeftArrow: ESC [ 1 ; 5 D
+        _terminal.EnqueueEscape();                           // ESC
+        _terminal.EnqueueChar('[');                          // [
+        _terminal.EnqueueChar('1');                          // 1
+        _terminal.EnqueueChar(';');                          // ;
+        _terminal.EnqueueChar('5');                          // 5
+        _terminal.EnqueueChar('D');                          // D
+
+        handler.ProcessInput();
+
+        // Input should still be "hello world" (not erased — ESC was merged)
+        Assert.Equal("hello world", handler.CurrentInput);
+        // Cursor should have moved to start of "world" (word-left from end)
+        Assert.Equal(6, handler.CursorPosition);
+        Assert.False(handler.HasSelection);
+    }
+
+    [Fact]
+    public void ProcessInput_EscAndCsiBytesInBatch_SetsSelectionWhenShift()
+    {
+        // Simulate Shift+Ctrl+RightArrow from position 0.
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("hello world");
+
+        // Move cursor to start first
+        _terminal.EnqueueRaw(new ConsoleKeyInfo('\0', ConsoleKey.Home, false, false, false));
+        handler.ProcessInput();
+
+        // Now press Shift+Ctrl+RightArrow: ESC [ 1 ; 6 C
+        _terminal.EnqueueEscape();
+        _terminal.EnqueueChar('[');
+        _terminal.EnqueueChar('1');
+        _terminal.EnqueueChar(';');
+        _terminal.EnqueueChar('6');
+        _terminal.EnqueueChar('C');
+
+        handler.ProcessInput();
+
+        Assert.Equal("hello world", handler.CurrentInput);
+        Assert.True(handler.HasSelection);
+        handler.TryGetSelection(out int start, out int length);
+        Assert.Equal(0, start);
+        Assert.Equal(5, length); // "hello" selected
+    }
+
+    [Fact]
+    public void ProcessInput_EscAndCsiBytes_BareModifierFormat_CtrlLeftArrow()
+    {
+        // Simulate Linux console format: ESC [ 5 D (no 1; prefix)
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("abc def");
+        _terminal.EnqueueRaw(new ConsoleKeyInfo('\0', ConsoleKey.End, false, false, false));
+        handler.ProcessInput();
+
+        _terminal.EnqueueEscape();
+        _terminal.EnqueueChar('[');
+        _terminal.EnqueueChar('5');  // Ctrl modifier, bare format
+        _terminal.EnqueueChar('D');
+
+        handler.ProcessInput();
+
+        Assert.Equal("abc def", handler.CurrentInput);
+        Assert.Equal(4, handler.CursorPosition); // at start of "def"
+    }
+
+    [Fact]
+    public void ProcessInput_StandaloneEscape_StillResetsState()
+    {
+        // Pure ESC without trailing CSI bytes should still reset
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("some text");
+
+        _terminal.EnqueueEscape();
+        handler.ProcessInput();
+
+        Assert.Equal("", handler.CurrentInput);
+        Assert.Equal(0, handler.CursorPosition);
+    }
+
+    [Fact]
+    public void ProcessInput_EscWithNonCsiByte_DoesNotResetState()
+    {
+        // ESC + printable char should NOT reset state.
+        // PostProcessCsiBatch merges ESC+x into Alt+X ConsoleKeyInfo.
+        var handler = CreateHandler();
+        handler.SetInputFieldContent("abc");
+
+        _terminal.EnqueueEscape();
+        _terminal.EnqueueChar('x');
+
+        handler.ProcessInput();
+
+        // Input NOT reset (ESC was merged with 'x' as Alt+X).
+        // The 'x' char comes through because the Alt+X key falls
+        // through the dispatch chain and gets buffered as a regular
+        // character — that's existing behavior unrelated to this fix.
+        Assert.NotEqual("", handler.CurrentInput); // Not reset by ESC
+    }
 }

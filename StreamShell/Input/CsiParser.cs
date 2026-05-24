@@ -8,6 +8,7 @@ namespace StreamShell;
 /// Handles standard and extended XTerm modifier encoding:
 ///   <c>ESC [ A</c>       → UpArrow
 ///   <c>ESC [ 1 ; 2 D</c> → LeftArrow + Shift
+///   <c>ESC [ 5 D</c>     → LeftArrow + Ctrl  (bare modifier, Linux console)
 ///   <c>ESC [ 1 5 ~</c>   → F5 (via CSI ~ encoding)
 ///   <c>ESC O H</c>       → Home (application mode)
 /// </summary>
@@ -40,22 +41,22 @@ internal static class CsiParser
             if (parts.Length > 1) int.TryParse(parts[1], out p2);
         }
 
-        // Only extract modifiers when ';' is present (extended CSI).
-        // Bare numbers like "2~" are key codes, not modifiers.
+        // Modifier extraction: two formats exist —
+        //   Extended CSI:  CSI 1 ; mod letter     (modern terminals)
+        //   Bare modifier: CSI mod letter          (Linux console, old xterm)
+        // Tilde sequences (~) use p1 as a key code, never as a modifier.
         bool shift = false, alt = false, ctrl = false;
         if (paramStr.Contains(';'))
         {
             int modParam = p1 == 1 ? p2 : p1;
-            switch (modParam)
-            {
-                case 2: shift = true; break;
-                case 3: alt = true; break;
-                case 4: shift = true; alt = true; break;
-                case 5: ctrl = true; break;
-                case 6: ctrl = true; shift = true; break;
-                case 7: ctrl = true; alt = true; break;
-                case 8: ctrl = true; shift = true; alt = true; break;
-            }
+            (shift, alt, ctrl) = DecodeModifier(modParam);
+        }
+        else if (p1 >= 2 && p1 <= 8 && final != '~')
+        {
+            // Bare modifier format: single parameter is the modifier.
+            // Only interpret as modifier for cursor keys (A–F, H) —
+            // tilde sequences use p1 as a key code (e.g. "2~" → Insert).
+            (shift, alt, ctrl) = DecodeModifier(p1);
         }
 
         ConsoleKey? key = MapToConsoleKey(intro, final, p1);
@@ -102,6 +103,27 @@ internal static class CsiParser
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Decodes an xterm modifier parameter into Shift/Alt/Ctrl flags.
+    /// The xterm modifier encoding is an enumeration, NOT a bitmask:
+    /// 2=Shift, 3=Alt, 4=Shift+Alt, 5=Ctrl, 6=Ctrl+Shift,
+    /// 7=Ctrl+Alt, 8=Ctrl+Shift+Alt.
+    /// </summary>
+    private static (bool shift, bool alt, bool ctrl) DecodeModifier(int mod)
+    {
+        return mod switch
+        {
+            2 => (true,  false, false),
+            3 => (false, true,  false),
+            4 => (true,  true,  false),
+            5 => (false, false, true),
+            6 => (true,  false, true),
+            7 => (false, true,  true),
+            8 => (true,  true,  true),
+            _ => (false, false, false)
+        };
     }
 
     private static ConsoleKey? MapTilde(int p1)
