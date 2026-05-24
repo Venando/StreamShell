@@ -326,9 +326,7 @@ public partial class ConsoleAppHost : IDisposable
             // No console handle available (e.g. test runner, CI)
         }
 
-        // Restore raw-mode terminal settings on Linux
-        if (_terminal is LinuxTerminal)
-            LinuxTerminal.RestoreTerminal();
+
     }
 
 }

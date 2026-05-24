@@ -1,120 +1,23 @@
-using System.Runtime.InteropServices;
 using System.Text;
-using Microsoft.Win32.SafeHandles;
 
 namespace StreamShell;
 
 /// <summary>
-/// Linux-aware <see cref="ITerminal"/> that reads raw bytes from stdin
-/// and parses VT/xterm escape sequences, control characters, and printable
-/// input into <see cref="ConsoleKeyInfo"/> values with correct modifiers.
+/// Linux-aware <see cref="ITerminal"/> that intercepts <see cref="ConsoleKey.Escape"/>
+/// returned by <c>Console.ReadKey()</c> and checks whether it was actually the start
+/// of a VT/xterm CSI escape sequence that the runtime's parser failed to handle.
 ///
-/// Bypasses <c>System.Console.ReadKey()</c> entirely because the runtime's
-/// CSI parser on Linux mishandles extended escape sequences (Shift+Arrow,
-/// Ctrl+Arrow, etc.) by returning them as individual key presses rather than
-/// as single modifier-aware keys.
+/// On Linux, the .NET runtime's internal CSI parser may consume the leading ESC byte
+/// from extended sequences (Shift+Arrow emits <c>ESC [ 1 ; 2 D</c>) but buffer the
+/// remaining bytes internally rather than returning them as a complete key.  After
+/// the ESC is returned, <c>Console.KeyAvailable</c> is still true, and subsequent
+/// <c>Console.ReadKey()</c> calls return the trailing bytes as individual key presses.
+///
+/// This terminal consumes those trailing bytes, reconstructs the CSI sequence, and
+/// returns the correct <see cref="ConsoleKeyInfo"/> with proper modifiers.
 /// </summary>
 internal sealed class LinuxTerminal : ITerminal
 {
-    private readonly Stream _stdin;
-    private readonly byte[] _readBuf = new byte[64];
-    private static bool _rawModeSet;
-
-    // ── termios / raw-mode P/Invoke ─────────────────────────────────
-
-    private const int TCSANOW = 0;
-    private const uint ICANON = 0x0002;
-    private const uint ECHO   = 0x0008;
-    private const uint ISIG   = 0x0001;
-    private const uint IXON   = 0x0400;
-    private const uint ICRNL  = 0x0100;
-    private const byte VMIN   = 6;
-    private const byte VTIME  = 5;
-
-    [DllImport("libc", SetLastError = true)]
-    private static extern int tcgetattr(int fd, ref Termios termios_p);
-
-    [DllImport("libc", SetLastError = true)]
-    private static extern int tcsetattr(int fd, int optional_actions, ref Termios termios_p);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Termios
-    {
-        public uint c_iflag;
-        public uint c_oflag;
-        public uint c_cflag;
-        public uint c_lflag;
-        public byte c_line;
-        // cc_t is byte[32] on x86_64 Linux — use MarshalAs to avoid unsafe
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
-        public byte[] c_cc;
-    }
-
-    private static Termios _savedTermios;
-
-    public LinuxTerminal()
-    {
-        _stdin = Console.OpenStandardInput();
-        EnsureRawMode();
-    }
-
-    private void EnsureRawMode()
-    {
-        if (_rawModeSet) return;
-        _rawModeSet = true;
-
-        // Get stdin fd from the .NET FileStream handle
-        int fd = 0; // STDIN_FILENO
-        try
-        {
-            if (_stdin is FileStream fs && fs.SafeFileHandle is not null)
-            {
-                nint handle = fs.SafeFileHandle.DangerousGetHandle();
-                if (handle != nint.Zero)
-                    fd = (int)handle;
-            }
-        }
-        catch { /* fallback to fd 0 */ }
-
-        // Initialize arrays before P/Invoke writes into them
-        _savedTermios = new Termios { c_cc = new byte[32] };
-        tcgetattr(fd, ref _savedTermios);
-
-        // Build raw settings (clone the cc array so we don't mutate _savedTermios)
-        var raw = new Termios
-        {
-            c_iflag = _savedTermios.c_iflag,
-            c_oflag = _savedTermios.c_oflag,
-            c_cflag = _savedTermios.c_cflag,
-            c_lflag = _savedTermios.c_lflag,
-            c_line = _savedTermios.c_line,
-            c_cc = new byte[32]
-        };
-        Array.Copy(_savedTermios.c_cc, raw.c_cc, 32);
-        raw.c_lflag &= ~(ICANON | ECHO /* | ISIG */); // keep ISIG for Ctrl+C handling
-        raw.c_iflag &= ~(IXON | ICRNL);               // disable flow control, CR→NL translation
-        raw.c_cc[VMIN] = 1;   // read at least 1 byte
-        raw.c_cc[VTIME] = 0;  // no timeout (blocking read)
-        tcsetattr(fd, TCSANOW, ref raw);
-    }
-
-    /// <summary>Restores the original terminal settings.</summary>
-    internal static void RestoreTerminal()
-    {
-        if (!_rawModeSet) return;
-        _rawModeSet = false;
-
-        int fd = 0;
-        try
-        {
-            tcsetattr(fd, TCSANOW, ref _savedTermios);
-        }
-        catch
-        {
-            // Best effort
-        }
-    }
-
     // ══════════════════════════════════════════════════════════════════
     //  ITerminal — Key Input
     // ══════════════════════════════════════════════════════════════════
@@ -123,160 +26,76 @@ internal sealed class LinuxTerminal : ITerminal
 
     public ConsoleKeyInfo ReadKey(bool intercept)
     {
-        int first = _stdin.ReadByte();
-        if (first < 0)
-            return default;
+        var key = Console.ReadKey(intercept);
 
-        byte b = (byte)first;
+        // Fast path: non-ESC keys are returned as-is.
+        // The .NET runtime handles standard printable chars, Enter, Tab,
+        // Backspace, Ctrl+letter, and basic arrow keys correctly on Linux.
+        if (key.Key != ConsoleKey.Escape)
+            return key;
 
-        // ── Escape sequences ──────────────────────────────────────────
-        if (b == 0x1b)
-            return ReadEscapeSequence();
+        // ESC received.  On Linux this may be the leading byte of a CSI
+        // sequence whose remaining bytes .NET buffered but could not parse
+        // into a complete key.  If there are pending bytes, consume and
+        // try to parse them as an extended CSI sequence.
+        //
+        // No explicit sleep is needed — .NET's internal read already
+        // consumed the burst of bytes; Console.KeyAvailable reflects its
+        // internal buffer state, so the check is instantaneous.
+        if (!Console.KeyAvailable)
+            return key; // genuine Escape key press
 
-        // ── Tab ───────────────────────────────────────────────────────
-        if (b == 0x09)
-            return Key('\t', ConsoleKey.Tab);
+        // Read trailing bytes of the potential CSI sequence
+        // Use a small list — CSI sequences are at most ~10 bytes
+        var trailing = new List<ConsoleKeyInfo>(8);
+        while (Console.KeyAvailable)
+            trailing.Add(Console.ReadKey(intercept: true));
 
-        // ── Enter / Ctrl+Enter / Shift+Enter ──────────────────────────
-        // All variants send \r (0x0D) in legacy terminal protocol.
-        // The modifier cannot be detected without Kitty Keyboard Protocol.
-        if (b == 0x0d)
-            return Key('\r', ConsoleKey.Enter);
+        if (trailing.Count == 0)
+            return key;
 
-        // ── Backspace (0x7F = DEL on Linux, 0x08 = BS) ───────────────
-        if (b == 0x7f || b == 0x08)
-            return Key('\b', ConsoleKey.Backspace);
-
-        // ── Ctrl+A..Ctrl+Z  (0x01..0x1A) ──────────────────────────────
-        // Ctrl+D (0x04) = quit; Ctrl+C (0x03) = copy, etc.
-        if (b >= 0x01 && b <= 0x1a)
+        // CSI sequences always start with '[' or 'O' (SS3)
+        char intro = trailing[0].KeyChar;
+        if (intro != '[' && intro != 'O')
         {
-            ConsoleKey ck = ConsoleKey.A + (b - 0x01);
-            return new ConsoleKeyInfo((char)b, ck, false, false, true);
-        }
-
-        // ── Printable ASCII ───────────────────────────────────────────
-        if (b >= 0x20 && b < 0x7f)
-        {
-            char c = (char)b;
-            return new ConsoleKeyInfo(c, (ConsoleKey)c, false, false, false);
-        }
-
-        // ── Fallback: unknown byte ────────────────────────────────────
-        return new ConsoleKeyInfo((char)b, (ConsoleKey)b, false, false, false);
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  Escape Sequence Handling
-    // ══════════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// Reads and parses a sequence that starts with ESC (0x1B).
-    /// Sets a short read timeout so we don't block forever waiting
-    /// for bytes that aren't coming (plain ESC press).
-    /// </summary>
-    private ConsoleKeyInfo ReadEscapeSequence()
-    {
-        int oldTimeout = _stdin.ReadTimeout;
-        _stdin.ReadTimeout = 25; // ncurses ESCDELAY recommendation
-
-        try
-        {
-            int b = _stdin.ReadByte();
-            if (b < 0)
-                return Key('\x1b', ConsoleKey.Escape);
-
-            byte second = (byte)b;
-
-            // ── CSI sequence (ESC [ …) ────────────────────────────────
-            if (second == (byte)'[')
+            // Not a CSI sequence — a real user action (ESC + keypress).
+            // Reconstructed as Alt+key if the second byte is printable.
+            // Otherwise, return plain ESC (trailing bytes are lost, but
+            // this only happens for exotic terminal sequences).
+            if (trailing.Count == 1 && trailing[0].KeyChar >= ' ')
             {
-                string? seq = ReadCsiBody((byte)'[');
-                if (seq is not null)
-                {
-                    var parsed = ParseCsiSequence(seq);
-                    if (parsed is not null)
-                        return parsed.Value;
-                }
-                return Key('\x1b', ConsoleKey.Escape);
-            }
-
-            // ── SS3 sequence (ESC O …) ────────────────────────────────
-            if (second == (byte)'O')
-            {
-                string? seq = ReadCsiBody((byte)'O');
-                if (seq is not null)
-                {
-                    var parsed = ParseCsiSequence(seq);
-                    if (parsed is not null)
-                        return parsed.Value;
-                }
-                return Key('\x1b', ConsoleKey.Escape);
-            }
-
-            // ── Alt+key (ESC followed by a printable character) ───────
-            // .NET convention: ESC + letter = Alt+letter
-            if (second >= 0x20 && second < 0x7f)
-            {
-                // Alt+Enter: ESC \r → use Alt modifier
-                if (second == 0x0d)
+                char c = trailing[0].KeyChar;
+                // Alt+Enter: ESC followed by \r
+                if (trailing[0].Key == ConsoleKey.Enter)
                     return new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, true, false);
-
-                char c = (char)second;
+                // Alt+letter
                 if (c >= 'a' && c <= 'z')
-                    return new ConsoleKeyInfo(c, (ConsoleKey)(c - 0x20), false, true, false);
+                    return new ConsoleKeyInfo(c, ConsoleKey.A + (c - 'a'), false, true, false);
+                if (c >= 'A' && c <= 'Z')
+                    return new ConsoleKeyInfo(c, (ConsoleKey)c, false, true, false);
+                // Alt+digit or other printable
                 return new ConsoleKeyInfo(c, (ConsoleKey)c, false, true, false);
             }
-
-            return Key('\x1b', ConsoleKey.Escape);
+            return key;
         }
-        catch (IOException)
+
+        // Reconstruct the CSI sequence from KeyChar values
+        var seq = new StringBuilder(trailing.Count);
+        foreach (var k in trailing)
         {
-            // Timeout — plain ESC press
-            return Key('\x1b', ConsoleKey.Escape);
-        }
-        finally
-        {
-            _stdin.ReadTimeout = oldTimeout;
-        }
-    }
-
-    /// <summary>
-    /// Reads the body of a CSI/SS3 sequence (everything after the introducer)
-    /// until a terminator byte (0x40–0x7E) or timeout.
-    /// Returns the full sequence string including the introducer, or null on failure.
-    /// </summary>
-    private string? ReadCsiBody(byte introducer)
-    {
-        int total = 1;
-        _readBuf[0] = introducer;
-
-        while (total < _readBuf.Length)
-        {
-            try
-            {
-                int nb = _stdin.ReadByte();
-                if (nb < 0)
-                    break;
-
-                byte next = (byte)nb;
-                _readBuf[total++] = next;
-
-                // CSI terminator range: 0x40 ('@') to 0x7E ('~')
-                if (next >= 0x40 && next <= 0x7E)
-                    return Encoding.ASCII.GetString(_readBuf, 0, total);
-            }
-            catch (IOException)
-            {
-                break; // timeout mid-sequence
-            }
+            if (k.KeyChar != '\0')
+                seq.Append(k.KeyChar);
         }
 
-        return null;
+        var parsed = ParseCsiSequence(seq.ToString());
+        if (parsed is null)
+            return key; // unrecognized CSI — treat as plain ESC
+
+        return parsed.Value;
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  CSI Sequence Parser (same logic, exposed for tests)
+    //  CSI Sequence Parser
     // ══════════════════════════════════════════════════════════════════
 
     /// <summary>
@@ -394,13 +213,6 @@ internal sealed class LinuxTerminal : ITerminal
             _ => null
         };
     }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  Helpers
-    // ══════════════════════════════════════════════════════════════════
-
-    private static ConsoleKeyInfo Key(char ch, ConsoleKey key) =>
-        new(ch, key, false, false, false);
 
     // ══════════════════════════════════════════════════════════════════
     //  ITerminal — Dimensions  (delegated to System.Console)
