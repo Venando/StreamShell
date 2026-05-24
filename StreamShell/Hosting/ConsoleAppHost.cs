@@ -276,11 +276,10 @@ public partial class ConsoleAppHost : IDisposable
 
         if (!_inputHandler.ClipboardAvailable)
         {
-            AddMessage(
-                "[dim][[yellow]![/]] Clipboard tools not found — " +
-                "[bold]Ctrl+C[/] / [bold]Ctrl+V[/] unavailable. " +
-                "Install with: [bold]sudo apt install wl-clipboard[/] (Wayland) " +
-                "or [bold]sudo apt install xclip[/] (X11)[/]");
+            AddMessage("[yellow]![/] Clipboard tools not found");
+            AddMessage("[bold]Ctrl+C[/] / [bold]Ctrl+V[/] / [bold]Ctrl+X[/] unavailable.");
+            AddMessage("Install with: [bold]sudo apt install wl-clipboard[/] (Wayland)");
+            AddMessage("or [bold]sudo apt install xclip[/] (X11)");
         }
 
         // Linux terminals can't distinguish Shift+Enter or Ctrl+Enter from plain Enter.
