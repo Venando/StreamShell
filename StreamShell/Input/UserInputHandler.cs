@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.IO;
 using System.Text;
 using System.Threading;
 
@@ -104,23 +103,16 @@ internal class UserInputHandler : IInputHandler
     {
         string? submitted = null;
 
-        while (_terminal.KeyAvailable)
+        // Batch-read all available keys first, then post-process CSI sequences.
+        // This avoids race conditions with .NET's internal Console buffer —
+        // we see the full key sequence before making any dispatch decisions.
+        var batch = ReadKeyBatch(cancellationToken);
+        batch = PostProcessCsiBatch(batch);
+
+        foreach (var key in batch)
         {
             if (cancellationToken.IsCancellationRequested)
                 return submitted;
-
-            var key = _terminal.ReadKey(intercept: true);
-
-            // On Linux, Console.ReadKey may return Escape for extended CSI
-            // sequences (Shift+Arrow, etc.).  The runtime's internal parser
-            // may buffer trailing bytes without exposing them via KeyAvailable.
-            // Try the .NET buffer first, then attempt a raw stdin peek.
-            if (key.Key == ConsoleKey.Escape)
-            {
-                var csiKey = TryParseCsiSequence();
-                if (csiKey is not null)
-                    key = csiKey.Value;
-            }
 
             // Give the interceptor first crack at the key (e.g. hint navigation)
             if (KeyInterceptor?.Invoke(key) == true)
@@ -131,7 +123,7 @@ internal class UserInputHandler : IInputHandler
 
             EnterHandleResult enterHandle = HandleEnter(key, ctrl, shift, alt, ref submitted);
 
-            if (enterHandle == EnterHandleResult.Continue) 
+            if (enterHandle == EnterHandleResult.Continue)
                 continue;
             if (enterHandle == EnterHandleResult.Break)
                 break;
@@ -161,127 +153,95 @@ internal class UserInputHandler : IInputHandler
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  CSI Sequence Interception (Linux escape sequence fix)
+    //  Key Batch Reading
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>Reads all available keys from the terminal at once.</summary>
+    private List<ConsoleKeyInfo> ReadKeyBatch(CancellationToken ct)
+    {
+        var batch = new List<ConsoleKeyInfo>();
+        while (_terminal.KeyAvailable)
+        {
+            if (ct.IsCancellationRequested)
+                break;
+            batch.Add(_terminal.ReadKey(intercept: true));
+        }
+        return batch;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  CSI Batch Post-Processing (Linux escape sequence fix)
     // ══════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Reads trailing bytes and attempts to parse them as a VT/xterm CSI
-    /// sequence.  Called after <c>Console.ReadKey</c> returns Escape.
-    /// Tries .NET's buffered keys first, then falls back to a raw stdin
-    /// peek (1ms timeout) for bytes the runtime left unconsumed on the fd.
+    /// Scans a batch of keys for ESC + trailing CSI bytes and merges them
+    /// into proper <see cref="ConsoleKeyInfo"/> values with modifiers.
+    /// On Linux, <c>Console.ReadKey</c> may return ESC separately from
+    /// the remaining CSI sequence bytes (e.g. ESC, [, 1, ;, 2, D for
+    /// Shift+LeftArrow).  This method recombines them.
     /// </summary>
-    private ConsoleKeyInfo? TryParseCsiSequence()
+    private static List<ConsoleKeyInfo> PostProcessCsiBatch(List<ConsoleKeyInfo> batch)
     {
-        // Try .NET's internal buffer first
-        if (_terminal.KeyAvailable)
+        if (batch.Count < 2)
+            return batch;
+
+        var result = new List<ConsoleKeyInfo>(batch.Count);
+        int i = 0;
+        while (i < batch.Count)
         {
-            var trailing = ReadTrailingKeys();
-            if (trailing.Count > 0)
-                return ParseTrailing(trailing);
-        }
+            var key = batch[i];
 
-        // Fallback: raw stdin peek for bytes .NET didn't buffer.
-        // Uses ReadTimeout (not raw mode) so Console state is untouched.
-        return TryRawStdinPeek();
-    }
-
-    /// <summary>Reads all pending keys from the terminal into a list.</summary>
-    private List<ConsoleKeyInfo> ReadTrailingKeys()
-    {
-        var trailing = new List<ConsoleKeyInfo>(8);
-        while (_terminal.KeyAvailable)
-            trailing.Add(_terminal.ReadKey(intercept: true));
-        return trailing;
-    }
-
-    /// <summary>
-    /// Attempts to parse a CSI sequence from a list of trailing keys.
-    /// Also handles Alt+key (ESC followed by a single printable character).
-    /// </summary>
-    private static ConsoleKeyInfo? ParseTrailing(List<ConsoleKeyInfo> trailing)
-    {
-        if (trailing.Count == 0)
-            return null;
-
-        char intro = trailing[0].KeyChar;
-        if (intro != '[' && intro != 'O')
-        {
-            // Not CSI — could be Alt+key (ESC + single char)
-            if (trailing.Count == 1 && trailing[0].KeyChar >= ' ')
+            // ESC followed by enough keys to form a CSI sequence?
+            if (key.Key == ConsoleKey.Escape && i + 1 < batch.Count)
             {
-                var tk = trailing[0];
-                char c = tk.KeyChar;
-                if (c >= 'a' && c <= 'z')
-                    return new ConsoleKeyInfo(c, ConsoleKey.A + (c - 'a'), false, true, false);
-                return new ConsoleKeyInfo(c, (ConsoleKey)c, false, true, false);
-            }
-            return null;
-        }
+                int lookahead = i + 1;
+                char intro = batch[lookahead].KeyChar;
 
-        var seq = new System.Text.StringBuilder(trailing.Count);
-        foreach (var k in trailing)
-        {
-            if (k.KeyChar != '\0')
-                seq.Append(k.KeyChar);
-        }
-
-        return CsiParser.Parse(seq.ToString());
-    }
-
-    /// <summary>
-    /// Tries to read CSI bytes directly from stdin with a 1ms timeout.
-    /// Does NOT change terminal mode — just peeks at the raw fd.
-    /// </summary>
-    private ConsoleKeyInfo? TryRawStdinPeek()
-    {
-        try
-        {
-            var stdin = Console.OpenStandardInput();
-            if (!stdin.CanRead)
-                return null;
-
-            int oldTimeout = stdin.ReadTimeout;
-            stdin.ReadTimeout = 1; // 1ms — enough for in-process bytes
-            try
-            {
-                int b = stdin.ReadByte();
-                if (b < 0)
-                    return null;
-
-                byte first = (byte)b;
-                if (first != (byte)'[' && first != (byte)'O')
-                    return null; // not CSI, not worth parsing
-
-                // Read the rest of the CSI sequence
-                var buf = new byte[16];
-                buf[0] = first;
-                int total = 1;
-                while (total < buf.Length)
+                if (intro == '[' || intro == 'O')
                 {
-                    int nb = stdin.ReadByte();
-                    if (nb < 0) break;
-                    byte next = (byte)nb;
-                    buf[total++] = next;
-                    if (next >= 0x40 && next <= 0x7E) // CSI terminator
-                        break;
-                }
+                    // Collect CSI sequence: intro + params + terminator
+                    var seq = new System.Text.StringBuilder();
+                    seq.Append(intro);
+                    lookahead++;
 
-                return CsiParser.Parse(
-                    System.Text.Encoding.ASCII.GetString(buf, 0, total));
+                    while (lookahead < batch.Count)
+                    {
+                        char c = batch[lookahead].KeyChar;
+                        if (c == '\0')
+                            break;
+                        seq.Append(c);
+                        lookahead++;
+                        // CSI terminator: 0x40–0x7E
+                        if (c >= '@' && c <= '~')
+                            break;
+                    }
+
+                    var parsed = CsiParser.Parse(seq.ToString());
+                    if (parsed is not null)
+                    {
+                        result.Add(parsed.Value);
+                        i = lookahead; // consumed ESC + entire CSI sequence
+                        continue;
+                    }
+                }
+                else if (lookahead == i + 1 && intro >= ' ')
+                {
+                    // Alt+key: ESC + single printable character
+                    char c = intro;
+                    if (c >= 'a' && c <= 'z')
+                        result.Add(new ConsoleKeyInfo(c, ConsoleKey.A + (c - 'a'), false, true, false));
+                    else
+                        result.Add(new ConsoleKeyInfo(c, (ConsoleKey)c, false, true, false));
+                    i += 2;
+                    continue;
+                }
             }
-            catch (IOException)
-            {
-                return null; // timeout — no bytes available
-            }
-            finally
-            {
-                stdin.ReadTimeout = oldTimeout;
-            }
+
+            result.Add(key);
+            i++;
         }
-        catch
-        {
-            return null; // stdin not available
-        }
+
+        return result;
     }
 
     /// <summary>Handles Enter. Returns true if the outer while should continue or break.</summary>

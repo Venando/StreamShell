@@ -48,6 +48,7 @@ internal sealed class SystemTerminal : ITerminal
         {
             try { Console.CursorTop = value; }
             catch (IOException) { }
+            catch (ArgumentOutOfRangeException) { }
         }
     }
 
@@ -62,6 +63,7 @@ internal sealed class SystemTerminal : ITerminal
         {
             try { Console.CursorLeft = value; }
             catch (IOException) { }
+            catch (ArgumentOutOfRangeException) { }
         }
     }
 
