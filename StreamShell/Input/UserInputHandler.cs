@@ -62,6 +62,7 @@ internal class UserInputHandler : IInputHandler
     // ══════════════════════════════════════════════════════════════════
 
     public string CurrentInput => _buffer.CurrentInput;
+    public bool ClipboardAvailable => _clipboard.IsAvailable;
     public List<Attachment> Attachments
     {
         get => _clipboard.Attachments;
@@ -102,12 +103,16 @@ internal class UserInputHandler : IInputHandler
     {
         string? submitted = null;
 
-        while (_terminal.KeyAvailable)
+        // Batch-read all available keys first, then post-process CSI sequences.
+        // This avoids race conditions with .NET's internal Console buffer —
+        // we see the full key sequence before making any dispatch decisions.
+        var batch = ReadKeyBatch(cancellationToken);
+        batch = PostProcessCsiBatch(batch);
+
+        foreach (var key in batch)
         {
             if (cancellationToken.IsCancellationRequested)
                 return submitted;
-
-            var key = _terminal.ReadKey(intercept: true);
 
             // Give the interceptor first crack at the key (e.g. hint navigation)
             if (KeyInterceptor?.Invoke(key) == true)
@@ -118,7 +123,7 @@ internal class UserInputHandler : IInputHandler
 
             EnterHandleResult enterHandle = HandleEnter(key, ctrl, shift, alt, ref submitted);
 
-            if (enterHandle == EnterHandleResult.Continue) 
+            if (enterHandle == EnterHandleResult.Continue)
                 continue;
             if (enterHandle == EnterHandleResult.Break)
                 break;
@@ -148,8 +153,96 @@ internal class UserInputHandler : IInputHandler
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Key Dispatch: Enter
+    //  Key Batch Reading
     // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>Reads all available keys from the terminal at once.</summary>
+    private List<ConsoleKeyInfo> ReadKeyBatch(CancellationToken ct)
+    {
+        var batch = new List<ConsoleKeyInfo>();
+        while (_terminal.KeyAvailable)
+        {
+            if (ct.IsCancellationRequested)
+                break;
+            batch.Add(_terminal.ReadKey(intercept: true));
+        }
+        return batch;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  CSI Batch Post-Processing (Linux escape sequence fix)
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Scans a batch of keys for ESC + trailing CSI bytes and merges them
+    /// into proper <see cref="ConsoleKeyInfo"/> values with modifiers.
+    /// On Linux, <c>Console.ReadKey</c> may return ESC separately from
+    /// the remaining CSI sequence bytes (e.g. ESC, [, 1, ;, 2, D for
+    /// Shift+LeftArrow).  This method recombines them.
+    /// </summary>
+    private static List<ConsoleKeyInfo> PostProcessCsiBatch(List<ConsoleKeyInfo> batch)
+    {
+        if (batch.Count < 2)
+            return batch;
+
+        var result = new List<ConsoleKeyInfo>(batch.Count);
+        int i = 0;
+        while (i < batch.Count)
+        {
+            var key = batch[i];
+
+            // ESC followed by enough keys to form a CSI sequence?
+            if (key.Key == ConsoleKey.Escape && i + 1 < batch.Count)
+            {
+                int lookahead = i + 1;
+                char intro = batch[lookahead].KeyChar;
+
+                if (intro == '[' || intro == 'O')
+                {
+                    // Collect CSI sequence: intro + params + terminator
+                    var seq = new System.Text.StringBuilder();
+                    seq.Append(intro);
+                    lookahead++;
+
+                    while (lookahead < batch.Count)
+                    {
+                        char c = batch[lookahead].KeyChar;
+                        if (c == '\0')
+                            break;
+                        seq.Append(c);
+                        lookahead++;
+                        // CSI terminator: 0x40–0x7E
+                        if (c >= '@' && c <= '~')
+                            break;
+                    }
+
+                    var parsed = CsiParser.Parse(seq.ToString());
+                    if (parsed is not null)
+                    {
+                        result.Add(parsed.Value);
+                        i = lookahead; // consumed ESC + entire CSI sequence
+                        continue;
+                    }
+                }
+                else if (lookahead == i + 1 && intro >= ' ')
+                {
+                    // Alt+key: ESC + single printable character
+                    char c = intro;
+                    if (c >= 'a' && c <= 'z')
+                        result.Add(new ConsoleKeyInfo(c, ConsoleKey.A + (c - 'a'), false, true, false));
+                    else
+                        result.Add(new ConsoleKeyInfo(c, (ConsoleKey)c, false, true, false));
+                    i += 2;
+                    continue;
+                }
+            }
+
+            result.Add(key);
+            i++;
+        }
+
+        return result;
+    }
 
     /// <summary>Handles Enter. Returns true if the outer while should continue or break.</summary>
     private EnterHandleResult HandleEnter(ConsoleKeyInfo key, bool ctrl, bool shift, bool alt, ref string? submitted)

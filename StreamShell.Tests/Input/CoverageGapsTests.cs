@@ -504,6 +504,7 @@ public class ClipboardHandlerEdgeCasesTests
     /// <summary>Mock clipboard that throws on paste/copy to test exception handling.</summary>
     private sealed class ThrowingClipboardService : IClipboardService
     {
+        public bool IsAvailable => true;
         public string? Paste() => throw new InvalidOperationException("No clipboard");
         public void Copy(string text) => throw new InvalidOperationException("No clipboard");
     }
@@ -511,6 +512,7 @@ public class ClipboardHandlerEdgeCasesTests
     /// <summary>Mock clipboard that returns empty string.</summary>
     private sealed class EmptyClipboardService : IClipboardService
     {
+        public bool IsAvailable => true;
         public string? Paste() => "";
         public void Copy(string text) { }
     }
@@ -628,6 +630,7 @@ public class ClipboardHandlerEdgeCasesTests
 
     private sealed class MockClipboardService : IClipboardService
     {
+        public bool IsAvailable => true;
         public string? StoredText { get; private set; }
         public string? PasteResult { get; set; }
 

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace StreamShell;
@@ -64,9 +65,9 @@ public partial class ConsoleAppHost : IDisposable
     public ConsoleAppHost()
     {
         _lastDateTime = DateTime.UtcNow;
-        _terminal = new SystemTerminal();
-        _renderer = new ConsoleRenderer(Settings);
-        _inputHandler = new UserInputHandler();
+        _terminal = CreateTerminal();
+        _renderer = new ConsoleRenderer(Settings, _terminal);
+        _inputHandler = new UserInputHandler(_terminal);
         _defaultPanel = new EmptyBottomPanel(Settings.CommandPaletteHeight);
         _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
@@ -92,7 +93,7 @@ public partial class ConsoleAppHost : IDisposable
     {
         _renderer = renderer;
         _inputHandler = inputHandler;
-        _terminal = terminal ?? new SystemTerminal();
+        _terminal = terminal ?? CreateTerminal();
         _defaultPanel = new EmptyBottomPanel(Settings.CommandPaletteHeight);
         _bottomPanel = _defaultPanel;
         _renderer.SetPanelLineCount(_bottomPanel.LineCount);
@@ -203,6 +204,8 @@ public partial class ConsoleAppHost : IDisposable
         Console.TreatControlCAsInput = true;    // Ctrl+C is used for Copy
         Console.CursorVisible = false;
 
+        WarnIfClipboardUnavailable();
+
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
 
         try
@@ -261,6 +264,33 @@ public partial class ConsoleAppHost : IDisposable
     /// </summary>
     public void SetInputField(string text) => _inputHandler.SetInputFieldContent(text);
 
+    /// <summary>
+    /// On Linux without clipboard tools, emits a one-time warning so the
+    /// user knows Ctrl+C/Ctrl+V are non-functional and how to fix it.
+    /// Also emits a hint about Alt+Enter for newlines on Linux.
+    /// </summary>
+    private void WarnIfClipboardUnavailable()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return;
+
+        if (!_inputHandler.ClipboardAvailable)
+        {
+            AddMessage("[yellow]![/] Clipboard tools not found");
+            AddMessage("[bold]Ctrl+C[/] / [bold]Ctrl+V[/] / [bold]Ctrl+X[/] unavailable.");
+            AddMessage("Install with: [bold]sudo apt install wl-clipboard[/] (Wayland)");
+            AddMessage("or [bold]sudo apt install xclip[/] (X11)");
+        }
+    }
+
+    /// <summary>Creates the platform-appropriate terminal implementation.</summary>
+    private static ITerminal CreateTerminal()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return new LinuxTerminal();
+        return new SystemTerminal();
+    }
+
     private bool _disposed;
 
     /// <summary>Dispose the host, cancelling the run loop and restoring terminal state.</summary>
@@ -279,6 +309,9 @@ public partial class ConsoleAppHost : IDisposable
         _bottomPanel?.Dispose();
         _defaultPanel?.Dispose();
 
+        // Dispose terminal (LinuxTerminal restores raw mode)
+        (_terminal as IDisposable)?.Dispose();
+
         // Restore terminal state — may fail in test/headless environments
         try
         {
@@ -289,6 +322,8 @@ public partial class ConsoleAppHost : IDisposable
         {
             // No console handle available (e.g. test runner, CI)
         }
+
+
     }
 
 }

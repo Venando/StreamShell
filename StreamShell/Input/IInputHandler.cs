@@ -18,6 +18,9 @@ public interface IInputHandler
     /// <summary>The right-margin character count for input display.</summary>
     int RightMargin { get; set; }
 
+    /// <summary>Whether the system clipboard is available for copy/paste operations.</summary>
+    bool ClipboardAvailable { get; }
+
     /// <summary>Whether a quit (Ctrl+D) has been requested.</summary>
     bool QuitRequested { get; set; }
 
