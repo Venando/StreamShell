@@ -281,12 +281,6 @@ public partial class ConsoleAppHost : IDisposable
             AddMessage("Install with: [bold]sudo apt install wl-clipboard[/] (Wayland)");
             AddMessage("or [bold]sudo apt install xclip[/] (X11)");
         }
-
-        // Linux terminals can't distinguish Shift+Enter or Ctrl+Enter from plain Enter.
-        // Alt+Enter is the only reliably detectable newline shortcut.
-        AddMessage(
-            "[dim][[grey]i[/]] Linux: use [bold]Alt+Enter[/] for newlines " +
-            "(Shift+Enter / Ctrl+Enter not detectable)[/]");
     }
 
     /// <summary>Creates the platform-appropriate terminal implementation.</summary>
