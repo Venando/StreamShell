@@ -267,20 +267,27 @@ public partial class ConsoleAppHost : IDisposable
     /// <summary>
     /// On Linux without clipboard tools, emits a one-time warning so the
     /// user knows Ctrl+C/Ctrl+V are non-functional and how to fix it.
+    /// Also emits a hint about Alt+Enter for newlines on Linux.
     /// </summary>
     private void WarnIfClipboardUnavailable()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             return;
 
-        if (_inputHandler.ClipboardAvailable)
-            return;
+        if (!_inputHandler.ClipboardAvailable)
+        {
+            AddMessage(
+                "[dim][[yellow]![/]] Clipboard tools not found — " +
+                "[bold]Ctrl+C[/] / [bold]Ctrl+V[/] unavailable. " +
+                "Install with: [bold]sudo apt install wl-clipboard[/] (Wayland) " +
+                "or [bold]sudo apt install xclip[/] (X11)[/]");
+        }
 
+        // Linux terminals can't distinguish Shift+Enter or Ctrl+Enter from plain Enter.
+        // Alt+Enter is the only reliably detectable newline shortcut.
         AddMessage(
-            "[dim][[yellow]![/]] Clipboard tools not found — " +
-            "[bold]Ctrl+C[/] / [bold]Ctrl+V[/] unavailable. " +
-            "Install with: [bold]sudo apt install wl-clipboard[/] (Wayland) " +
-            "or [bold]sudo apt install xclip[/] (X11)[/]");
+            "[dim][[grey]i[/]] Linux: use [bold]Alt+Enter[/] for newlines " +
+            "(Shift+Enter / Ctrl+Enter not detectable)[/]");
     }
 
     /// <summary>Creates the platform-appropriate terminal implementation.</summary>
@@ -319,6 +326,10 @@ public partial class ConsoleAppHost : IDisposable
         {
             // No console handle available (e.g. test runner, CI)
         }
+
+        // Restore raw-mode terminal settings on Linux
+        if (_terminal is LinuxTerminal)
+            LinuxTerminal.RestoreTerminal();
     }
 
 }

@@ -69,6 +69,8 @@ internal sealed class LinuxClipboardService : IClipboardService
             string result = process.StandardOutput.ReadToEnd();
             process.WaitForExit(2000);
 
+            // Clipboard tools often append a trailing newline — strip it
+            result = result.TrimEnd('\n', '\r');
             return string.IsNullOrEmpty(result) ? null : result;
         }
         catch
