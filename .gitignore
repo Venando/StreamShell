@@ -30,9 +30,6 @@ bld/
 # Rider
 .idea/
 
-# VS Code
-.vscode/
-
 # CLAUDE
 .claude/
 CLAUDE.md

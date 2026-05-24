@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": ".NET Core Launch (console)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            // Path was root/bin/... now it is root/src/OpenClawPTT/bin/...
+            "program": "${workspaceFolder}/samples/MySpectreApp/bin/Debug/net10.0/MySpectreApp.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/samples/MySpectreApp",
+            "console": "externalTerminal",
+            "stopAtEntry": false
+        }
+    ]
+}

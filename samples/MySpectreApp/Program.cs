@@ -5,7 +5,8 @@ using var host = new ConsoleAppHost();
 
 // Lower threshold for testing large paste detection
 host.Settings.LargePasteThreshold = 200;
-host.Settings.RenderChunkSize = 5;
+host.Settings.ExpDecayRate = 10;
+host.Settings.PrintingMode = MessagePrintingMode.ExpDecay;
 
 host.AddCommand(new Command("context", "Shows context info", (args, named) =>
 {
@@ -330,7 +331,20 @@ var suggestions = new string[] {"DirectLlmApiType",
 
 var appConfigCommand = new Command("[yellow]appconfig[/]", "Configuring app", (_, _) => { return Task.CompletedTask; }, suggestions);
 
+
+var logCommand = new Command("log", "test log", (_, _) =>
+{
+    int i = 0;
+    for (int j = 0; j < 20; j++)
+    {
+        host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
+        host.AddMessage("");
+    }
+    return Task.CompletedTask;
+}, suggestions);
+
 host.AddCommand(appConfigCommand);
+host.AddCommand(logCommand);
 
 
 
@@ -369,7 +383,7 @@ _ = Task.Run(async () =>
     while (true)
     {
 
-        await Task.Delay(1000);
+        await Task.Delay(991000);
         host.AddMessage("───▄▄▄");
         host.AddMessage("─▄▀░▄░▀▄");
         host.AddMessage("─█░█▄▀░█");
@@ -385,7 +399,7 @@ _ = Task.Run(async () =>
     int i = 0;
     while (true)
     {
-        await Task.Delay(2000);
+        await Task.Delay(992000);
         var lines = random.Next(1, 20);
         for (int j = 0; j < lines; j++)
             host.AddMessage("[grey][[" + DateTime.Now.ToString("HH:mm:ss") + "]][/] Background Event #" + (++i));
