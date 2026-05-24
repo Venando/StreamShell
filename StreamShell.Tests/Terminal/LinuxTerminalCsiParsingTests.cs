@@ -215,6 +215,64 @@ public class LinuxTerminalCsiParsingTests
     }
 
     // ══════════════════════════════════════════════════════════════════
+    //  SS3 cursor keys (application mode: ESC O A/B/C/D)
+    // ══════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData("OA", ConsoleKey.UpArrow)]
+    [InlineData("OB", ConsoleKey.DownArrow)]
+    [InlineData("OC", ConsoleKey.RightArrow)]
+    [InlineData("OD", ConsoleKey.LeftArrow)]
+    public void ParseCsiSequence_Ss3CursorKeys_CorrectKeys(string seq, ConsoleKey expectedKey)
+    {
+        var result = ParseCsi(seq);
+
+        Assert.NotNull(result);
+        Assert.Equal(expectedKey, result.Value.Key);
+        AssertModifiers(result.Value, shift: false, alt: false, ctrl: false);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  F5–F12 via CSI ~ sequences
+    // ══════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData("[15~", ConsoleKey.F5)]
+    [InlineData("[17~", ConsoleKey.F6)]
+    [InlineData("[18~", ConsoleKey.F7)]
+    [InlineData("[19~", ConsoleKey.F8)]
+    [InlineData("[20~", ConsoleKey.F9)]
+    [InlineData("[21~", ConsoleKey.F10)]
+    [InlineData("[23~", ConsoleKey.F11)]
+    [InlineData("[24~", ConsoleKey.F12)]
+    public void ParseCsiSequence_F5ThroughF12_CorrectKeys(string seq, ConsoleKey expectedKey)
+    {
+        var result = ParseCsi(seq);
+
+        Assert.NotNull(result);
+        Assert.Equal(expectedKey, result.Value.Key);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Modifier leak fix: bare CSI ~ sequences carry NO modifiers
+    // ══════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData("[2~", ConsoleKey.Insert)]   // was erroneously Shift
+    [InlineData("[3~", ConsoleKey.Delete)]   // was erroneously Alt
+    [InlineData("[4~", ConsoleKey.End)]      // was erroneously Shift+Alt
+    [InlineData("[5~", ConsoleKey.PageUp)]   // was erroneously Ctrl
+    [InlineData("[6~", ConsoleKey.PageDown)] // was erroneously Ctrl+Shift
+    public void ParseCsiSequence_BareTildeSequences_NoModifiers(string seq, ConsoleKey expectedKey)
+    {
+        var result = ParseCsi(seq);
+
+        Assert.NotNull(result);
+        Assert.Equal(expectedKey, result.Value.Key);
+        AssertModifiers(result.Value, shift: false, alt: false, ctrl: false);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  Helpers
     // ══════════════════════════════════════════════════════════════════
 

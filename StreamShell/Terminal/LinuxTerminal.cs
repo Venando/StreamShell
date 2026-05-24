@@ -34,9 +34,11 @@ internal sealed class LinuxTerminal : ITerminal
             return key;
 
         // Small window for the terminal to flush the rest of the CSI sequence.
-        // 5 ms is far below human reaction time (~200 ms) so user-typed chars
-        // won't be conflated with a prefixed escape sequence.
-        Thread.Sleep(5);
+        // 25 ms follows ncurses ESCDELAY recommendation; still well below
+        // human reaction time (~200 ms) so user-typed characters won't be
+        // conflated with a prefixed escape sequence.  5 ms proved too fragile
+        // over SSH and high-latency connections.
+        Thread.Sleep(25);
 
         if (!Console.KeyAvailable)
             return key; // genuine Escape key press
@@ -115,23 +117,25 @@ internal sealed class LinuxTerminal : ITerminal
             if (parts.Length > 1) int.TryParse(parts[1], out p2);
         }
 
-        // XTerm modifier encoding for extended CSI sequences:
-        //   When param 1 == 1, param 2 encodes modifiers:
-        //     2=Shift  3=Alt  4=Shift+Alt  5=Ctrl  6=Ctrl+Shift  7=Ctrl+Alt  8=Ctrl+Shift+Alt
-        //   Otherwise, modifier is derived from param 1 directly (for sequences
-        //   where param 1 is the modifier code itself, e.g. "2~" for Shift+Insert).
-        int modParam = p1 == 1 ? p2 : p1;
-
+        // XTerm modifier encoding: only extract modifiers when a semicolon
+        // is present in the parameter string (e.g. "1;2D" = Shift+Left).
+        // Bare numbers like "2~" (Insert) are key codes, NOT modifier values.
         bool shift = false, alt = false, ctrl = false;
-        switch (modParam)
+        if (paramStr.Contains(';'))
         {
-            case 2: shift = true; break;
-            case 3: alt = true; break;
-            case 4: shift = true; alt = true; break;
-            case 5: ctrl = true; break;
-            case 6: ctrl = true; shift = true; break;
-            case 7: ctrl = true; alt = true; break;
-            case 8: ctrl = true; shift = true; alt = true; break;
+            // When param 1 == 1, param 2 encodes the modifier:
+            //   2=Shift  3=Alt  4=Shift+Alt  5=Ctrl  6=Ctrl+Shift  7=Ctrl+Alt  8=Ctrl+Shift+Alt
+            int modParam = p1 == 1 ? p2 : p1;
+            switch (modParam)
+            {
+                case 2: shift = true; break;
+                case 3: alt = true; break;
+                case 4: shift = true; alt = true; break;
+                case 5: ctrl = true; break;
+                case 6: ctrl = true; shift = true; break;
+                case 7: ctrl = true; alt = true; break;
+                case 8: ctrl = true; shift = true; alt = true; break;
+            }
         }
 
         // Map final character and (optional) first parameter to ConsoleKey
@@ -166,8 +170,12 @@ internal sealed class LinuxTerminal : ITerminal
         {
             return final switch
             {
-                'H' => ConsoleKey.Home,   // application-mode Home
-                'F' => ConsoleKey.End,    // application-mode End
+                'A' => ConsoleKey.UpArrow,    // application-mode Up
+                'B' => ConsoleKey.DownArrow,  // application-mode Down
+                'C' => ConsoleKey.RightArrow, // application-mode Right
+                'D' => ConsoleKey.LeftArrow,  // application-mode Left
+                'H' => ConsoleKey.Home,       // application-mode Home
+                'F' => ConsoleKey.End,        // application-mode End
                 'P' => ConsoleKey.F1,
                 'Q' => ConsoleKey.F2,
                 'R' => ConsoleKey.F3,
@@ -181,7 +189,8 @@ internal sealed class LinuxTerminal : ITerminal
 
     /// <summary>
     /// Maps the numeric parameter of a CSI ~ sequence to <see cref="ConsoleKey"/>.
-    /// Common XTerm encodings: 1=Home, 2=Insert, 3=Delete, 4=End, 5=PgUp, 6=PgDn.
+    /// XTerm encodings: 1/7=Home, 2=Insert, 3=Delete, 4/8=End,
+    /// 5=PgUp, 6=PgDn, 11-15=F1-F5, 17-21=F6-F10, 23-24=F11-F12.
     /// </summary>
     private static ConsoleKey? MapTildeToConsoleKey(int p1)
     {
@@ -193,6 +202,18 @@ internal sealed class LinuxTerminal : ITerminal
             4 or 8 => ConsoleKey.End,
             5 => ConsoleKey.PageUp,
             6 => ConsoleKey.PageDown,
+            11 => ConsoleKey.F1,
+            12 => ConsoleKey.F2,
+            13 => ConsoleKey.F3,
+            14 => ConsoleKey.F4,
+            15 => ConsoleKey.F5,
+            17 => ConsoleKey.F6,
+            18 => ConsoleKey.F7,
+            19 => ConsoleKey.F8,
+            20 => ConsoleKey.F9,
+            21 => ConsoleKey.F10,
+            23 => ConsoleKey.F11,
+            24 => ConsoleKey.F12,
             _ => null
         };
     }
