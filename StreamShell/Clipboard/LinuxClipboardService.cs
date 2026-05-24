@@ -15,6 +15,9 @@ internal sealed class LinuxClipboardService : IClipboardService
     private readonly string? _pasteCmd;
     private readonly string? _pasteArgs;
 
+    /// <inheritdoc/>
+    public bool IsAvailable => _copyCmd is not null;
+
     public LinuxClipboardService()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))

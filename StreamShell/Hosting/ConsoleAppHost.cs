@@ -204,6 +204,8 @@ public partial class ConsoleAppHost : IDisposable
         Console.TreatControlCAsInput = true;    // Ctrl+C is used for Copy
         Console.CursorVisible = false;
 
+        WarnIfClipboardUnavailable();
+
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
 
         try
@@ -261,6 +263,25 @@ public partial class ConsoleAppHost : IDisposable
     /// Attachments are not affected.
     /// </summary>
     public void SetInputField(string text) => _inputHandler.SetInputFieldContent(text);
+
+    /// <summary>
+    /// On Linux without clipboard tools, emits a one-time warning so the
+    /// user knows Ctrl+C/Ctrl+V are non-functional and how to fix it.
+    /// </summary>
+    private void WarnIfClipboardUnavailable()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return;
+
+        if (_inputHandler.ClipboardAvailable)
+            return;
+
+        AddMessage(
+            "[dim][[yellow]![/]] Clipboard tools not found — " +
+            "[bold]Ctrl+C[/] / [bold]Ctrl+V[/] unavailable. " +
+            "Install with: [bold]sudo apt install wl-clipboard[/] (Wayland) " +
+            "or [bold]sudo apt install xclip[/] (X11)[/]");
+    }
 
     /// <summary>Creates the platform-appropriate terminal implementation.</summary>
     private static ITerminal CreateTerminal()

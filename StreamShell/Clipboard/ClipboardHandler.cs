@@ -23,6 +23,9 @@ internal class ClipboardHandler
     /// <summary>Attachments collected during input (e.g. large pastes). Shared with the owner.</summary>
     public List<Attachment> Attachments { get; set; } = new();
 
+    /// <summary>Whether the underlying clipboard service is available.</summary>
+    public bool IsAvailable => _clipboard.IsAvailable;
+
     /// <summary>Counter for attachment placeholders, reset on each submit.</summary>
     private int _attachmentCounter;
 

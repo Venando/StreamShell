@@ -15,6 +15,7 @@ internal sealed class MockInputHandler : IInputHandler
     public int CursorPosition { get; set; }
     public bool HasSelection { get; set; }
     public int RightMargin { get; set; } = 80;
+    public bool ClipboardAvailable => true;
     public bool QuitRequested { get; set; }
     public List<Attachment> Attachments { get; set; } = new();
     public int LargePasteThreshold { get; set; } = 300;

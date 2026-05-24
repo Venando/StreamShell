@@ -62,6 +62,7 @@ internal class UserInputHandler : IInputHandler
     // ══════════════════════════════════════════════════════════════════
 
     public string CurrentInput => _buffer.CurrentInput;
+    public bool ClipboardAvailable => _clipboard.IsAvailable;
     public List<Attachment> Attachments
     {
         get => _clipboard.Attachments;

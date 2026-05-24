@@ -245,6 +245,7 @@ public class ClipboardHandlerTests
     /// <summary>Mock clipboard that stores a single text value.</summary>
     private sealed class MockClipboardService : IClipboardService
     {
+        public bool IsAvailable => true;
         public string? StoredText { get; private set; }
         public string? PasteResult { get; set; }
 
