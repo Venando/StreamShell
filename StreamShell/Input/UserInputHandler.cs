@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
@@ -103,40 +104,82 @@ internal class UserInputHandler : IInputHandler
     {
         string? submitted = null;
 
-        // Batch-read all available keys first, then post-process CSI sequences.
-        // This avoids race conditions with .NET's internal Console buffer —
-        // we see the full key sequence before making any dispatch decisions.
-        var batch = ReadKeyBatch(cancellationToken);
-        batch = PostProcessCsiBatch(batch);
-
-        foreach (var key in batch)
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            if (cancellationToken.IsCancellationRequested)
-                return submitted;
+            // Windows: process keys one at a time as they arrive.
+            // This preserves the pre-merge behavior where HandleEnter's
+            // _terminal.KeyAvailable check works correctly for multi-line
+            // pastes (conhost/Windows Terminal inject clipboard text as
+            // individual key events, including Enter keys for newlines).
+            while (_terminal.KeyAvailable)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    return submitted;
 
-            // Give the interceptor first crack at the key (e.g. hint navigation)
-            if (KeyInterceptor?.Invoke(key) == true)
-                continue;
-            bool ctrl = key.Modifiers.HasFlag(ConsoleModifiers.Control);
-            bool shift = key.Modifiers.HasFlag(ConsoleModifiers.Shift);
-            bool alt = key.Modifiers.HasFlag(ConsoleModifiers.Alt);
+                var key = _terminal.ReadKey(intercept: true);
 
-            EnterHandleResult enterHandle = HandleEnter(key, ctrl, shift, alt, ref submitted);
+                // Give the interceptor first crack at the key (e.g. hint navigation)
+                if (KeyInterceptor?.Invoke(key) == true)
+                    continue;
+                bool ctrl = key.Modifiers.HasFlag(ConsoleModifiers.Control);
+                bool shift = key.Modifiers.HasFlag(ConsoleModifiers.Shift);
+                bool alt = key.Modifiers.HasFlag(ConsoleModifiers.Alt);
 
-            if (enterHandle == EnterHandleResult.Continue)
-                continue;
-            if (enterHandle == EnterHandleResult.Break)
-                break;
-            if (HandleControlKey(key, ctrl, shift))
-                continue;
-            if (HandleNavigationKey(key, ctrl, alt, shift))
-                continue;
-            if (HandleEditingKey(key, ctrl))
-                continue;
+                EnterHandleResult enterHandle = HandleEnter(key, ctrl, shift, alt, ref submitted);
 
-            // Unhandled non-control characters → buffer for flush
-            if (key.KeyChar != '\0')
-                _clipboard.BufferCharacter(key.KeyChar);
+                if (enterHandle == EnterHandleResult.Continue)
+                    continue;
+                if (enterHandle == EnterHandleResult.Break)
+                    break;
+                if (HandleControlKey(key, ctrl, shift))
+                    continue;
+                if (HandleNavigationKey(key, ctrl, alt, shift))
+                    continue;
+                if (HandleEditingKey(key, ctrl))
+                    continue;
+
+                // Unhandled non-control characters → buffer for flush
+                if (key.KeyChar != '\0')
+                    _clipboard.BufferCharacter(key.KeyChar);
+            }
+        }
+        else
+        {
+            // Linux: batch-read all available keys first, then post-process CSI sequences.
+            // This avoids race conditions with .NET's internal Console buffer —
+            // we see the full key sequence before making any dispatch decisions.
+            var batch = ReadKeyBatch(cancellationToken);
+            batch = PostProcessCsiBatch(batch);
+
+            foreach (var key in batch)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    return submitted;
+
+                // Give the interceptor first crack at the key (e.g. hint navigation)
+                if (KeyInterceptor?.Invoke(key) == true)
+                    continue;
+                bool ctrl = key.Modifiers.HasFlag(ConsoleModifiers.Control);
+                bool shift = key.Modifiers.HasFlag(ConsoleModifiers.Shift);
+                bool alt = key.Modifiers.HasFlag(ConsoleModifiers.Alt);
+
+                EnterHandleResult enterHandle = HandleEnter(key, ctrl, shift, alt, ref submitted);
+
+                if (enterHandle == EnterHandleResult.Continue)
+                    continue;
+                if (enterHandle == EnterHandleResult.Break)
+                    break;
+                if (HandleControlKey(key, ctrl, shift))
+                    continue;
+                if (HandleNavigationKey(key, ctrl, alt, shift))
+                    continue;
+                if (HandleEditingKey(key, ctrl))
+                    continue;
+
+                // Unhandled non-control characters → buffer for flush
+                if (key.KeyChar != '\0')
+                    _clipboard.BufferCharacter(key.KeyChar);
+            }
         }
 
         if (cancellationToken.IsCancellationRequested)
