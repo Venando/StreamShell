@@ -3,7 +3,7 @@
   <PropertyGroup>
     <!-- Packaging -->
     <PackageId>StreamShell</PackageId>
-    <Version>2026.5.21</Version>
+    <Version>2026.5.26</Version>
     <Authors>Venando</Authors>
     <Description>Console host framework built on Spectre.Console with command parsing and markup rendering.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
