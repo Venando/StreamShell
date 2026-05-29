@@ -55,6 +55,12 @@ internal sealed class MockTerminal : ITerminal
     public bool KeyAvailable => _keys.Count > 0;
     public ConsoleKeyInfo ReadKey(bool intercept) => _keys.Dequeue();
 
+    public IDisposable SubscribeKey(KeyCombination combination, Action<ConsoleKeyInfo> handler) => NullDisposable();
+    public IDisposable SubscribeKey(Func<ConsoleKeyInfo, bool> predicate, Action<ConsoleKeyInfo> handler) => NullDisposable();
+    private static IDisposable NullDisposable() => new NullScope();
+
+    private sealed class NullScope : IDisposable { public void Dispose() { } }
+
     // ── Terminal Properties ──────────────────────────────────────────
     public int WindowWidth { get; set; } = 80;
     public int WindowHeight { get; set; } = 24;

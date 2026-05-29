@@ -258,6 +258,32 @@ public partial class ConsoleAppHost : IDisposable
     public void Stop() => _cts.Cancel();
 
     /// <summary>
+    /// Subscribes to a specific key combination. When the key is pressed, the handler is invoked
+    /// and the key is consumed — it will NOT be processed as normal input or reach the text buffer.
+    /// Returns an <see cref="IDisposable"/> that removes the subscription when disposed.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// host.SubscribeKey(KeyCombination.Alt(ConsoleKey.D), key => { /* handle Alt+D */ });
+    /// </code>
+    /// </example>
+    public IDisposable SubscribeKey(KeyCombination combination, Action<ConsoleKeyInfo> handler)
+        => _terminal.SubscribeKey(combination, handler);
+
+    /// <summary>
+    /// Subscribes to keys matching a predicate. When a matching key is pressed, the handler is invoked
+    /// and the key is consumed — it will NOT be processed as normal input or reach the text buffer.
+    /// Returns an <see cref="IDisposable"/> that removes the subscription when disposed.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// host.SubscribeKey(k => k.Modifiers.HasFlag(ConsoleModifiers.Alt), key => { /* handle Alt+anything */ });
+    /// </code>
+    /// </example>
+    public IDisposable SubscribeKey(Func<ConsoleKeyInfo, bool> predicate, Action<ConsoleKeyInfo> handler)
+        => _terminal.SubscribeKey(predicate, handler);
+
+    /// <summary>
     /// Replaces the current input field content with the given text.
     /// Clears selection, moves cursor to end of text, and clears undo history.
     /// Attachments are not affected.

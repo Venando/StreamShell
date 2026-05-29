@@ -6,9 +6,26 @@ namespace StreamShell;
 /// </summary>
 internal sealed class SystemTerminal : ITerminal
 {
+    private readonly KeySubscriptionManager _subscriber = new();
+
     public bool KeyAvailable => Console.KeyAvailable;
 
-    public ConsoleKeyInfo ReadKey(bool intercept) => Console.ReadKey(intercept);
+    public ConsoleKeyInfo ReadKey(bool intercept)
+    {
+        while (true)
+        {
+            var key = Console.ReadKey(intercept);
+            if (!_subscriber.TryHandle(key))
+                return key;
+            // Subscriber consumed the key — read the next one
+        }
+    }
+
+    public IDisposable SubscribeKey(KeyCombination combination, Action<ConsoleKeyInfo> handler)
+        => _subscriber.Add(combination, handler);
+
+    public IDisposable SubscribeKey(Func<ConsoleKeyInfo, bool> predicate, Action<ConsoleKeyInfo> handler)
+        => _subscriber.Add(predicate, handler);
 
     public int WindowWidth
     {
