@@ -1,40 +1,117 @@
+using System.Collections.Concurrent;
+
 namespace StreamShell;
 
 /// <summary>
-/// Default <see cref="ITerminal"/> implementation that wraps
-/// <c>System.Console</c> directly.
+/// Default <see cref="ITerminal"/> implementation for non-Linux platforms.
+///
+/// Mirrors <see cref="LinuxTerminal"/>'s producer/consumer architecture: a
+/// dedicated background thread harvests keys from the console, filters out any
+/// consumed by a <see cref="KeySubscriptionManager"/> subscription, and enqueues
+/// the rest into a buffer. The consumer (<see cref="UserInputHandler"/>, which
+/// runs on the render thread) drains that buffer via <see cref="ReadKey"/>.
+///
+/// This decoupling is deliberate: subscription handlers run on the reader thread,
+/// never on the render thread, so a consumed hotkey can never block the message
+/// stream. The previous synchronous design called <c>Console.ReadKey</c> again to
+/// drain after a consumed key, which blocked the render loop until the next
+/// keystroke. The split removes that failure mode by construction.
 /// </summary>
-internal sealed class SystemTerminal : ITerminal
+internal sealed class SystemTerminal : ITerminal, IDisposable
 {
+    private readonly IConsoleKeySource _source;
+    private readonly int _idlePollMs;
     private readonly KeySubscriptionManager _subscriber = new();
+    private readonly BlockingCollection<ConsoleKeyInfo> _inputBuffer = new();
+    private readonly CancellationTokenSource _cts = new();
+    private readonly Thread _inputThread;
+    private bool _disposed;
 
-    public bool KeyAvailable => Console.KeyAvailable;
+    public SystemTerminal() : this(new ConsoleKeySource()) { }
+
+    /// <summary>Test seam: inject a key source and a faster idle poll interval.</summary>
+    internal SystemTerminal(IConsoleKeySource source, int idlePollMs = 5)
+    {
+        _source = source;
+        _idlePollMs = idlePollMs;
+        _inputThread = new Thread(InputLoop)
+        {
+            IsBackground = true,
+            Name = "SystemTerminalInputReader"
+        };
+        _inputThread.Start();
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Background Input Loop (Producer Thread)
+    // ══════════════════════════════════════════════════════════════════
+
+    private void InputLoop()
+    {
+        try
+        {
+            var token = _cts.Token;
+            while (!token.IsCancellationRequested)
+            {
+                // Drain every key currently waiting in a tight loop, then idle.
+                // During a burst (e.g. a paste, which conhost injects as many
+                // individual key events) TryReadKey keeps returning true, so the
+                // whole burst lands in the buffer before the consumer's next tick.
+                if (_source.TryReadKey(out var key))
+                {
+                    // Subscription check on the producer thread: if a subscriber
+                    // handles this key, it is consumed and never enqueued.
+                    if (!_subscriber.TryHandle(key))
+                        _inputBuffer.Add(key, token);
+                }
+                else
+                {
+                    // Nothing waiting. Windows console exposes no blocking poll
+                    // primitive, so sleep briefly to avoid a hot spin while
+                    // staying responsive to the next keystroke and cancellation.
+                    if (token.WaitHandle.WaitOne(_idlePollMs))
+                        break; // cancelled
+                }
+            }
+        }
+        catch (OperationCanceledException) { /* clean exit on Dispose */ }
+        catch (ObjectDisposedException) { /* buffer disposed during shutdown */ }
+        catch (Exception) { /* never let the reader thread tear down the process */ }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ITerminal — Key Input (Consumer Path)
+    // ══════════════════════════════════════════════════════════════════
+
+    public bool KeyAvailable => _inputBuffer.Count > 0;
 
     public ConsoleKeyInfo ReadKey(bool intercept)
     {
-        while (true)
+        try
         {
-            var key = Console.ReadKey(intercept);
-            if (!_subscriber.TryHandle(key))
-                return key;
-
-            // Subscriber consumed the key. Only drain another if one is already
-            // waiting; otherwise return a no-op key. Calling Console.ReadKey again
-            // here would BLOCK until the next keystroke — and because ProcessInput
-            // shares the render thread on Windows, that would freeze the message
-            // stream until the user pressed another key. A default ConsoleKeyInfo
-            // (Key 0, KeyChar '\0') is ignored by every dispatch path in
-            // UserInputHandler.ProcessInput, so it is a safe no-op.
-            if (!Console.KeyAvailable)
-                return default;
+            return _inputBuffer.Take();
+        }
+        catch (InvalidOperationException)
+        {
+            // CompleteAdding was called (Dispose) and the buffer is empty.
+            // (ObjectDisposedException derives from InvalidOperationException.)
+            return default;
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Key Subscription API
+    // ══════════════════════════════════════════════════════════════════
 
     public IDisposable SubscribeKey(KeyCombination combination, Action<ConsoleKeyInfo> handler)
         => _subscriber.Add(combination, handler);
 
     public IDisposable SubscribeKey(Func<ConsoleKeyInfo, bool> predicate, Action<ConsoleKeyInfo> handler)
         => _subscriber.Add(predicate, handler);
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ITerminal — Window / Cursor (delegated to Console)
+    // ══════════════════════════════════════════════════════════════════
 
     public int WindowWidth
     {
@@ -110,5 +187,24 @@ internal sealed class SystemTerminal : ITerminal
     {
         try { Console.WriteLine(); }
         catch (IOException) { }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Lifecycle
+    // ══════════════════════════════════════════════════════════════════
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        _cts.Cancel();
+        _inputBuffer.CompleteAdding();
+
+        if (_inputThread.IsAlive)
+            _inputThread.Join(500);
+
+        _cts.Dispose();
+        _inputBuffer.Dispose();
     }
 }
