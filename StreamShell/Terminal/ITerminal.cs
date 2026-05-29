@@ -39,4 +39,18 @@ public interface ITerminal
 
     /// <summary>Console.WriteLine() — writes an empty line.</summary>
     void WriteLine();
+
+    /// <summary>
+    /// Subscribes to a specific key combination. When matched, the handler is invoked
+    /// and the key is consumed — it will NOT be added to the normal input queue.
+    /// Returns an <see cref="IDisposable"/> that removes the subscription when disposed.
+    /// </summary>
+    IDisposable SubscribeKey(KeyCombination combination, Action<ConsoleKeyInfo> handler);
+
+    /// <summary>
+    /// Subscribes to keys matching a predicate. When matched, the handler is invoked
+    /// and the key is consumed — it will NOT be added to the normal input queue.
+    /// Returns an <see cref="IDisposable"/> that removes the subscription when disposed.
+    /// </summary>
+    IDisposable SubscribeKey(Func<ConsoleKeyInfo, bool> predicate, Action<ConsoleKeyInfo> handler);
 }

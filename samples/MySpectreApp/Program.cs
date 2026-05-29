@@ -383,7 +383,7 @@ _ = Task.Run(async () =>
     while (true)
     {
 
-        await Task.Delay(991000);
+        await Task.Delay(1000);
         host.AddMessage("───▄▄▄");
         host.AddMessage("─▄▀░▄░▀▄");
         host.AddMessage("─█░█▄▀░█");
@@ -416,7 +416,34 @@ host.AddMessage("[yellow]Try [bold]/colors[/] [grey](multi-select min 2 colors)[
 host.AddMessage("[yellow]Try [bold]/top-sep[/] [grey]<left> <right> <char> <markup> (top separator)[/][/]");
 host.AddMessage("[yellow]Try [bold]/bot-sep[/] [grey]<left> <right> <char> <markup> (bottom separator)[/][/]");
 host.AddMessage("[yellow]Try [bold]/default[/] [grey](toggle default bottom panel)[/][/]");
+host.AddMessage("[yellow]Try [bold]Alt+D[/], [bold]Shift+Alt+D[/] or [bold]Shift+Alt+F[/] [grey](key subscription demo)[/][/]");
 host.AddMessage("");
+// ════════════════════════════════════════════════════════════════
+//  Key Subscription demo — these keys are consumed before
+//  reaching the input buffer (never processed as text).
+// ════════════════════════════════════════════════════════════════
+
+
+host.SubscribeKey(KeyCombination.Alt(ConsoleKey.D), _ =>
+{
+    host.AddMessage("[bold]Alt+D[/] pressed — consumed by subscription");
+});
+
+host.SubscribeKey(new KeyCombination(ConsoleKey.D, ConsoleModifiers.Alt | ConsoleModifiers.Shift), _ =>
+{
+    host.AddMessage("[bold]Shift+Alt+D[/] pressed — consumed by subscription");
+});
+
+host.SubscribeKey(new KeyCombination(ConsoleKey.F, ConsoleModifiers.Alt | ConsoleModifiers.Shift), _ =>
+{
+    host.AddMessage("[bold]Shift+Alt+F[/] pressed — consumed by subscription");
+});
+
+host.SubscribeKey(new KeyCombination(ConsoleKey.A, ConsoleModifiers.Alt | ConsoleModifiers.Control), _ =>
+{
+    host.AddMessage("[bold]Ctrl+Alt+A[/] pressed — consumed by subscription (no input erase)");
+});
+
 host.AddMessage("[yellow]--- Save/Load test ---[/]");
 host.AddMessage("[yellow]/save <text>  — save text as input field state[/]");
 host.AddMessage("[yellow]/load <id>    — restore state into input field[/]");

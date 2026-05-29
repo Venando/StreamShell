@@ -23,6 +23,9 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
     private Thread? _inputThread;
     private CancellationTokenSource? _cts;
 
+    // Key subscription registry — checked before enqueue
+    private readonly KeySubscriptionManager _subscriber = new();
+
     // ══════════════════════════════════════════════════════════════════
     //  Lifecycle
     // ══════════════════════════════════════════════════════════════════
@@ -112,17 +115,23 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
                     var seq = ReadEscapeSequence();
                     if (seq is not null)
                     {
-                        _inputBuffer.Add(seq.Value, token);
+                        // Subscription check: if a subscriber handles this key, don't enqueue it.
+                        if (!_subscriber.TryHandle(seq.Value))
+                            _inputBuffer.Add(seq.Value, token);
                     }
                     else
                     {
                         // Standalone ESC
-                        _inputBuffer.Add(new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false), token);
+                        var esc = new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false);
+                        if (!_subscriber.TryHandle(esc))
+                            _inputBuffer.Add(esc, token);
                     }
                 }
                 else
                 {
-                    _inputBuffer.Add(MapSingleByte((byte)b), token);
+                    var mapped = MapSingleByte((byte)b);
+                    if (!_subscriber.TryHandle(mapped))
+                        _inputBuffer.Add(mapped, token);
                 }
             }
         }
@@ -150,6 +159,16 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
             return default;
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Key Subscription API
+    // ══════════════════════════════════════════════════════════════════
+
+    public IDisposable SubscribeKey(KeyCombination combination, Action<ConsoleKeyInfo> handler)
+        => _subscriber.Add(combination, handler);
+
+    public IDisposable SubscribeKey(Func<ConsoleKeyInfo, bool> predicate, Action<ConsoleKeyInfo> handler)
+        => _subscriber.Add(predicate, handler);
 
     // ══════════════════════════════════════════════════════════════════
     //  ITerminal — Window / Cursor (delegated to Console)
@@ -309,6 +328,13 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
         {
             if (seq.Length == 1 && seq[0] >= 0x20)
                 return MapAltChar((char)seq[0]);
+
+            // Ctrl+Alt+letter: terminal sends ESC + control byte (0x01-0x1A).
+            // Without this, the control byte is silently consumed and ESC becomes
+            // a standalone Escape key, which triggers ResetState() and erases input.
+            if (seq.Length == 1 && seq[0] >= 0x01 && seq[0] <= 0x1A)
+                return MapAltCtrl(seq[0]);
+
             return null;
         }
 
@@ -369,8 +395,24 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
 
     private static ConsoleKeyInfo MapAltChar(char c)
     {
-        ConsoleKey key = c >= 'a' && c <= 'z' ? ConsoleKey.A + (c - 'a') : (ConsoleKey)c;
-        return new ConsoleKeyInfo(c, key, false, true, false);
+        bool shift = c >= 'A' && c <= 'Z';
+        char lower = shift ? char.ToLowerInvariant(c) : c;
+        ConsoleKey key = lower >= 'a' && lower <= 'z'
+            ? ConsoleKey.A + (lower - 'a')
+            : (ConsoleKey)lower;
+        return new ConsoleKeyInfo(c, key, shift, true, false);
+    }
+
+    /// <summary>
+    /// Maps ESC + control byte (0x01-0x1A) to Ctrl+Alt+letter.
+    /// The terminal encodes Ctrl+Alt+letter as ESC followed by the
+    /// control byte (e.g., Ctrl+Alt+A = ESC 0x01).
+    /// </summary>
+    private static ConsoleKeyInfo MapAltCtrl(byte ctrlByte)
+    {
+        char letter = (char)(ctrlByte + 'a' - 1);
+        ConsoleKey key = ConsoleKey.A + (ctrlByte - 1);
+        return new ConsoleKeyInfo(letter, key, false, true, true);
     }
 
     private static ConsoleKey? MapSequenceToKey(char intro, char final, int p1)
