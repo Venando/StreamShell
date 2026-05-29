@@ -383,7 +383,7 @@ _ = Task.Run(async () =>
     while (true)
     {
 
-        await Task.Delay(991000);
+        await Task.Delay(1000);
         host.AddMessage("───▄▄▄");
         host.AddMessage("─▄▀░▄░▀▄");
         host.AddMessage("─█░█▄▀░█");

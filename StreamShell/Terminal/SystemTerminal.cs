@@ -17,7 +17,16 @@ internal sealed class SystemTerminal : ITerminal
             var key = Console.ReadKey(intercept);
             if (!_subscriber.TryHandle(key))
                 return key;
-            // Subscriber consumed the key — read the next one
+
+            // Subscriber consumed the key. Only drain another if one is already
+            // waiting; otherwise return a no-op key. Calling Console.ReadKey again
+            // here would BLOCK until the next keystroke — and because ProcessInput
+            // shares the render thread on Windows, that would freeze the message
+            // stream until the user pressed another key. A default ConsoleKeyInfo
+            // (Key 0, KeyChar '\0') is ignored by every dispatch path in
+            // UserInputHandler.ProcessInput, so it is a safe no-op.
+            if (!Console.KeyAvailable)
+                return default;
         }
     }
 
