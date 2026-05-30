@@ -46,7 +46,7 @@ public class ThreadSafeQueue<T>
                 return false;
             }
 
-            item = _list.First.Value;
+            item = _list.First!.Value;
             _list.RemoveFirst();
             return true;
         }

@@ -77,7 +77,7 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
         try
         {
             var token = _cts!.Token;
-            var fds = new pollfd[1];
+            var fds = new PollFd[1];
             fds[0].fd = STDIN_FILENO;
             fds[0].events = POLLIN;
 
@@ -292,7 +292,7 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
     {
         var seq = new byte[6]; 
         int len = 0;
-        var fds = new pollfd[1];
+        var fds = new PollFd[1];
         fds[0].fd = STDIN_FILENO;
         fds[0].events = POLLIN;
 
@@ -546,7 +546,7 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct pollfd
+    private struct PollFd
     {
         public int fd;
         public short events;
@@ -560,7 +560,7 @@ internal sealed class LinuxTerminal : ITerminal, IDisposable
     private static extern int tcsetattr(int fd, int optional_actions, ref Termios termios);
 
     [DllImport("libc", SetLastError = true)]
-    private static extern int poll([In, Out] pollfd[] fds, int nfds, int timeout);
+    private static extern int poll([In, Out] PollFd[] fds, int nfds, int timeout);
 
     [DllImport("libc", SetLastError = true)]
     private static extern IntPtr read(int fd, ref byte buf, IntPtr count);

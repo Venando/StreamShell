@@ -394,8 +394,6 @@ _ = Task.Run(async () =>
 
 _ = Task.Run(async () =>
 {
-    var random = new Random();
-    int i = 0;
     while (true)
     {
 

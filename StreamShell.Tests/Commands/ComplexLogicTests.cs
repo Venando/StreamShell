@@ -1065,18 +1065,17 @@ public class CommandManagerTests
     }
 
     [Fact]
-    public void ExecuteAsync_MarkupName_ExecutesByStrippedName()
+    public async Task ExecuteAsync_MarkupName_ExecutesByStrippedName()
     {
         var manager = new CommandManager();
         bool executed = false;
         var cmd = new Command("[yellow]quit[/]", "Exit", (_, _) => { executed = true; return Task.CompletedTask; });
         manager.Add(cmd);
 
-        var result = manager.ExecuteAsync("/quit");
-        result.Wait();
+        var result = await manager.ExecuteAsync("/quit");
 
         Assert.True(executed);
-        Assert.Null(result.Result);
+        Assert.Null(result);
     }
 
     [Fact]
