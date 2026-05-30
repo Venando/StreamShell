@@ -158,7 +158,7 @@ public partial class ConsoleAppHost
                     // leaking into the message stream when messages replay directly via
                     // AnsiConsole.MarkupLine without a scroll region.
                     int replayCount = Settings.MessageReplayCount < 0
-                        ? Console.WindowHeight + 1
+                        ? _terminal.WindowHeight + 1
                         : Settings.MessageReplayCount;
                     if (_renderer is ConsoleRenderer cr)
                     {

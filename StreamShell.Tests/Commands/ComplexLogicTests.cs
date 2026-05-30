@@ -52,6 +52,24 @@ public class CommandPaletteTests
     private static CommandPalette CreatePalette(Command[]? commands = null)
         => new(commands ?? SampleCommands);
 
+    /// <summary>
+    /// Asserts a selected argument-hint line. The selected line's highlight is
+    /// padded out to the console width (see CommandPalette's <c>linePadTo</c>),
+    /// so the trailing padding is width-dependent. This asserts the meaningful
+    /// content prefix and that the highlight is closed, ignoring that padding.
+    /// <paramref name="expected"/> is the full unpadded markup (i.e. as it would
+    /// appear if the console width exactly matched the content).
+    /// </summary>
+    private static void AssertSelectedHint(string expected, string actual)
+    {
+        // Padding is inserted between the content and the final "[/]" that
+        // closes the [on ...] highlight, so drop that tag to get the prefix.
+        const string close = "[/]";
+        string prefix = expected[..^close.Length];
+        Assert.StartsWith(prefix, actual);
+        Assert.EndsWith(close, actual);
+    }
+
     // ── IsActive ─────────────────────────────────────────────────────
 
     [Theory]
@@ -308,7 +326,7 @@ public class CommandPaletteTests
         var lines = palette.GetLines("/deploy li");
 
         // Should show individual hints with full path, never compress
-        Assert.Equal("[on white][black]→ [/][gray27]/deploy linux ubuntu[/][/]", lines[1]);
+        AssertSelectedHint("[on white][black]→ [/][gray27]/deploy linux ubuntu[/][/]", lines[1]);
         Assert.Equal(" [grey] /deploy linux debian[/]", lines[2]);
         Assert.All(lines.Skip(3), line => Assert.Equal(string.Empty, line));
     }
@@ -325,7 +343,7 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/appconfig DirectLlm");
 
-        Assert.Equal("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
+        AssertSelectedHint("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
         Assert.Equal(" [grey] /appconfig DirectLlmModelName[/]", lines[2]);
         Assert.Equal(" [grey] /appconfig DirectLlmToken[/]", lines[3]);
         Assert.Equal(" [grey] /appconfig DirectLlmUrl[/]", lines[4]);
@@ -343,7 +361,7 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/appconfig Direc");
 
-        Assert.Equal("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
+        AssertSelectedHint("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
         Assert.Equal(" [grey] /appconfig DirectLlmModelName[/]", lines[2]);
         Assert.Equal(" [grey] /appconfig DirectLlmToken[/]", lines[3]);
         Assert.Equal(" [grey] /appconfig DirectLlmUrl[/]", lines[4]);
@@ -361,7 +379,7 @@ public class CommandPaletteTests
         var lines = palette.GetLines("/appconfig DirectLlmApiType");
 
         // Should show exactly one selected hint for the complete entry
-        Assert.Equal("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
+        AssertSelectedHint("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
         Assert.All(lines.Skip(2), line => Assert.Equal(string.Empty, line));
         Assert.Equal("/appconfig DirectLlmApiType ", palette.CurrentSuggestion);
     }
@@ -388,7 +406,7 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/other Alpha");
 
-        Assert.Equal("[on white][black]→ [/][gray27]/other AlphaConfig[/][/]", lines[1]);
+        AssertSelectedHint("[on white][black]→ [/][gray27]/other AlphaConfig[/][/]", lines[1]);
         Assert.Equal(" [grey] /other AlphaMode[/]", lines[2]);
         Assert.Equal(" [grey] /other AlphaValue[/]", lines[3]);
         Assert.All(lines.Skip(4), line => Assert.Equal(string.Empty, line));
@@ -406,7 +424,7 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/appconfig directllm");
 
-        Assert.Equal("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
+        AssertSelectedHint("[on white][black]→ [/][gray27]/appconfig DirectLlmApiType[/][/]", lines[1]);
         Assert.Equal(" [grey] /appconfig DirectLlmModelName[/]", lines[2]);
         Assert.Equal(" [grey] /appconfig DirectLlmToken[/]", lines[3]);
         Assert.Equal(" [grey] /appconfig DirectLlmUrl[/]", lines[4]);
@@ -421,7 +439,7 @@ public class CommandPaletteTests
         var palette = new CommandPalette(PropertyStyleSuggestions);
         var lines = palette.GetLines("/other Alpha");
 
-        Assert.Equal("[on white][black]→ [/][gray27]/other AlphaConfig[/][/]", lines[1]);
+        AssertSelectedHint("[on white][black]→ [/][gray27]/other AlphaConfig[/][/]", lines[1]);
         Assert.Equal(" [grey] /other AlphaMode[/]", lines[2]);
         Assert.Equal(" [grey] /other AlphaValue[/]", lines[3]);
         Assert.All(lines.Skip(4), line => Assert.Equal(string.Empty, line));

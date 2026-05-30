@@ -105,6 +105,16 @@ internal class CommandPalette : IBottomPanel
     }
 
     private readonly Func<IEnumerable<Command>> _commandProvider;
+
+    /// <summary>
+    /// Terminal used to read the current console width for hint layout. Injected
+    /// so rendering is testable and headless-safe — its <see cref="ITerminal.WindowWidth"/>
+    /// getter already falls back to a default when no console is attached. May be
+    /// null in tests that don't exercise width-dependent layout, in which case
+    /// <see cref="LineWidth"/> falls back to 80.
+    /// </summary>
+    private readonly ITerminal? _terminal;
+
     private string? _lastInput;
     private IReadOnlyList<string>? _lastLines;
     private int _lastSelectedIndex;
@@ -121,9 +131,10 @@ internal class CommandPalette : IBottomPanel
     private readonly System.Text.StringBuilder _sb = new(capacity: 128);
 
     /// <summary>Creates a palette that reads from a live command provider.</summary>
-    public CommandPalette(Func<IEnumerable<Command>> commandProvider, StreamShellSettings? settings = null)
+    public CommandPalette(Func<IEnumerable<Command>> commandProvider, StreamShellSettings? settings = null, ITerminal? terminal = null)
     {
         _commandProvider = commandProvider;
+        _terminal = terminal;
         if (settings != null)
         {
             MaxHeight = settings.CommandPaletteHeight;
@@ -136,10 +147,11 @@ internal class CommandPalette : IBottomPanel
     }
 
     /// <summary>Creates a palette with a fixed set of commands (for testing).</summary>
-    public CommandPalette(IEnumerable<Command> commands, StreamShellSettings? settings = null)
+    public CommandPalette(IEnumerable<Command> commands, StreamShellSettings? settings = null, ITerminal? terminal = null)
     {
         var arr = commands.ToArray();
         _commandProvider = () => arr;
+        _terminal = terminal;
         if (settings != null)
         {
             MaxHeight = settings.CommandPaletteHeight;
@@ -152,6 +164,13 @@ internal class CommandPalette : IBottomPanel
     }
 
     private readonly PaletteStyle _paletteStyle = new();
+
+    /// <summary>
+    /// Current console width for hint layout. Reads through the injected
+    /// <see cref="ITerminal"/> (whose getter is headless-safe); falls back to 80
+    /// when no terminal was injected, matching the abstraction's own default.
+    /// </summary>
+    private int ConsoleWidth => _terminal?.WindowWidth ?? 80;
 
     /// <summary>
     /// Returns all panel lines. Line 0 is the status/instruction line.
@@ -242,7 +261,7 @@ internal class CommandPalette : IBottomPanel
 
             // Build hint strings with selection highlighting
             int maxSize = MaxNameVisualLength(effectiveOffset, showCount);
-            int descriptionWidth = Console.BufferWidth - maxSize - 1;
+            int descriptionWidth = ConsoleWidth - maxSize - 1;
             for (int i = 0; i < showCount; i++)
             {
                 var cmd = _matchingBuffer[effectiveOffset + i];
@@ -488,7 +507,7 @@ internal class CommandPalette : IBottomPanel
         }
 
         // Build hint strings with selection highlighting
-        int lineWidth = Console.BufferWidth - 1;
+        int lineWidth = ConsoleWidth - 1;
         for (int i = 0; i < entries.Count; i++)
         {
             bool isSelected = i == SelectedIndex;

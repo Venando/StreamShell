@@ -73,6 +73,9 @@ public class ConsoleAppHostProcessOneTickTests
     public void ProcessOneTick_BoundedChunk_RequiresMultipleTicks()
     {
         CreateHost();
+        // RenderChunkSize only bounds the per-tick batch in IntChunks mode;
+        // the default ExpDecay mode would flush everything at once.
+        _host.Settings.PrintingMode = MessagePrintingMode.IntChunks;
         _host.Settings.RenderChunkSize = 2;
         _host.AddMessage("a");
         _host.AddMessage("b");

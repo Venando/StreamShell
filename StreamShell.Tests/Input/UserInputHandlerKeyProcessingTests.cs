@@ -981,7 +981,7 @@ public class UserInputHandlerKeyProcessingTests
     //  Simulates .NET splitting ESC from the trailing CSI bytes.
     // ══════════════════════════════════════════════════════════════════
 
-    [Fact]
+    [NonWindowsFact]
     public void ProcessInput_EscAndCsiBytesInBatch_MergesToCtrlLeftArrow()
     {
         // Simulate .NET on Linux returning ESC + CSI bytes individually
@@ -1008,7 +1008,7 @@ public class UserInputHandlerKeyProcessingTests
         Assert.False(handler.HasSelection);
     }
 
-    [Fact]
+    [NonWindowsFact]
     public void ProcessInput_EscAndCsiBytesInBatch_SetsSelectionWhenShift()
     {
         // Simulate Shift+Ctrl+RightArrow from position 0.
@@ -1036,7 +1036,7 @@ public class UserInputHandlerKeyProcessingTests
         Assert.Equal(5, length); // "hello" selected
     }
 
-    [Fact]
+    [NonWindowsFact]
     public void ProcessInput_EscAndCsiBytes_BareModifierFormat_CtrlLeftArrow()
     {
         // Simulate Linux console format: ESC [ 5 D (no 1; prefix)

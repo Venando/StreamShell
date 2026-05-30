@@ -81,7 +81,7 @@ public partial class ConsoleAppHost
             return;
 
         if (isCommand)
-            SetBottomPanel(new CommandPalette(() => _commandManager.AllCommands, Settings));
+            SetBottomPanel(new CommandPalette(() => _commandManager.AllCommands, Settings, _terminal));
         else
             SetBottomPanel(_defaultPanel);
     }
