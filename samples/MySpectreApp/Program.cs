@@ -98,6 +98,22 @@ host.AddCommand("demo", "Demo command with argument completions",
         "windows 11"
     ]);
 
+host.AddCommand("appconfig2", "Demo command with argument completions",
+    (args, named) =>
+    {
+        string joined = string.Join(" ", args);
+        host.AddMessage($"[green]Demo executed with: [cyan]{Markup.Escape(joined)}[/][/]");
+        return Task.CompletedTask;
+    },
+    [
+        "DebugLevel Debug",
+        "DebugLevel Error",
+        "Description Full",
+        "Description None",
+        "DebugPriority Low",
+        "DebugPriority High",
+    ]);
+
 // ════════════════════════════════════════════════════════════════
 //  Panel swap command — toggle between CommandPalette and CharacterCounterPanel
 // ════════════════════════════════════════════════════════════════
