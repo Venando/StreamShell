@@ -352,6 +352,37 @@ internal class CommandPalette : IBottomPanel
     }
 
     /// <summary>
+    /// Returns true when all <paramref name="matches"/> share the same first
+    /// whitespace-delimited word (i.e. they belong to a single category).
+    /// </summary>
+    private static bool IsSingleCategory(string[] matches)
+    {
+        if (matches.Length <= 1)
+            return true;
+
+        string? firstCategory = null;
+        foreach (var match in matches)
+        {
+            ReadOnlySpan<char> span = match.AsSpan();
+            int spaceIdx = span.IndexOf(' ');
+            string category = spaceIdx >= 0
+                ? span[..spaceIdx].ToString()
+                : match;
+
+            if (firstCategory == null)
+            {
+                firstCategory = category;
+            }
+            else if (!string.Equals(firstCategory, category, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Collects argument hint entries with selection highlighting.
     /// Sets <see cref="_lastMatchCount"/> and <see cref="CurrentSuggestion"/>.
     /// </summary>
@@ -405,11 +436,42 @@ internal class CommandPalette : IBottomPanel
         }
         else
         {
-            // Mid-word with divergent matches → show each full path
-            foreach (var match in info.Matches)
+            // Mid-word — check whether all matches belong to a single first-word
+            // category, or span multiple categories.
+            bool singleCategory = IsSingleCategory(info.Matches);
+
+            if (singleCategory)
             {
-                entries.Add(cmdPath + match);
-                if (entries.Count >= HintCapacity) break;
+                // Single category isolated → show each full match path (values)
+                foreach (var match in info.Matches)
+                {
+                    entries.Add(cmdPath + match);
+                    if (entries.Count >= HintCapacity) break;
+                }
+            }
+            else
+            {
+                // Multiple categories → collapse to unique first words (like at word boundary)
+                var seenWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var match in info.Matches)
+                {
+                    ReadOnlySpan<char> matchSpan = match.AsSpan();
+                    int spaceIdx = matchSpan.IndexOf(' ');
+                    string firstWord = spaceIdx >= 0
+                        ? matchSpan[..spaceIdx].ToString()
+                        : match;
+
+                    _sb.Clear();
+                    _sb.Append(cmdPath);
+                    _sb.Append(firstWord);
+                    string entry = _sb.ToString();
+
+                    if (seenWords.Add(entry))
+                    {
+                        entries.Add(entry);
+                        if (entries.Count >= HintCapacity) break;
+                    }
+                }
             }
         }
 
