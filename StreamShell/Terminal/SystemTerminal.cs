@@ -27,6 +27,15 @@ internal sealed class SystemTerminal : ITerminal, IDisposable
     private readonly Thread _inputThread;
     private bool _disposed;
 
+    /// <summary>
+    /// Set by the reader the instant it pulls a key while the OS source still
+    /// has more queued, and cleared the instant the source reports dry. It lets
+    /// a consumer that drains the buffer faster than the reader fills it tell an
+    /// in-flight burst (e.g. a paste) from genuine end-of-input — restoring the
+    /// synchronous <c>Console.KeyAvailable</c> signal the old design relied on.
+    /// </summary>
+    private volatile bool _sourceHasMore;
+
     public SystemTerminal() : this(new ConsoleKeySource()) { }
 
     /// <summary>Test seam: inject a key source and a faster idle poll interval.</summary>
@@ -59,6 +68,13 @@ internal sealed class SystemTerminal : ITerminal, IDisposable
                 // whole burst lands in the buffer before the consumer's next tick.
                 if (_source.TryReadKey(out var key))
                 {
+                    // A key was waiting, so the OS input buffer may still hold the
+                    // rest of a burst. Flag that more input is in flight before
+                    // enqueueing, so a faster consumer treats a momentarily empty
+                    // buffer as "burst continuing" rather than "input ended". The
+                    // flag is cleared the moment TryReadKey reports the source dry.
+                    _sourceHasMore = true;
+
                     // Subscription check on the producer thread: if a subscriber
                     // handles this key, it is consumed and never enqueued.
                     if (!_subscriber.TryHandle(key))
@@ -66,6 +82,9 @@ internal sealed class SystemTerminal : ITerminal, IDisposable
                 }
                 else
                 {
+                    // Source drained: the burst (if any) has ended.
+                    _sourceHasMore = false;
+
                     // Nothing waiting. Windows console exposes no blocking poll
                     // primitive, so sleep briefly to avoid a hot spin while
                     // staying responsive to the next keystroke and cancellation.
@@ -97,6 +116,36 @@ internal sealed class SystemTerminal : ITerminal, IDisposable
             // (ObjectDisposedException derives from InvalidOperationException.)
             return default;
         }
+    }
+
+    /// <summary>
+    /// Reports whether more input is coming, blocking only while a burst is
+    /// actively draining from the OS into the buffer.
+    ///
+    /// The reader enqueues keys asynchronously, so an empty buffer right now may
+    /// still be receiving an in-flight burst — e.g. the tail of a multi-line
+    /// paste that conhost injects as many individual key events. Returns true
+    /// immediately if a key is already buffered; false immediately if the reader
+    /// reports the source drained (so isolated keystrokes and submits stay
+    /// latency-free); otherwise waits up to <paramref name="timeoutMs"/> for the
+    /// next burst key to arrive. Callers use this instead of the instantaneous
+    /// <see cref="KeyAvailable"/> snapshot, which races the producer thread.
+    /// </summary>
+    public bool WaitForKeyAvailable(int timeoutMs)
+    {
+        if (_inputBuffer.Count > 0)
+            return true;
+        // No buffered key and the reader reports the source dry → input has
+        // genuinely ended; don't wait.
+        if (!_sourceHasMore || timeoutMs <= 0 || _cts.IsCancellationRequested)
+            return false;
+
+        // A burst is still streaming from the OS into the buffer: give the next
+        // key a moment to land so the whole burst is consumed in a single pass.
+        SpinWait.SpinUntil(
+            () => _inputBuffer.Count > 0 || !_sourceHasMore || _cts.IsCancellationRequested,
+            timeoutMs);
+        return _inputBuffer.Count > 0;
     }
 
     // ══════════════════════════════════════════════════════════════════
