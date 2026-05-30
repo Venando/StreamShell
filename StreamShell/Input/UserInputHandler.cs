@@ -106,17 +106,24 @@ internal class UserInputHandler : IInputHandler
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // Windows: process keys one at a time as they arrive.
-            // This preserves the pre-merge behavior where HandleEnter's
-            // _terminal.KeyAvailable check works correctly for multi-line
-            // pastes (conhost/Windows Terminal inject clipboard text as
-            // individual key events, including Enter keys for newlines).
-            while (_terminal.KeyAvailable)
+            // Windows: drain the entire input burst within this single pass so a
+            // paste (which conhost injects as many individual key events) lands in
+            // one _tempInput accumulation and is flushed exactly once. The threaded
+            // SystemTerminal reader fills its buffer asynchronously, so the buffer
+            // can momentarily read empty mid-burst; once we've started reading we
+            // keep going while MoreInputFollows reports stragglers arriving within
+            // the grace window. Without this the burst fragments across ~10ms render
+            // ticks and each fragment is threshold-evaluated separately, producing a
+            // mix of inline text and paste blocks. The first iteration uses a plain
+            // KeyAvailable check so idle ticks never block.
+            bool readAny = false;
+            while (readAny ? MoreInputFollows() : _terminal.KeyAvailable)
             {
                 if (cancellationToken.IsCancellationRequested)
                     return submitted;
 
                 var key = _terminal.ReadKey(intercept: true);
+                readAny = true;
 
                 // Give the interceptor first crack at the key (e.g. hint navigation)
                 if (KeyInterceptor?.Invoke(key) == true)
@@ -287,6 +294,32 @@ internal class UserInputHandler : IInputHandler
         return result;
     }
 
+    /// <summary>
+    /// Safety cap on how long a single <see cref="MoreInputFollows"/> call will wait
+    /// for an in-flight burst key. In practice the wait ends far sooner — as soon as
+    /// the key lands or the reader reports the source drained — so this only bounds
+    /// the wait if the reader stalls. Kept small so a stall can't noticeably hitch
+    /// input.
+    /// </summary>
+    private const int BurstGraceMs = 25;
+
+    /// <summary>
+    /// True if another key is already buffered, or — for the threaded
+    /// <see cref="SystemTerminal"/> whose reader runs asynchronously — if one is
+    /// still streaming in from the OS (e.g. the tail of a paste). Delegates to
+    /// <see cref="SystemTerminal.WaitForKeyAvailable"/>, which returns instantly when
+    /// input has genuinely ended (so isolated keystrokes and submits aren't delayed)
+    /// and only blocks while a burst is actively draining. Synchronous terminals
+    /// (tests, redirected input) answer instantly via the buffer snapshot.
+    /// </summary>
+    private bool MoreInputFollows()
+    {
+        if (_terminal.KeyAvailable)
+            return true;
+        return _terminal is SystemTerminal threaded
+            && threaded.WaitForKeyAvailable(BurstGraceMs);
+    }
+
     /// <summary>Handles Enter. Returns true if the outer while should continue or break.</summary>
     private EnterHandleResult HandleEnter(ConsoleKeyInfo key, bool ctrl, bool shift, bool alt, ref string? submitted)
     {
@@ -295,14 +328,19 @@ internal class UserInputHandler : IInputHandler
 
         if (!shift && !ctrl && !alt)
         {
-            while (_terminal.KeyAvailable)
+            // A plain Enter is either a newline inside a pasted block or a
+            // deliberate submit. The distinguishing signal is whether more input
+            // immediately follows. MoreInputFollows gives the async reader a brief
+            // grace window so a multi-line paste split across reader ticks isn't
+            // submitted prematurely at one of its internal newlines.
+            if (MoreInputFollows())
             {
                 _tempInput.Append('\n');
                 return EnterHandleResult.Continue; // keep processing buffered keys
             }
 
             // Submit even for empty input (single Enter on empty line)
-        if (_tempInput.Length == 0)
+            if (_tempInput.Length == 0)
             {
                 submitted = _buffer.CurrentInput;
                 ResetState();

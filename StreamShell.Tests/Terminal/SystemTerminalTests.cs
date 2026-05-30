@@ -199,6 +199,53 @@ public class SystemTerminalTests
     }
 
     // ══════════════════════════════════════════════════════════════════
+    //  Burst continuation (WaitForKeyAvailable)
+    //
+    //  The consumer (UserInputHandler) drains the buffer faster than the reader
+    //  can fill it, so an instantaneous KeyAvailable snapshot races the producer
+    //  and can read empty mid-burst. WaitForKeyAvailable bridges that gap: it
+    //  reports more-is-coming while a burst is still streaming from the source,
+    //  but returns immediately once the source has genuinely drained so isolated
+    //  keystrokes and submits are not delayed.
+    // ══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void WaitForKeyAvailable_ReturnsTrue_WhenKeyAlreadyBuffered()
+    {
+        var source = new FakeKeySource();
+        using var terminal = NewTerminal(source);
+
+        source.Push(Key(ConsoleKey.A, 'a'));
+        Assert.True(WaitUntil(() => terminal.KeyAvailable));
+
+        Assert.True(terminal.WaitForKeyAvailable(1000));
+    }
+
+    [Fact]
+    public void WaitForKeyAvailable_ReturnsFalseWithoutBlocking_WhenSourceDrained()
+    {
+        var source = new FakeKeySource();
+        using var terminal = NewTerminal(source);
+
+        // Push a key, let it flow through, and consume it so the buffer is empty
+        // AND the reader has observed the source go dry (clearing its burst flag).
+        source.Push(Key(ConsoleKey.A, 'a'));
+        Assert.True(WaitUntil(() => terminal.KeyAvailable));
+        terminal.ReadKey(intercept: true);
+        Assert.True(WaitUntil(() => !terminal.KeyAvailable));
+        Thread.Sleep(20); // let the reader settle into its idle (source-dry) state
+
+        // With no burst in flight the call must short-circuit, not burn the timeout.
+        var sw = Stopwatch.StartNew();
+        bool more = terminal.WaitForKeyAvailable(2000);
+        sw.Stop();
+
+        Assert.False(more);
+        Assert.True(sw.ElapsedMilliseconds < 500,
+            $"WaitForKeyAvailable blocked for {sw.ElapsedMilliseconds}ms despite a drained source");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  Lifecycle
     // ══════════════════════════════════════════════════════════════════
 
